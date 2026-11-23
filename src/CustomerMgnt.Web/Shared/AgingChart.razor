@@ -1,0 +1,41 @@
+@* กราฟแท่งซ้อน: จำนวน issue ที่เปิดอยู่ แยกตามช่วงอายุ × severity *@
+<div class="cards">
+    <StatCard Label="Issue ที่เปิด" Value="@Summary.OpenIssues.ToString()" />
+    <StatCard Label="อายุเฉลี่ย (วัน)" Value="@Summary.AverageAgeDays.ToString("N1")" />
+    <StatCard Label="SLA breached" Value="@Summary.SlaBreached.ToString()" />
+    <StatCard Label="SLA at risk" Value="@Summary.SlaAtRisk.ToString()" />
+</div>
+<DxChart Data="_rows" Height="320px">
+    @foreach (string sev in _severities)
+    {
+        <DxChartStackedBarSeries Name="@sev" T="Row" TArgument="string" TValue="int" Filter="r => r.Severity == sev" ArgumentField="r => r.Bucket" ValueField="r => r.Count" />
+    }
+    <DxChartLegend Position="RelativePosition.Outside" HorizontalAlignment="HorizontalAlignment.Center" VerticalAlignment="VerticalEdge.Bottom" />
+</DxChart>
+<h4>Issue ที่เปิดนานที่สุด</h4>
+<DxGrid Data="Summary.Oldest" ShowAllRows="true">
+    <Columns>
+        <DxGridDataColumn FieldName="@nameof(ExternalIssueDTO.Id)" Caption="#" Width="80px" />
+        <DxGridDataColumn FieldName="@nameof(ExternalIssueDTO.Subject)" Caption="เรื่อง" />
+        <DxGridDataColumn FieldName="@nameof(ExternalIssueDTO.SeverityCode)" Caption="Severity" Width="90px" />
+        <DxGridDataColumn FieldName="@nameof(ExternalIssueDTO.StatusName)" Caption="สถานะ" Width="120px" />
+        <DxGridDataColumn FieldName="@nameof(ExternalIssueDTO.CreatedAt)" Caption="เปิดเมื่อ" DisplayFormat="d" Width="110px" />
+        <DxGridDataColumn FieldName="@nameof(ExternalIssueDTO.ResolutionDueAt)" Caption="ครบกำหนด SLA" DisplayFormat="g" Width="150px" />
+    </Columns>
+</DxGrid>
+
+@code {
+    [Parameter, EditorRequired] public IssueAgingSummaryDTO Summary { get; set; } = default!;
+
+    private List<Row> _rows = [];
+    private List<string> _severities = [];
+
+    protected override void OnParametersSet()
+    {
+        // Step 1: แปลง bucket × severity เป็นแถวสำหรับกราฟ
+        _rows = Summary.Buckets.SelectMany(b => b.BySeverity.Select(kv => new Row(b.Label, kv.Key, kv.Value))).ToList();
+        _severities = _rows.Select(r => r.Severity).Distinct().Order(StringComparer.Ordinal).ToList();
+    }
+
+    private sealed record Row(string Bucket, string Severity, int Count);
+}

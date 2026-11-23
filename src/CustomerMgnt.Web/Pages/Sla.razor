@@ -1,0 +1,142 @@
+@page "/sla"
+@inherits PageBase
+
+@* SLA: นโยบายกลาง/ต่อลูกค้า พร้อมระดับ severity ที่ลูกค้ากำหนดเอง + ทดลองคำนวณกำหนดเวลา *@
+<div class="topbar">
+    <h1>SLA</h1>
+    <div style="display:flex;gap:.5rem;align-items:center">
+        <DxButton Text="รีเฟรช" Click="LoadAsync" />
+        @if (Auth.Has(Permissions.SlaManage)) { <DxButton Text="+ นโยบาย" RenderStyle="ButtonRenderStyle.Primary" Click="NewPolicy" /> }
+    </div>
+</div>
+<ErrorBanner Message="@Error" />
+<DxGrid Data="_policies" ShowAllRows="true" FocusedRowEnabled="true" FocusedRowChanged="e => _current = e.DataItem as SlaPolicyDTO">
+    <Columns>
+        <DxGridDataColumn FieldName="@nameof(SlaPolicyDTO.Name)" Caption="นโยบาย" />
+        <DxGridDataColumn FieldName="@nameof(SlaPolicyDTO.CustomerId)" Caption="ลูกค้า (ว่าง = กลาง)" Width="150px" />
+        <DxGridDataColumn FieldName="@nameof(SlaPolicyDTO.TimeZoneId)" Caption="Time zone" Width="140px" />
+        <DxGridDataColumn FieldName="@nameof(SlaPolicyDTO.BusinessStart)" Caption="เริ่มงาน" Width="90px" />
+        <DxGridDataColumn FieldName="@nameof(SlaPolicyDTO.BusinessEnd)" Caption="เลิกงาน" Width="90px" />
+        <DxGridDataColumn FieldName="@nameof(SlaPolicyDTO.ValidFrom)" Caption="มีผล" Width="110px" />
+        <DxGridDataColumn FieldName="@nameof(SlaPolicyDTO.IsActive)" Caption="ใช้งาน" Width="80px" />
+    </Columns>
+</DxGrid>
+
+@if (_current is not null)
+{
+    <div class="card" style="margin-top:1rem">
+        <div class="topbar"><h3>@_current.Name — ระดับ severity</h3>
+            @if (Auth.Has(Permissions.SlaManage)) { <DxButton Text="แก้ไข" Click="() => EditPolicy(_current)" /> }</div>
+        <DxGrid Data="_current.Levels" ShowAllRows="true">
+            <Columns>
+                <DxGridDataColumn FieldName="@nameof(SeverityLevelDTO.Code)" Caption="รหัส" Width="80px" />
+                <DxGridDataColumn FieldName="@nameof(SeverityLevelDTO.Name)" Caption="ชื่อ" />
+                <DxGridDataColumn FieldName="@nameof(SeverityLevelDTO.Rank)" Caption="ลำดับ" Width="80px" />
+                <DxGridDataColumn FieldName="@nameof(SeverityLevelDTO.ResponseMinutes)" Caption="ตอบกลับ (นาที)" Width="130px" />
+                <DxGridDataColumn FieldName="@nameof(SeverityLevelDTO.ResolutionMinutes)" Caption="แก้ไข (นาที)" Width="120px" />
+                <DxGridDataColumn FieldName="@nameof(SeverityLevelDTO.BusinessHoursOnly)" Caption="เวลาทำการ" Width="100px" />
+                <DxGridDataColumn FieldName="@nameof(SeverityLevelDTO.IssuePriority)" Caption="Priority ใน IssueTracking" Width="180px" />
+            </Columns>
+        </DxGrid>
+    </div>
+}
+
+<div class="card" style="margin-top:1rem">
+    <h3>ทดลองคำนวณกำหนดเวลา</h3>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
+        <DxTextBox @bind-Text="_calc.CustomerCode" NullText="รหัสลูกค้า" Width="160px" />
+        <DxTextBox @bind-Text="_calc.SeverityCode" NullText="Severity (เช่น S1)" Width="140px" />
+        <DxButton Text="คำนวณ" Click="CalculateAsync" />
+    </div>
+    @if (_target is not null)
+    {
+        <p>@_target.PolicyName / @_target.SeverityName (@_target.IssuePriority): ตอบกลับภายใน <b>@_target.ResponseDueAt.ToLocalTime().ToString("g")</b>, แก้ไขภายใน <b>@_target.ResolutionDueAt.ToLocalTime().ToString("g")</b>@(_target.BusinessHoursOnly ? " (นับเฉพาะเวลาทำการ)" : "")</p>
+    }
+</div>
+
+<DxPopup @bind-Visible="_showEdit" HeaderText="นโยบาย SLA" Width="860px">
+    <DxFormLayout>
+        <DxFormLayoutItem Caption="ชื่อ" ColSpanMd="6"><DxTextBox @bind-Text="_edit.Name" /></DxFormLayoutItem>
+        <DxFormLayoutItem Caption="ลูกค้า (Id, ว่าง = กลาง)" ColSpanMd="6"><DxSpinEdit @bind-Value="_edit.CustomerId" MinValue="1L" Enabled="@(_editId is null)" /></DxFormLayoutItem>
+        <DxFormLayoutItem Caption="มีผลตั้งแต่" ColSpanMd="4"><DxDateEdit @bind-Date="_edit.ValidFrom" /></DxFormLayoutItem>
+        <DxFormLayoutItem Caption="เริ่มงาน" ColSpanMd="4"><DxTimeEdit @bind-Time="_edit.BusinessStart" /></DxFormLayoutItem>
+        <DxFormLayoutItem Caption="เลิกงาน" ColSpanMd="4"><DxTimeEdit @bind-Time="_edit.BusinessEnd" /></DxFormLayoutItem>
+        <DxFormLayoutItem Caption="Time zone" ColSpanMd="6"><DxTextBox @bind-Text="_edit.TimeZoneId" /></DxFormLayoutItem>
+        <DxFormLayoutItem Caption="เตือนเมื่อใช้เวลาไปแล้ว (0-1)" ColSpanMd="6"><DxSpinEdit @bind-Value="_edit.AtRiskThreshold" MinValue="0.1" MaxValue="0.99" Increment="0.05" /></DxFormLayoutItem>
+    </DxFormLayout>
+    <h4>ระดับ severity</h4>
+    @foreach (SeverityLevelRequest l in _edit.Levels)
+    {
+        <div style="display:grid;grid-template-columns:70px 1fr 70px 110px 110px 120px 40px;gap:.4rem;margin-bottom:.35rem;align-items:center">
+            <DxTextBox @bind-Text="l.Code" NullText="รหัส" />
+            <DxTextBox @bind-Text="l.Name" NullText="ชื่อ" />
+            <DxSpinEdit @bind-Value="l.Rank" MinValue="1" MaxValue="5" />
+            <DxSpinEdit @bind-Value="l.ResponseMinutes" MinValue="1" />
+            <DxSpinEdit @bind-Value="l.ResolutionMinutes" MinValue="1" />
+            <DxCheckBox @bind-Checked="l.BusinessHoursOnly">เวลาทำการ</DxCheckBox>
+            <DxButton Text="✕" RenderStyle="ButtonRenderStyle.Danger" RenderStyleMode="ButtonRenderStyleMode.Text" Click="() => _edit.Levels.Remove(l)" />
+        </div>
+    }
+    <DxButton Text="+ ระดับ" RenderStyleMode="ButtonRenderStyleMode.Outline" Click="AddLevel" />
+    <div style="display:flex;justify-content:flex-end;gap:.5rem;margin-top:.75rem">
+        <DxButton Text="ยกเลิก" RenderStyle="ButtonRenderStyle.Secondary" Click="() => _showEdit = false" />
+        <DxButton Text="บันทึก" RenderStyle="ButtonRenderStyle.Primary" Click="SaveAsync" />
+    </div>
+</DxPopup>
+
+@code {
+    private IReadOnlyList<SlaPolicyDTO> _policies = [];
+    private SlaPolicyDTO? _current;
+    private SlaCalculateRequest _calc = new();
+    private SlaTargetDTO? _target;
+    private bool _showEdit;
+    private long? _editId;
+    private SlaPolicyRequest _edit = new();
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private Task LoadAsync() => RunAsync(async () => _policies = await Api.GetAsync<List<SlaPolicyDTO>>("api/sla/policies"));
+
+    private Task CalculateAsync() => RunAsync(async () => _target = await Api.PostAsync<SlaTargetDTO>("api/sla/calculate", _calc));
+
+    private void NewPolicy()
+    {
+        _editId = null;
+        _edit = new()
+        {
+            Name = "", ValidFrom = DateOnly.FromDateTime(DateTime.Today), TimeZoneId = "Asia/Bangkok",
+            BusinessStart = new TimeOnly(8, 30), BusinessEnd = new TimeOnly(17, 30), WorkingDaysMask = 0b0111110, AtRiskThreshold = 0.75,
+            Levels = [new() { Code = "S1", Name = "Critical", Rank = 1, ResponseMinutes = 30, ResolutionMinutes = 240 }],
+        };
+        _showEdit = true;
+    }
+
+    private void EditPolicy(SlaPolicyDTO p)
+    {
+        // Step 1: แปลง DTO → request (ส่ง version เพื่อกันการเขียนทับ)
+        _editId = p.Id;
+        _edit = new()
+        {
+            CustomerId = p.CustomerId, Version = p.Version, Name = p.Name, Description = p.Description, ValidFrom = p.ValidFrom, ValidTo = p.ValidTo,
+            TimeZoneId = p.TimeZoneId, BusinessStart = p.BusinessStart, BusinessEnd = p.BusinessEnd, WorkingDaysMask = p.WorkingDaysMask, AtRiskThreshold = p.AtRiskThreshold,
+            Holidays = (p.Holidays ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(d => DateOnly.TryParse(d, out DateOnly x) ? x : (DateOnly?)null).OfType<DateOnly>().ToList(),
+            Levels = p.Levels.Select(l => new SeverityLevelRequest { Code = l.Code, Name = l.Name, Description = l.Description, Rank = l.Rank, ResponseMinutes = l.ResponseMinutes, ResolutionMinutes = l.ResolutionMinutes, BusinessHoursOnly = l.BusinessHoursOnly, IssuePriority = l.IssuePriority }).ToList(),
+        };
+        _showEdit = true;
+    }
+
+    private void AddLevel() => _edit.Levels.Add(new() { Code = $"S{_edit.Levels.Count + 1}", Name = "", Rank = Math.Min(5, _edit.Levels.Count + 1), ResponseMinutes = 60, ResolutionMinutes = 480, BusinessHoursOnly = true });
+
+    private async Task SaveAsync()
+    {
+        bool ok = _editId is { } id
+            ? await RunAsync(() => Api.PutAsync<SlaPolicyDTO>($"api/sla/policies/{id}", _edit))
+            : await RunAsync(() => Api.PostAsync<SlaPolicyDTO>("api/sla/policies", _edit));
+        if (ok)
+        {
+            _showEdit = false;
+            _current = null;
+            await LoadAsync();
+        }
+    }
+}

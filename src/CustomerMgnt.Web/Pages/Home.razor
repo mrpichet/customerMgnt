@@ -1,0 +1,64 @@
+@page "/"
+@inherits PageBase
+
+@* ภาพรวม: งานค้างของฉัน, สรุป pipeline, ลูกค้ากลุ่มเสี่ยง *@
+<div class="topbar"><h1>ภาพรวม</h1></div>
+<ErrorBanner Message="@Error" />
+
+<div class="cards">
+    <StatCard Label="งานค้าง 7 วัน" Value="@_mine.Count.ToString()" Hint="@($"เลยกำหนด {_mine.Count(a => a.DueAt < DateTimeOffset.Now)}")" />
+    @if (_pipeline is not null)
+    {
+        <StatCard Label="Pipeline เปิดอยู่" Value="@_pipeline.TotalOpenAmount.ToString("N0")" Hint="@($"ถ่วงน้ำหนัก {_pipeline.WeightedOpenAmount:N0}")" />
+        <StatCard Label="Win rate" Value="@_pipeline.WinRate.ToString("P0")" />
+    }
+    @if (_risk is not null)
+    {
+        <StatCard Label="ลูกค้าความเสี่ยงสูง" Value="@_risk.Customers.Count(c => c.Result.Level >= RiskLevel.High).ToString()" />
+    }
+</div>
+
+<div class="grid-2">
+    <div>
+        <h3>งานค้างของฉัน</h3>
+        <DxGrid Data="_mine" PageSize="10" ShowFilterRow="false">
+            <Columns>
+                <DxGridDataColumn FieldName="@nameof(ActivityDTO.DueAt)" Caption="กำหนด" DisplayFormat="g" />
+                <DxGridDataColumn FieldName="@nameof(ActivityDTO.Kind)" Caption="ชนิด" Width="90px" />
+                <DxGridDataColumn FieldName="@nameof(ActivityDTO.Subject)" Caption="เรื่อง" />
+                <DxGridDataColumn FieldName="@nameof(ActivityDTO.CustomerId)" Caption="ลูกค้า" Width="90px">
+                    <CellDisplayTemplate><a href="customers/@(((ActivityDTO)context.DataItem).CustomerId)">เปิด</a></CellDisplayTemplate>
+                </DxGridDataColumn>
+            </Columns>
+        </DxGrid>
+    </div>
+    <div>
+        <h3>ลูกค้าที่ควรดูแล (risk score)</h3>
+        @if (_risk is not null)
+        {
+            <DxGrid Data="_risk.Customers" PageSize="10">
+                <Columns>
+                    <DxGridDataColumn FieldName="CustomerCode" Caption="ลูกค้า">
+                        <CellDisplayTemplate>@{ var r = (CustomerRiskDTO)context.DataItem; }<a href="customers/@r.CustomerId">@r.CustomerCode</a></CellDisplayTemplate>
+                    </DxGridDataColumn>
+                    <DxGridDataColumn FieldName="Result.Score" Caption="คะแนน" DisplayFormat="N1" Width="90px" />
+                    <DxGridDataColumn FieldName="Result.Level" Caption="ระดับ" Width="100px" />
+                </Columns>
+            </DxGrid>
+        }
+    </div>
+</div>
+
+@code {
+    private IReadOnlyList<ActivityDTO> _mine = [];
+    private PipelineSummaryDTO? _pipeline;
+    private CustomerRiskPortfolioDTO? _risk;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Step 1: โหลดเฉพาะส่วนที่มีสิทธิ์ (แต่ละส่วนล้มเหลวได้อิสระ)
+        await RunAsync(async () => _mine = await Api.GetAsync<List<ActivityDTO>>("api/activities/mine?days=7"));
+        if (Auth.Has(Permissions.SalesRead)) await RunAsync(async () => _pipeline = await Api.GetAsync<PipelineSummaryDTO>("api/opportunities/summary"));
+        if (Auth.Has(Permissions.AnalyticsRead)) await RunAsync(async () => _risk = await Api.GetAsync<CustomerRiskPortfolioDTO>("api/analytics/risk/portfolio?top=10"));
+    }
+}

@@ -6,22 +6,23 @@
     <title>CustomerMgnt</title>
     <base href="/" />
     <!-- DevExpress Fluent theme (เทียบเท่า DxResourceManager.RegisterTheme(Themes.Fluent)) -->
-    <link rel="stylesheet" href="_content/DevExpress.Blazor.Themes.Fluent/core.min.css" />
-    <link rel="stylesheet" href="_content/DevExpress.Blazor.Themes.Fluent/global.min.css" />
-    <link rel="stylesheet" href="_content/DevExpress.Blazor.Themes.Fluent/modes/light.min.css" />
-    <link rel="stylesheet" href="_content/DevExpress.Blazor.Themes.Fluent/accents/blue.min.css" />
+    <link rel="stylesheet" href="_content/DevExpress.Blazor.Themes.Fluent/core.min.css?v26.1.6.0" />
+    <link rel="stylesheet" href="_content/DevExpress.Blazor.Themes.Fluent/global.min.css?v26.1.6.0" />
+    <link rel="stylesheet" href="_content/DevExpress.Blazor.Themes.Fluent/modes/light.min.css?v26.1.6.0" />
+    <link rel="stylesheet" href="_content/DevExpress.Blazor.Themes.Fluent/accents/blue.min.css?v26.1.6.0" />
     <link rel="stylesheet" href="css/app.css" />
-    <link rel="stylesheet" href="CustomerMgnt.Web.styles.css" />
 </head>
 <body>
     <div id="app"><div class="app-loading">กำลังโหลด…</div></div>
     <div id="blazor-error-ui">เกิดข้อผิดพลาด <a href="" class="reload">โหลดใหม่</a></div>
 
-    <!-- DevExpress scripts (เทียบเท่า DxResourceManager.RegisterScripts()) — ไฟล์ภายนอกทั้งหมด จึงผ่าน CSP script-src 'self' -->
-    <script src="_content/DevExpress.Blazor.Resources/js/preload-script.js"></script>
-    <dxbl-resource-script src="./_content/DevExpress.Blazor/modules/dx-blazor-all.js"></dxbl-resource-script>
-    <dxbl-resource-script src="./_content/DevExpress.Blazor.Resources/js/devextreme/dx.all.js"></dxbl-resource-script>
-    <script type="module" src="_content/DevExpress.Blazor.Resources/js/import-scripts.js"></script>
+    <!-- DevExpress scripts: ตรงกับผลของ DxResourceManager.RegisterScripts() ทุกตัวอักษร (รวม ?v=) — ถ้า query ไม่ตรง module จะถูกโหลดซ้ำ
+         ต้องแก้เลขเวอร์ชันเมื่ออัปเกรด DevExpress.Blazor ใน Directory.Packages.props; ทุกไฟล์เป็นไฟล์ภายนอก จึงผ่าน CSP script-src 'self' -->
+    <script type="text/javascript" src="./_content/DevExpress.Blazor.Resources/js/preload-script.js?v=26.1.6.0"></script>
+    <dxbl-resource-script src="./_content/DevExpress.Blazor/modules/dx-blazor-all.js?v=26.1.6.0"></dxbl-resource-script>
+    <dxbl-resource-script src="./_content/DevExpress.Blazor/modules/dx-blazor-quill.js?v=26.1.6.0"></dxbl-resource-script>
+    <dxbl-resource-script src="./_content/DevExpress.Blazor.Resources/js/devextreme/dx.all.js?v=26.1.6.0"></dxbl-resource-script>
+    <script type="module" src="./_content/DevExpress.Blazor.Resources/js/import-scripts.js?v=26.1.6.0"></script>
     <script src="_framework/blazor.webassembly.js"></script>
 </body>
 </html>

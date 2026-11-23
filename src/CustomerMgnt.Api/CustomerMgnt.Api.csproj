@@ -24,6 +24,11 @@
     <PackageReference Include="ModelContextProtocol.AspNetCore" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" />
   </ItemGroup>
+  <!-- UI (Blazor WASM + DevExpress) แนบเมื่อ build ด้วย -p:IncludeWebUi=true (Dockerfile ใช้แบบนี้)
+       แยกเป็นตัวเลือกเพื่อให้ build/test ฝั่ง API ได้โดยไม่ต้องมี DevExpress license -->
+  <ItemGroup Condition="'$(IncludeWebUi)' == 'true'">
+    <ProjectReference Include="..\CustomerMgnt.Web\CustomerMgnt.Web.csproj" />
+  </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="CustomerMgnt.Tests" />
   </ItemGroup>

@@ -1,0 +1,39 @@
+@inject AuthState Auth
+
+@* หน้าเข้าสู่ระบบ (ส่งต่อไป AuthServer ผ่าน /api/session/login) *@
+<div class="login card">
+    <h1>เข้าสู่ระบบ</h1>
+    <ErrorBanner Message="@_error" />
+    <DxFormLayout>
+        <DxFormLayoutItem Caption="ชื่อผู้ใช้" ColSpanMd="12">
+            <DxTextBox @bind-Text="_login" InputId="login" />
+        </DxFormLayoutItem>
+        <DxFormLayoutItem Caption="รหัสผ่าน" ColSpanMd="12">
+            <DxTextBox @bind-Text="_password" Password="true" />
+        </DxFormLayoutItem>
+        <DxFormLayoutItem ColSpanMd="12">
+            <DxButton Text="เข้าสู่ระบบ" Enabled="@(!_busy)" Click="SubmitAsync" RenderStyle="ButtonRenderStyle.Primary" />
+        </DxFormLayoutItem>
+    </DxFormLayout>
+</div>
+
+@code {
+    private string _login = "";
+    private string _password = "";
+    private string? _error;
+    private bool _busy;
+
+    private async Task SubmitAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_login) || string.IsNullOrEmpty(_password))
+        {
+            _error = "กรุณากรอกชื่อผู้ใช้และรหัสผ่าน";
+            return;
+        }
+
+        _busy = true;
+        _error = await Auth.LoginAsync(_login.Trim(), _password);
+        _password = "";
+        _busy = false;
+    }
+}

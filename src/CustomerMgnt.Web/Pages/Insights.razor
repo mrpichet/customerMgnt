@@ -1,0 +1,22 @@
+@page "/insights"
+@inherits PageBase
+
+@* สรุป issue ที่ยังเปิด (ทุกลูกค้า) แยกตามอายุและ severity จาก IssueTracking *@
+<div class="topbar"><h1>Issue ที่ยังเปิด</h1><DxButton Text="รีเฟรช" Click="LoadAsync" /></div>
+<ErrorBanner Message="@Error" />
+@if (_aging is not null)
+{
+    <AgingChart Summary="_aging" />
+}
+else if (Busy)
+{
+    <p class="muted">กำลังดึงข้อมูลจาก IssueTracking…</p>
+}
+
+@code {
+    private IssueAgingSummaryDTO? _aging;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private Task LoadAsync() => RunAsync(async () => _aging = await Api.GetAsync<IssueAgingSummaryDTO>("api/insights/issues/aging"));
+}

@@ -94,7 +94,8 @@ if (exportCatalog)
 
 // ---- Step 10: middleware pipeline -----------------------------------------------------
 // UiSecurityHeaders ต้องอยู่ก่อน UseCommonWebDefaults: OnStarting callback ทำงานแบบ LIFO → ของเราทำงานหลังสุดและกำหนด CSP ของหน้า UI ได้
-bool hasUi = File.Exists(Path.Combine(app.Environment.WebRootPath ?? Path.Combine(app.Environment.ContentRootPath, "wwwroot"), "index.html"));
+// ใช้ WebRootFileProvider (รวม static web assets ของโปรเจกต์ UI ตอน Development) แทนการเช็กไฟล์บนดิสก์
+bool hasUi = app.Environment.WebRootFileProvider.GetFileInfo("index.html").Exists;
 if (hasUi)
 {
     app.UseMiddleware<UiSecurityHeadersMiddleware>();
