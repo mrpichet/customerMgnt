@@ -31,7 +31,7 @@
         </DxGridDataColumn>
         <DxGridDataColumn FieldName="@nameof(OpportunityDTO.Title)" Caption="ดีล" />
         <DxGridDataColumn FieldName="@nameof(OpportunityDTO.Amount)" Caption="มูลค่า" DisplayFormat="N0" Width="120px" />
-        <DxGridDataColumn FieldName="@nameof(OpportunityDTO.Score)" Caption="Lead score" DisplayFormat="P0" Width="110px" />
+        <DxGridDataColumn FieldName="@nameof(OpportunityDTO.Score)" Caption="Lead score (0-100)" DisplayFormat="N0" Width="110px" />
         <DxGridDataColumn FieldName="@nameof(OpportunityDTO.ExpectedCloseDate)" Caption="คาดปิด" Width="110px" />
         <DxGridDataColumn FieldName="@nameof(OpportunityDTO.Stage)" Caption="Stage" Width="170px">
             <CellDisplayTemplate>@{ var o = (OpportunityDTO)context.DataItem; }

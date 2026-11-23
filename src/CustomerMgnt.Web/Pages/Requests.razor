@@ -45,6 +45,9 @@
             }
             @if (Auth.Has(Permissions.RequestForward) && _current.Status == RequestStatus.Approved)
             {
+                <DxTextBox @bind-Text="_forward.ProjectCode" NullText="รหัสโครงการ (A-Z0-9)" Width="160px" />
+                <DxSpinEdit @bind-Value="_forward.ProjectManagerId" NullText="PM (user id)" MinValue="1L" Width="130px" />
+                <DxSpinEdit @bind-Value="_forward.IssueTrackingProjectId" NullText="Project ใน IssueTracking" MinValue="1L" Width="170px" />
                 <DxCheckBox @bind-Checked="_forward.ToProjectMgnt">ProjectMgnt</DxCheckBox>
                 <DxCheckBox @bind-Checked="_forward.ToRequirementMgnt">requirementMgnt</DxCheckBox>
                 <DxCheckBox @bind-Checked="_forward.ToIssueTracking">IssueTracking</DxCheckBox>

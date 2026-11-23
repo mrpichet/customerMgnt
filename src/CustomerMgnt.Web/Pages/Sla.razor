@@ -105,7 +105,7 @@
         _edit = new()
         {
             Name = "", ValidFrom = DateOnly.FromDateTime(DateTime.Today), TimeZoneId = "Asia/Bangkok",
-            BusinessStart = new TimeOnly(8, 30), BusinessEnd = new TimeOnly(17, 30), WorkingDaysMask = 0b0111110, AtRiskThreshold = 0.75,
+            BusinessStart = new TimeOnly(8, 30), BusinessEnd = new TimeOnly(17, 30), WorkingDaysMask = 31 /* จ.-ศ. (bit0 = จันทร์) */, AtRiskThreshold = 0.75,
             Levels = [new() { Code = "S1", Name = "Critical", Rank = 1, ResponseMinutes = 30, ResolutionMinutes = 240 }],
         };
         _showEdit = true;

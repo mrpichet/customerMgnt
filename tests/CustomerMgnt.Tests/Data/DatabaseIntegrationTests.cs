@@ -157,7 +157,7 @@ public sealed class DatabaseIntegrationTests
         // Step 8: SLA policy ต่อลูกค้า + seed มาตรฐาน + แทนที่ระดับทั้งชุด
         ISlaDAO sla = sp.GetRequiredService<ISlaDAO>();
         Assert.IsTrue((await sla.ListByCustomerAsync(null, ct)).Any(p => p.Name == "Standard SLA" && p.Levels.Count == 4));
-        SlaPolicyDTO policy = new() { CustomerId = org.Id, Name = "Gold " + run, ValidFrom = new DateOnly(2026, 1, 1), TimeZoneId = "Asia/Bangkok", BusinessStart = new TimeOnly(8, 0), BusinessEnd = new TimeOnly(18, 0), WorkingDaysMask = 62, AtRiskThreshold = 0.75, IsActive = true, Version = 1,
+        SlaPolicyDTO policy = new() { CustomerId = org.Id, Name = "Gold " + run, ValidFrom = new DateOnly(2026, 1, 1), TimeZoneId = "Asia/Bangkok", BusinessStart = new TimeOnly(8, 0), BusinessEnd = new TimeOnly(18, 0), WorkingDaysMask = 31, AtRiskThreshold = 0.75, IsActive = true, Version = 1,
             Levels = [new() { Code = "P1", Name = "วิกฤต", Rank = 1, ResponseMinutes = 15, ResolutionMinutes = 120, IssuePriority = "Immediate" }] };
         policy.Id = await sla.InsertAsync(policy, ct);
         SlaPolicyDTO pl = (await sla.GetAsync(policy.Id, ct))!;

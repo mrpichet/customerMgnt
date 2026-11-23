@@ -175,8 +175,9 @@ public sealed class WebhooksController(OmnichannelService omnichannel, IOptions<
         foreach (JsonElement e in events.EnumerateArray())
         {
             // Step 1: เฉพาะข้อความ text ที่มี userId
-            if (e.GetProperty("type").GetString() != "message" ||
-                !e.TryGetProperty("message", out JsonElement m) || m.GetProperty("type").GetString() != "text" ||
+            if (e.ValueKind != JsonValueKind.Object || !e.TryGetProperty("type", out JsonElement et) || et.GetString() != "message" ||
+                !e.TryGetProperty("message", out JsonElement m) || !m.TryGetProperty("type", out JsonElement mt) || mt.GetString() != "text" ||
+                !m.TryGetProperty("text", out JsonElement textEl) || textEl.ValueKind != JsonValueKind.String ||
                 !e.TryGetProperty("source", out JsonElement src) || !src.TryGetProperty("userId", out JsonElement uid))
             {
                 continue;
@@ -189,13 +190,13 @@ public sealed class WebhooksController(OmnichannelService omnichannel, IOptions<
                 continue;
             }
 
-            string text = m.GetProperty("text").GetString() ?? string.Empty;
+            string text = textEl.GetString() ?? string.Empty;
             result.Add(new InboundMessageRequest
             {
                 Channel = ChannelKind.Line,
-                ExternalUserId = uid.GetString() ?? string.Empty,
+                ExternalUserId = uid.ValueKind == JsonValueKind.String ? uid.GetString()! : string.Empty,
                 Body = text.Length > 20_000 ? text[..20_000] : text,
-                ExternalMessageId = m.TryGetProperty("id", out JsonElement id) ? id.GetString() : null,
+                ExternalMessageId = m.TryGetProperty("id", out JsonElement id) && id.ValueKind == JsonValueKind.String ? id.GetString() : null,
                 SentAt = sentAt,
             });
         }

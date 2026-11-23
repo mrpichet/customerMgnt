@@ -8,7 +8,7 @@
     <DxTabPage Text="พยากรณ์ยอดขาย">
         @if (_forecast is not null)
         {
-            <p class="muted">@_forecast.Method · MAPE @_forecast.Mape.ToString("P1")</p>
+            <p class="muted">@_forecast.Method · MAPE @_forecast.Mape.ToString("N1")%</p>
             <DxChart Data="_series" Height="340px">
                 <DxChartLineSeries Name="ยอดจริง" T="Point" TArgument="DateTime" TValue="double" Filter="p => p.Kind == 0" ArgumentField="p => p.Period" ValueField="p => p.Value" />
                 <DxChartLineSeries Name="พยากรณ์" T="Point" TArgument="DateTime" TValue="double" Filter="p => p.Kind == 1" ArgumentField="p => p.Period" ValueField="p => p.Value" />
@@ -52,7 +52,7 @@
         <DxGrid Data="_leads" ShowAllRows="true">
             <Columns>
                 <DxGridDataColumn FieldName="@nameof(LeadScoreDTO.Title)" Caption="ดีล" />
-                <DxGridDataColumn FieldName="@nameof(LeadScoreDTO.Score)" Caption="คะแนน" DisplayFormat="P0" Width="100px" />
+                <DxGridDataColumn FieldName="@nameof(LeadScoreDTO.Score)" Caption="คะแนน (0-100)" DisplayFormat="N0" Width="100px" />
                 <DxGridDataColumn FieldName="@nameof(LeadScoreDTO.Grade)" Caption="เกรด" Width="80px" />
                 <DxGridDataColumn FieldName="@nameof(LeadScoreDTO.TopFactors)" Caption="ปัจจัยหลัก">
                     <CellDisplayTemplate>@string.Join(", ", ((LeadScoreDTO)context.DataItem).TopFactors.Select(f => $"{f.Feature} ({f.Contribution:+0.00;-0.00})"))</CellDisplayTemplate>
