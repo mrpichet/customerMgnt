@@ -1,0 +1,15 @@
+bin/
+obj/
+*.user
+*.suo
+.vs/
+.vscode/
+.idea/
+TestResults/
+*.swp
+# secrets – never commit
+.env
+secrets/
+appsettings.*.local.json
+DevExpress_License.txt
+data/
