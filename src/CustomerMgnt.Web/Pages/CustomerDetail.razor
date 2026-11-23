@@ -1,0 +1,203 @@
+@page "/customers/{Id:long}"
+@inherits PageBase
+
+@* ภาพรวม 360° ของลูกค้า: ข้อมูลหลัก, ความสัมพันธ์, กิจกรรม/วาระ, โครงการ, SLA, ข้อเสนอแนะจาก ML *@
+<ErrorBanner Message="@Error" />
+@if (_c is null)
+{
+    <p class="muted">กำลังโหลด…</p>
+}
+else
+{
+    CustomerDTO c = _c.Customer;
+    <div class="topbar">
+        <h1>@c.DisplayName <span class="badge">@c.Code</span> <span class="badge">@c.Kind</span> <span class="badge">@c.Status</span></h1>
+        @if (Auth.Has(Permissions.ActivityWrite)) { <DxButton Text="+ กิจกรรม/นัดหมาย" RenderStyle="ButtonRenderStyle.Primary" Click="() => _showActivity = true" /> }
+    </div>
+    <div class="cards">
+        <StatCard Label="แชทที่เปิดอยู่" Value="@_c.OpenConversations.ToString()" />
+        <StatCard Label="งานเลยกำหนด" Value="@_c.OverdueActivities.ToString()" />
+        <StatCard Label="คำร้องที่เปิด" Value="@_c.OpenRequests.ToString()" />
+        <StatCard Label="ดีลที่เปิด" Value="@_c.OpenOpportunities.Sum(o => o.Amount).ToString("N0")" Hint="@($"{_c.OpenOpportunities.Count} ดีล")" />
+        <StatCard Label="SLA" Value="@(_c.SlaPolicyName ?? "-")" />
+        @if (_risk is not null) { <StatCard Label="Risk score" Value="@_risk.Result.Score.ToString("N1")" Hint="@_risk.Result.Level.ToString()" /> }
+    </div>
+
+    <DxTabs>
+        <DxTabPage Text="ข้อมูล">
+            <div class="grid-2" style="margin-top:.75rem">
+                <div class="card">
+                    <p><b>อีเมล:</b> @c.Email</p><p><b>โทร:</b> @c.Phone</p><p><b>เลขผู้เสียภาษี:</b> @c.TaxIdMasked</p>
+                    <p><b>อุตสาหกรรม:</b> @c.Industry</p><p><b>ที่อยู่:</b> @c.Address @c.Province</p><p><b>กลุ่ม:</b> @c.Segment</p>
+                    <p><b>ช่องทาง:</b> @string.Join(", ", _c.Identities.Select(i => $"{i.Channel}:{i.DisplayName ?? i.ExternalId}"))</p>
+                </div>
+                <div class="card">
+                    <b>ความสัมพันธ์</b>
+                    <DxGrid Data="_c.Relationships" ShowAllRows="true">
+                        <Columns>
+                            <DxGridDataColumn FieldName="@(c.Kind == CustomerKind.Person ? nameof(PartyRelationshipDTO.OrganizationName) : nameof(PartyRelationshipDTO.PersonName))" Caption="@(c.Kind == CustomerKind.Person ? "บริษัท" : "ผู้ติดต่อ")" />
+                            <DxGridDataColumn FieldName="@nameof(PartyRelationshipDTO.Position)" Caption="ตำแหน่ง" />
+                            <DxGridDataColumn FieldName="@nameof(PartyRelationshipDTO.ValidFrom)" Caption="ตั้งแต่" Width="110px" />
+                            <DxGridDataColumn FieldName="@nameof(PartyRelationshipDTO.ValidTo)" Caption="ถึง" Width="110px" />
+                        </Columns>
+                    </DxGrid>
+                </div>
+            </div>
+        </DxTabPage>
+        <DxTabPage Text="กิจกรรม / วาระ">
+            @if (_agenda is not null)
+            {
+                <h3>งานที่ยังไม่ปิด (เลยกำหนด @_agenda.OverdueCount)</h3>
+                <DxGrid Data="_agenda.OpenActivities" ShowAllRows="true">
+                    <Columns>
+                        <DxGridDataColumn FieldName="@nameof(ActivityDTO.DueAt)" Caption="กำหนด" DisplayFormat="g" Width="160px" />
+                        <DxGridDataColumn FieldName="@nameof(ActivityDTO.Kind)" Caption="ชนิด" Width="100px" />
+                        <DxGridDataColumn FieldName="@nameof(ActivityDTO.Subject)" Caption="เรื่อง" />
+                        <DxGridDataColumn FieldName="@nameof(ActivityDTO.OwnerSubject)" Caption="ผู้รับผิดชอบ" Width="140px" />
+                        <DxGridDataColumn FieldName="@nameof(ActivityDTO.Id)" Caption="" Width="90px">
+                            <CellDisplayTemplate><DxButton Text="ปิดงาน" SizeMode="SizeMode.Small" Click="() => CompleteAsync((ActivityDTO)context.DataItem)" Enabled="@Auth.Has(Permissions.ActivityWrite)" /></CellDisplayTemplate>
+                        </DxGridDataColumn>
+                    </Columns>
+                </DxGrid>
+                <h3>วาระประชุมที่ค้าง (MessageHub)</h3>
+                <DxGrid Data="_agenda.PendingAgendaItems" ShowAllRows="true">
+                    <Columns>
+                        <DxGridDataColumn FieldName="@nameof(ExternalAgendaItemDTO.Title)" Caption="วาระ" />
+                        <DxGridDataColumn FieldName="@nameof(ExternalAgendaItemDTO.Status)" Caption="สถานะ" Width="130px" />
+                        <DxGridDataColumn FieldName="@nameof(ExternalAgendaItemDTO.Conclusion)" Caption="ข้อสรุป" />
+                    </Columns>
+                </DxGrid>
+            }
+        </DxTabPage>
+        <DxTabPage Text="โครงการ">
+            @if (_projects is not null)
+            {
+                <p>ความคืบหน้าเฉลี่ย @_projects.AverageProgress.ToString("N1")% · เสี่ยง @_projects.AtRisk โครงการ</p>
+                <DxGrid Data="_projects.Active.Concat(_projects.Closed).ToList()" ShowAllRows="true">
+                    <Columns>
+                        <DxGridDataColumn FieldName="@nameof(ExternalProjectDTO.Code)" Caption="รหัส" Width="120px" />
+                        <DxGridDataColumn FieldName="@nameof(ExternalProjectDTO.Name)" Caption="โครงการ" />
+                        <DxGridDataColumn FieldName="@nameof(ExternalProjectDTO.Phase)" Caption="Phase" Width="120px" />
+                        <DxGridDataColumn FieldName="@nameof(ExternalProjectDTO.PlannedProgress)" Caption="แผน %" DisplayFormat="N1" Width="90px" />
+                        <DxGridDataColumn FieldName="@nameof(ExternalProjectDTO.ActualProgress)" Caption="จริง %" DisplayFormat="N1" Width="90px" />
+                        <DxGridDataColumn FieldName="@nameof(ExternalProjectDTO.Health)" Caption="Health" Width="100px" />
+                        <DxGridDataColumn FieldName="@nameof(ExternalProjectDTO.ForecastEndDate)" Caption="คาดว่าเสร็จ" Width="120px" />
+                    </Columns>
+                </DxGrid>
+            }
+        </DxTabPage>
+        <DxTabPage Text="SLA / Issue">
+            @if (_sla is not null)
+            {
+                <div class="cards">
+                    <StatCard Label="Compliance" Value="@($"{_sla.CompliancePercent:N1}%")" />
+                    <StatCard Label="Breached" Value="@_sla.Breached.ToString()" />
+                    <StatCard Label="At risk" Value="@_sla.AtRisk.ToString()" />
+                    <StatCard Label="Issue ทั้งหมด" Value="@_sla.Total.ToString()" />
+                </div>
+            }
+            @if (_aging is not null)
+            {
+                <AgingChart Summary="_aging" />
+            }
+        </DxTabPage>
+        @if (Auth.Has(Permissions.AnalyticsRead))
+        {
+            <DxTabPage Text="ข้อเสนอแนะ (ML)">
+                <div class="grid-2" style="margin-top:.75rem">
+                    <div class="card">
+                        <b>Next best action</b>
+                        <ul>@foreach (NextBestActionDTO a in _nba) { <li><b>@a.Action</b> ผ่าน @a.Channel — <span class="muted">@a.Reason</span>@if (a.Offer is not null) { <span> · เสนอ @a.Offer</span> }</li> }</ul>
+                        @if (_sendTime is not null) { <p>เวลาส่งที่เหมาะ: <b>@_sendTime.BestDayOfWeek @_sendTime.BestHourLocal:00</b> (ครั้งถัดไป @_sendTime.NextSendAt.ToLocalTime().ToString("g"))</p> }
+                    </div>
+                    <div class="card">
+                        <b>แนะนำสินค้า/บริการ</b>
+                        <ul>@foreach (RecommendationDTO r in _recs) { <li>@r.Name <span class="muted">(@r.Kind, @r.Score.ToString("N2")) — @r.Reason</span></li> }</ul>
+                        @if (_risk is not null)
+                        {
+                            <b>ปัจจัยความเสี่ยง</b>
+                            <ul>@foreach (var f in _risk.Result.TopFactors) { <li>@f.Name: @f.Contribution.ToString("N2")</li> }</ul>
+                            @foreach (string w in _risk.Warnings) { <div class="muted">⚠ @w</div> }
+                        }
+                    </div>
+                </div>
+            </DxTabPage>
+        }
+    </DxTabs>
+}
+
+<DxPopup @bind-Visible="_showActivity" HeaderText="สร้างกิจกรรม / นัดหมาย" Width="560px">
+    <DxFormLayout>
+        <DxFormLayoutItem Caption="ชนิด" ColSpanMd="6"><DxComboBox Data="Enum.GetValues<ActivityKind>()" @bind-Value="_activity.Kind" /></DxFormLayoutItem>
+        <DxFormLayoutItem Caption="กำหนด" ColSpanMd="6"><DxDateEdit @bind-Date="_activity.DueAt" TimeSectionVisible="true" /></DxFormLayoutItem>
+        <DxFormLayoutItem Caption="เรื่อง" ColSpanMd="12"><DxTextBox @bind-Text="_activity.Subject" /></DxFormLayoutItem>
+        <DxFormLayoutItem Caption="ระยะเวลา (นาที)" ColSpanMd="6"><DxSpinEdit @bind-Value="_activity.DurationMinutes" MinValue="0" /></DxFormLayoutItem>
+        <DxFormLayoutItem Caption="เตือนก่อน (นาที)" ColSpanMd="6"><DxSpinEdit @bind-Value="_activity.RemindBeforeMinutes" MinValue="0" /></DxFormLayoutItem>
+        <DxFormLayoutItem Caption="บันทึก" ColSpanMd="12"><DxMemo @bind-Text="_activity.Notes" Rows="3" /></DxFormLayoutItem>
+    </DxFormLayout>
+    <div style="display:flex;justify-content:flex-end;gap:.5rem;margin-top:.75rem">
+        <DxButton Text="ยกเลิก" RenderStyle="ButtonRenderStyle.Secondary" Click="() => _showActivity = false" />
+        <DxButton Text="บันทึก" RenderStyle="ButtonRenderStyle.Primary" Click="CreateActivityAsync" />
+    </div>
+</DxPopup>
+
+@code {
+    [Parameter] public long Id { get; set; }
+
+    private Customer360DTO? _c;
+    private CustomerAgendaDTO? _agenda;
+    private ProjectPortfolioDTO? _projects;
+    private SlaComplianceDTO? _sla;
+    private IssueAgingSummaryDTO? _aging;
+    private CustomerRiskDTO? _risk;
+    private IReadOnlyList<NextBestActionDTO> _nba = [];
+    private IReadOnlyList<RecommendationDTO> _recs = [];
+    private SendTimeDTO? _sendTime;
+    private bool _showActivity;
+    private CreateActivityRequest _activity = new();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Step 1: ข้อมูลหลัก
+        _activity = new() { CustomerId = Id, Kind = ActivityKind.Call, DueAt = DateTimeOffset.Now.AddDays(1), RemindBeforeMinutes = 30 };
+        if (!await RunAsync(async () => _c = await Api.GetAsync<Customer360DTO>($"api/customers/{Id}/360")))
+        {
+            return;
+        }
+
+        // Step 2: ส่วนที่ดึงจากระบบอื่น/ML — โหลดพร้อมกัน แต่ละส่วนล้มเหลวได้โดยไม่กระทบส่วนอื่น
+        List<Task> tasks =
+        [
+            RunAsync(async () => _agenda = await Api.GetAsync<CustomerAgendaDTO>($"api/customers/{Id}/agenda")),
+            RunAsync(async () => _projects = await Api.GetAsync<ProjectPortfolioDTO>($"api/customers/{Id}/projects")),
+            RunAsync(async () => _aging = await Api.GetAsync<IssueAgingSummaryDTO>($"api/insights/issues/aging?customerId={Id}")),
+        ];
+        if (Auth.Has(Permissions.SlaRead)) tasks.Add(RunAsync(async () => _sla = await Api.GetAsync<SlaComplianceDTO>($"api/sla/customers/{Id}/compliance")));
+        if (Auth.Has(Permissions.AnalyticsRead))
+        {
+            tasks.Add(RunAsync(async () => _risk = await Api.GetAsync<CustomerRiskDTO>($"api/analytics/risk/{Id}")));
+            tasks.Add(RunAsync(async () => _nba = await Api.GetAsync<List<NextBestActionDTO>>($"api/analytics/nba/{Id}")));
+            tasks.Add(RunAsync(async () => _recs = await Api.GetAsync<List<RecommendationDTO>>($"api/analytics/recommendations/{Id}")));
+            tasks.Add(RunAsync(async () => _sendTime = await Api.GetAsync<SendTimeDTO>($"api/analytics/send-time/{Id}")));
+        }
+
+        await Task.WhenAll(tasks);
+    }
+
+    private async Task CreateActivityAsync()
+    {
+        if (await RunAsync(() => Api.PostAsync<ActivityDTO>("api/activities", _activity)))
+        {
+            _showActivity = false;
+            await OnParametersSetAsync();
+        }
+    }
+
+    private async Task CompleteAsync(ActivityDTO a)
+    {
+        if (await RunAsync(() => Api.PostAsync<object>($"api/activities/{a.Id}/complete", new CompleteActivityRequest())))
+        {
+            await OnParametersSetAsync();
+        }
+    }
+}

@@ -1,0 +1,108 @@
+@page "/analytics"
+@inherits PageBase
+
+@* Analytics: พยากรณ์ยอดขาย, churn, ต่อสัญญา MA/upsell, lead scoring, segmentation *@
+<div class="topbar"><h1>Analytics</h1></div>
+<ErrorBanner Message="@Error" />
+<DxTabs>
+    <DxTabPage Text="พยากรณ์ยอดขาย">
+        @if (_forecast is not null)
+        {
+            <p class="muted">@_forecast.Method · MAPE @_forecast.Mape.ToString("N1")%</p>
+            <DxChart Data="_series" Height="340px">
+                <DxChartLineSeries Name="ยอดจริง" T="Point" TArgument="DateTime" TValue="double" Filter="p => p.Kind == 0" ArgumentField="p => p.Period" ValueField="p => p.Value" />
+                <DxChartLineSeries Name="พยากรณ์" T="Point" TArgument="DateTime" TValue="double" Filter="p => p.Kind == 1" ArgumentField="p => p.Period" ValueField="p => p.Value" />
+                <DxChartRangeAreaSeries Name="ช่วง 80%" T="Point" TArgument="DateTime" TValue="double" Filter="p => p.Kind == 1" ArgumentField="p => p.Period" StartValueField="p => p.Lower" EndValueField="p => p.Upper" />
+                <DxChartLegend Position="RelativePosition.Outside" HorizontalAlignment="HorizontalAlignment.Center" VerticalAlignment="VerticalEdge.Bottom" />
+            </DxChart>
+        }
+    </DxTabPage>
+    <DxTabPage Text="Churn">
+        <DxGrid Data="_churn" ShowAllRows="true">
+            <Columns>
+                <DxGridDataColumn FieldName="@nameof(ChurnRiskDTO.CustomerName)" Caption="ลูกค้า">
+                    <CellDisplayTemplate>@{ var c = (ChurnRiskDTO)context.DataItem; }<a href="customers/@c.CustomerId">@c.CustomerName</a></CellDisplayTemplate>
+                </DxGridDataColumn>
+                <DxGridDataColumn FieldName="@nameof(ChurnRiskDTO.Probability)" Caption="ความน่าจะเป็น" DisplayFormat="P0" Width="130px" />
+                <DxGridDataColumn FieldName="@nameof(ChurnRiskDTO.Level)" Caption="ระดับ" Width="100px" />
+                <DxGridDataColumn FieldName="@nameof(ChurnRiskDTO.RecommendedAction)" Caption="ข้อเสนอแนะ" />
+            </Columns>
+        </DxGrid>
+    </DxTabPage>
+    <DxTabPage Text="ต่อสัญญา MA / Upsell">
+        @if (_renewals is not null)
+        {
+            <div class="cards">
+                <StatCard Label="มูลค่าสัญญาที่จะหมด" Value="@_renewals.TotalAtStake.ToString("N0")" />
+                <StatCard Label="คาดว่าจะต่อ" Value="@_renewals.ExpectedRenewal.ToString("N0")" />
+            </div>
+            <DxGrid Data="_renewals.Contracts" ShowAllRows="true">
+                <Columns>
+                    <DxGridDataColumn FieldName="@nameof(RenewalForecastDTO.ContractNo)" Caption="สัญญา" Width="140px" />
+                    <DxGridDataColumn FieldName="@nameof(RenewalForecastDTO.EndDate)" Caption="หมดอายุ" Width="110px" />
+                    <DxGridDataColumn FieldName="@nameof(RenewalForecastDTO.RenewalProbability)" Caption="โอกาสต่อ" DisplayFormat="P0" Width="110px" />
+                    <DxGridDataColumn FieldName="@nameof(RenewalForecastDTO.ExpectedRenewalValue)" Caption="มูลค่าคาดการณ์" DisplayFormat="N0" Width="140px" />
+                    <DxGridDataColumn FieldName="@nameof(RenewalForecastDTO.ExpansionProbability)" Caption="โอกาส upsell" DisplayFormat="P0" Width="120px" />
+                    <DxGridDataColumn FieldName="@nameof(RenewalForecastDTO.SuggestedUpsell)" Caption="เสนอ" />
+                </Columns>
+            </DxGrid>
+        }
+    </DxTabPage>
+    <DxTabPage Text="Lead scoring">
+        <DxGrid Data="_leads" ShowAllRows="true">
+            <Columns>
+                <DxGridDataColumn FieldName="@nameof(LeadScoreDTO.Title)" Caption="ดีล" />
+                <DxGridDataColumn FieldName="@nameof(LeadScoreDTO.Score)" Caption="คะแนน (0-100)" DisplayFormat="N0" Width="100px" />
+                <DxGridDataColumn FieldName="@nameof(LeadScoreDTO.Grade)" Caption="เกรด" Width="80px" />
+                <DxGridDataColumn FieldName="@nameof(LeadScoreDTO.TopFactors)" Caption="ปัจจัยหลัก">
+                    <CellDisplayTemplate>@string.Join(", ", ((LeadScoreDTO)context.DataItem).TopFactors.Select(f => $"{f.Feature} ({f.Contribution:+0.00;-0.00})"))</CellDisplayTemplate>
+                </DxGridDataColumn>
+            </Columns>
+        </DxGrid>
+    </DxTabPage>
+    <DxTabPage Text="Segmentation">
+        <div style="margin:.5rem 0;display:flex;gap:.5rem">
+            <DxButton Text="คำนวณกลุ่มใหม่" Click="SegmentAsync" />
+            @if (Auth.Has(Permissions.CustomerWrite)) { <DxButton Text="คำนวณและบันทึกลงลูกค้า" Click="() => SegmentAsync(true)" /> }
+        </div>
+        @if (_segments is not null)
+        {
+            <DxChart Data="_segments.Segments" Height="260px">
+                <DxChartBarSeries Name="จำนวนลูกค้า" T="SegmentDTO" TArgument="string" TValue="int" ArgumentField="s => s.Name" ValueField="s => s.Size" />
+                <DxChartLegend Visible="false" />
+            </DxChart>
+        }
+    </DxTabPage>
+</DxTabs>
+
+@code {
+    private ForecastDTO? _forecast;
+    private List<Point> _series = [];
+    private IReadOnlyList<ChurnRiskDTO> _churn = [];
+    private RenewalSummaryDTO? _renewals;
+    private IReadOnlyList<LeadScoreDTO> _leads = [];
+    private SegmentationResultDTO? _segments;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Step 1: โหลดพร้อมกัน (แต่ละส่วนล้มเหลวได้อิสระ)
+        await Task.WhenAll(
+            RunAsync(async () =>
+            {
+                _forecast = await Api.GetAsync<ForecastDTO>("api/analytics/forecast/sales?horizonMonths=6");
+                _series = _forecast.History.Select(p => new Point(0, p.Period.ToDateTime(TimeOnly.MinValue), p.Forecast, p.Forecast, p.Forecast))
+                    .Concat(_forecast.Points.Select(p => new Point(1, p.Period.ToDateTime(TimeOnly.MinValue), p.Forecast, p.Lower, p.Upper))).ToList();
+            }),
+            RunAsync(async () => _churn = await Api.GetAsync<List<ChurnRiskDTO>>("api/analytics/churn?top=50&minProbability=0.3")),
+            RunAsync(async () => _renewals = await Api.GetAsync<RenewalSummaryDTO>("api/analytics/renewals?withinDays=180")),
+            RunAsync(async () => _leads = await Api.GetAsync<List<LeadScoreDTO>>("api/analytics/leads?top=50")));
+    }
+
+    private Task SegmentAsync() => SegmentAsync(false);
+
+    private Task SegmentAsync(bool persist) => RunAsync(async () => _segments = persist
+        ? await Api.PostAsync<SegmentationResultDTO>("api/analytics/segments", null)
+        : await Api.GetAsync<SegmentationResultDTO>("api/analytics/segments"));
+
+    private sealed record Point(int Kind, DateTime Period, double Value, double Lower, double Upper);
+}

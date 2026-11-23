@@ -1,0 +1,56 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+@inject AuthState Auth
+@inject NavigationManager Nav
+
+@* โครงหน้า: เมนูซ้ายแสดงเฉพาะส่วนที่ผู้ใช้มีสิทธิ์ (API ตรวจสิทธิ์ซ้ำทุกคำขอ) *@
+@if (!_ready)
+{
+    <div class="app-loading">กำลังโหลด…</div>
+}
+else if (!Auth.IsAuthenticated)
+{
+    <Login />
+}
+else
+{
+    <div class="shell">
+        <nav>
+            <div class="brand">CustomerMgnt</div>
+            <NavLink href="" Match="NavLinkMatch.All">ภาพรวม</NavLink>
+            @if (Auth.Has(Permissions.CustomerRead)) { <NavLink href="customers">ลูกค้า</NavLink> }
+            @if (Auth.Has(Permissions.ChatRead)) { <NavLink href="inbox">ศูนย์แชท</NavLink> }
+            @if (Auth.Has(Permissions.SalesRead)) { <NavLink href="pipeline">Pipeline</NavLink> }
+            @if (Auth.Has(Permissions.RequestRead)) { <NavLink href="requests">คำร้อง / TOR</NavLink> }
+            @if (Auth.Has(Permissions.SlaRead)) { <NavLink href="sla">SLA</NavLink> }
+            @if (Auth.Has(Permissions.CustomerRead)) { <NavLink href="insights">Issue / โครงการ</NavLink> }
+            @if (Auth.Has(Permissions.AnalyticsRead)) { <NavLink href="analytics">Analytics</NavLink> }
+            <hr />
+            <div class="muted" style="padding:0 .75rem;color:#9aa3b5">@Auth.User?.UserName</div>
+            <a href="" @onclick="LogoutAsync" @onclick:preventDefault>ออกจากระบบ</a>
+        </nav>
+        <main>@Body</main>
+    </div>
+}
+
+@code {
+    private bool _ready;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Step 1: โหลด token จาก sessionStorage แล้วติดตามการเปลี่ยนสถานะ
+        Auth.Changed += OnAuthChanged;
+        await Auth.EnsureLoadedAsync();
+        _ready = true;
+    }
+
+    private void OnAuthChanged() => InvokeAsync(StateHasChanged);
+
+    private async Task LogoutAsync()
+    {
+        await Auth.LogoutAsync();
+        Nav.NavigateTo("");
+    }
+
+    public void Dispose() => Auth.Changed -= OnAuthChanged;
+}

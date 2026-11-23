@@ -1,0 +1,12 @@
+@* การ์ดตัวเลขสรุป *@
+<div class="card">
+    <div class="label">@Label</div>
+    <div class="value">@Value</div>
+    @if (Hint is not null) { <div class="muted">@Hint</div> }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = "";
+    [Parameter] public string? Value { get; set; }
+    [Parameter] public string? Hint { get; set; }
+}

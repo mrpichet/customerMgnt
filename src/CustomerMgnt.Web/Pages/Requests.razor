@@ -1,0 +1,109 @@
+@page "/requests"
+@inherits PageBase
+
+@* คำร้อง/TOR: ตัดสิน (ประเมิน/อนุมัติ/ปฏิเสธ) และส่งต่อไป ProjectMgnt / requirementMgnt / IssueTracking *@
+<div class="topbar">
+    <h1>คำร้อง / TOR</h1>
+    <div style="display:flex;gap:.5rem;align-items:center">
+        <DxComboBox Data="Enum.GetValues<RequestStatus>()" @bind-Value="_status" NullText="ทุกสถานะ" ClearButtonDisplayMode="DataEditorClearButtonDisplayMode.Auto" Width="160px" />
+        <DxButton Text="รีเฟรช" Click="LoadAsync" />
+    </div>
+</div>
+<ErrorBanner Message="@Error" />
+<DxGrid Data="_items" ShowAllRows="true" FocusedRowEnabled="true" FocusedRowChanged="e => _current = e.DataItem as CustomerRequestDTO">
+    <Columns>
+        <DxGridDataColumn FieldName="@nameof(CustomerRequestDTO.RequestNo)" Caption="เลขที่" Width="140px" />
+        <DxGridDataColumn FieldName="@nameof(CustomerRequestDTO.Kind)" Caption="ชนิด" Width="120px" />
+        <DxGridDataColumn FieldName="@nameof(CustomerRequestDTO.Title)" Caption="เรื่อง" />
+        <DxGridDataColumn FieldName="@nameof(CustomerRequestDTO.SeverityCode)" Caption="Severity" Width="90px" />
+        <DxGridDataColumn FieldName="@nameof(CustomerRequestDTO.Status)" Caption="สถานะ" Width="120px" />
+        <DxGridDataColumn FieldName="@nameof(CustomerRequestDTO.CreatedAt)" Caption="วันที่" DisplayFormat="d" Width="110px" />
+    </Columns>
+</DxGrid>
+
+@if (_current is not null)
+{
+    <div class="card" style="margin-top:1rem">
+        <h3>@_current.RequestNo — @_current.Title</h3>
+        <p class="muted">@_current.Description</p>
+        <DxGrid Data="_current.Items" ShowAllRows="true">
+            <Columns>
+                <DxGridDataColumn FieldName="@nameof(TorItemDTO.ItemNo)" Caption="ข้อ" Width="80px" />
+                <DxGridDataColumn FieldName="@nameof(TorItemDTO.Text)" Caption="รายละเอียด" />
+                <DxGridDataColumn FieldName="@nameof(TorItemDTO.Priority)" Caption="ความสำคัญ" Width="110px" />
+                <DxGridDataColumn FieldName="@nameof(TorItemDTO.Mandatory)" Caption="บังคับ" Width="80px" />
+                <DxGridDataColumn FieldName="@nameof(TorItemDTO.RequirementKey)" Caption="Requirement" Width="130px" />
+            </Columns>
+        </DxGrid>
+        <div style="display:flex;gap:.5rem;margin-top:.75rem;flex-wrap:wrap;align-items:center">
+            @if (Auth.Has(Permissions.RequestWrite) && _current.Status is RequestStatus.New or RequestStatus.UnderReview)
+            {
+                <DxTextBox @bind-Text="_comment" NullText="ความเห็น" Width="260px" />
+                @if (_current.Status == RequestStatus.New) { <DxButton Text="เริ่มประเมิน" Click="() => DecideAsync(RequestStatus.UnderReview)" /> }
+                <DxButton Text="อนุมัติ" RenderStyle="ButtonRenderStyle.Success" Click="() => DecideAsync(RequestStatus.Approved)" />
+                <DxButton Text="ปฏิเสธ" RenderStyle="ButtonRenderStyle.Danger" Click="() => DecideAsync(RequestStatus.Rejected)" />
+            }
+            @if (Auth.Has(Permissions.RequestForward) && _current.Status == RequestStatus.Approved)
+            {
+                <DxTextBox @bind-Text="_forward.ProjectCode" NullText="รหัสโครงการ (A-Z0-9)" Width="160px" />
+                <DxSpinEdit @bind-Value="_forward.ProjectManagerId" NullText="PM (user id)" MinValue="1L" Width="130px" />
+                <DxSpinEdit @bind-Value="_forward.IssueTrackingProjectId" NullText="Project ใน IssueTracking" MinValue="1L" Width="170px" />
+                <DxCheckBox @bind-Checked="_forward.ToProjectMgnt">ProjectMgnt</DxCheckBox>
+                <DxCheckBox @bind-Checked="_forward.ToRequirementMgnt">requirementMgnt</DxCheckBox>
+                <DxCheckBox @bind-Checked="_forward.ToIssueTracking">IssueTracking</DxCheckBox>
+                <DxButton Text="ส่งต่อ" RenderStyle="ButtonRenderStyle.Primary" Click="ForwardAsync" />
+            }
+            @if (_current.ForwardSignature is not null)
+            {
+                <DxButton Text="ตรวจลายเซ็น" Click="VerifyAsync" /> @if (_verified is { } v) { <span class="badge @(v ? "good" : "bad")">@(v ? "ลายเซ็นถูกต้อง" : "ลายเซ็นไม่ถูกต้อง")</span> }
+            }
+        </div>
+        @if (_forwardResult is not null)
+        {
+            <ul>@foreach (ExternalLinkDTO l in _forwardResult.Links) { <li>@l.System / @l.EntityType #@l.ExternalId @l.Title</li> }
+                @foreach (string w in _forwardResult.Warnings) { <li class="muted">⚠ @w</li> }</ul>
+        }
+    </div>
+}
+
+@code {
+    private IReadOnlyList<CustomerRequestDTO> _items = [];
+    private CustomerRequestDTO? _current;
+    private RequestStatus? _status;
+    private string? _comment;
+    private ForwardRequestOptions _forward = new() { ToProjectMgnt = true, ToRequirementMgnt = true };
+    private ForwardResultDTO? _forwardResult;
+    private bool? _verified;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private Task LoadAsync() => RunAsync(async () =>
+    {
+        _items = await Api.GetAsync<List<CustomerRequestDTO>>("api/requests" + (_status is { } s ? "?status=" + s : ""));
+        _current = _current is null ? null : _items.FirstOrDefault(i => i.Id == _current.Id);
+    });
+
+    private async Task DecideAsync(RequestStatus status)
+    {
+        if (_current is null) return;
+        if (await RunAsync(async () => _current = await Api.PostAsync<CustomerRequestDTO>($"api/requests/{_current.Id}/decision", new RequestDecisionRequest { Version = _current.Version, Status = status, Comment = _comment })))
+        {
+            _comment = null;
+            await LoadAsync();
+        }
+    }
+
+    private async Task ForwardAsync()
+    {
+        if (_current is null) return;
+        if (await RunAsync(async () => _forwardResult = await Api.PostAsync<ForwardResultDTO>($"api/requests/{_current.Id}/forward", _forward)))
+        {
+            await LoadAsync();
+        }
+    }
+
+    private Task VerifyAsync() => _current is null ? Task.CompletedTask
+        : RunAsync(async () => _verified = (await Api.GetAsync<SignatureCheck>($"api/requests/{_current.Id}/verify-signature")).Valid);
+
+    private sealed record SignatureCheck(long RequestId, bool Valid);
+}

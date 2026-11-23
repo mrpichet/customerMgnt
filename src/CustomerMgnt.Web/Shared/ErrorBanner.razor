@@ -1,0 +1,10 @@
+@* แสดงข้อความผิดพลาด (ถ้ามี) *@
+@if (!string.IsNullOrEmpty(Message))
+{
+    <div class="error" role="alert">@Message</div>
+}
+
+@code {
+    /// <summary>ข้อความ</summary>
+    [Parameter] public string? Message { get; set; }
+}

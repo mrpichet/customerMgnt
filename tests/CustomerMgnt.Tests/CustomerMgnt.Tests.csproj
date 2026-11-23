@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Unit tests (MSTest) ของ business logic, ML, SLA, webhook และ integration test ของ data layer
+    integration test ฐานข้อมูลรันเมื่อมีตัวแปร CUSTOMERMGNT_TEST_POSTGRES / CUSTOMERMGNT_TEST_SQLSERVER (connection string) เท่านั้น
+  -->
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <OutputType>Exe</OutputType>
+    <EnableMSTestRunner>true</EnableMSTestRunner>
+    <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
+    <NoWarn>$(NoWarn);CA1707;CA1515;CA2007;CA1861;CA1001;MSTEST0037;CS1591</NoWarn>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="MSTest" />
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\CustomerMgnt.Core\CustomerMgnt.Core.csproj" />
+    <ProjectReference Include="..\..\src\CustomerMgnt.Data\CustomerMgnt.Data.csproj" />
+    <ProjectReference Include="..\..\src\CustomerMgnt.Integrations\CustomerMgnt.Integrations.csproj" />
+    <ProjectReference Include="..\..\src\CustomerMgnt.AI\CustomerMgnt.AI.csproj" />
+    <ProjectReference Include="..\..\src\CustomerMgnt.Api\CustomerMgnt.Api.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Using Include="Microsoft.VisualStudio.TestTools.UnitTesting" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,22 @@
+<Project>
+  <!-- ค่าตั้งการ build ร่วมของทุกโปรเจกต์ใน CustomerMgnt (โปรเจกต์ใน external/common ใช้ไฟล์ของตัวเอง) -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- XML doc comment เป็นส่วนหนึ่งของงานส่งมอบ: ใช้สร้าง API catalog ให้ Claude/นักพัฒนาอ่าน -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- SYSLIB5006: ML-DSA / ML-KEM เป็น Experimental ใน .NET 10 บางรุ่น -->
+    <NoWarn>$(NoWarn);CS1591;CA1848;CA1873;CA1711;CA1720;CA1822;CA1716;CA1002;CA1819;CA2227;SYSLIB5006</NoWarn>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <!-- Security: deterministic build + ตรวจช่องโหว่ของ package ทุกระดับ -->
+    <Deterministic>true</Deterministic>
+    <NuGetAudit>true</NuGetAudit>
+    <NuGetAuditMode>all</NuGetAuditMode>
+    <Version>1.0.0</Version>
+    <Authors>mrpichet</Authors>
+    <RepositoryUrl>https://github.com/mrpichet/customerMgnt</RepositoryUrl>
+  </PropertyGroup>
+</Project>

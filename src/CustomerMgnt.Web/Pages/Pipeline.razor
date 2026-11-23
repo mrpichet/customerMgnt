@@ -1,0 +1,97 @@
+@page "/pipeline"
+@inherits PageBase
+
+@* Sales pipeline: สรุปตาม stage + รายการดีล พร้อมย้าย stage *@
+<div class="topbar">
+    <h1>Pipeline</h1>
+    <div style="display:flex;gap:.5rem;align-items:center">
+        <DxCheckBox @bind-Checked="_mine">เฉพาะของฉัน</DxCheckBox>
+        <DxButton Text="รีเฟรช" Click="LoadAsync" />
+        @if (Auth.Has(Permissions.SalesWrite)) { <DxButton Text="+ Lead" RenderStyle="ButtonRenderStyle.Primary" Click="() => _showNew = true" /> }
+    </div>
+</div>
+<ErrorBanner Message="@Error" />
+@if (_summary is not null)
+{
+    <div class="cards">
+        <StatCard Label="มูลค่าที่เปิดอยู่" Value="@_summary.TotalOpenAmount.ToString("N0")" />
+        <StatCard Label="มูลค่าถ่วงน้ำหนัก" Value="@_summary.WeightedOpenAmount.ToString("N0")" />
+        <StatCard Label="Win rate" Value="@_summary.WinRate.ToString("P0")" />
+    </div>
+    <DxChart Data="_summary.Stages" Height="260px">
+        <DxChartBarSeries Name="มูลค่า" T="PipelineStageSummaryDTO" TArgument="string" TValue="decimal" ArgumentField="s => s.Stage.ToString()" ValueField="s => s.Amount" />
+        <DxChartBarSeries Name="ถ่วงน้ำหนัก" T="PipelineStageSummaryDTO" TArgument="string" TValue="decimal" ArgumentField="s => s.Stage.ToString()" ValueField="s => s.WeightedAmount" />
+        <DxChartLegend Position="RelativePosition.Outside" HorizontalAlignment="HorizontalAlignment.Center" VerticalAlignment="VerticalEdge.Bottom" />
+    </DxChart>
+}
+<DxGrid Data="_items" ShowAllRows="true">
+    <Columns>
+        <DxGridDataColumn FieldName="@nameof(OpportunityDTO.CustomerName)" Caption="ลูกค้า">
+            <CellDisplayTemplate>@{ var o = (OpportunityDTO)context.DataItem; }<a href="customers/@o.CustomerId">@(o.CustomerName ?? o.CustomerId.ToString())</a></CellDisplayTemplate>
+        </DxGridDataColumn>
+        <DxGridDataColumn FieldName="@nameof(OpportunityDTO.Title)" Caption="ดีล" />
+        <DxGridDataColumn FieldName="@nameof(OpportunityDTO.Amount)" Caption="มูลค่า" DisplayFormat="N0" Width="120px" />
+        <DxGridDataColumn FieldName="@nameof(OpportunityDTO.Score)" Caption="Lead score (0-100)" DisplayFormat="N0" Width="110px" />
+        <DxGridDataColumn FieldName="@nameof(OpportunityDTO.ExpectedCloseDate)" Caption="คาดปิด" Width="110px" />
+        <DxGridDataColumn FieldName="@nameof(OpportunityDTO.Stage)" Caption="Stage" Width="170px">
+            <CellDisplayTemplate>@{ var o = (OpportunityDTO)context.DataItem; }
+                @if (Auth.Has(Permissions.SalesWrite) && !o.IsClosed)
+                {
+                    <DxComboBox Data="Enum.GetValues<PipelineStage>()" Value="o.Stage" ValueChanged="(PipelineStage s) => MoveAsync(o, s)" SizeMode="SizeMode.Small" />
+                }
+                else { @o.Stage }
+            </CellDisplayTemplate>
+        </DxGridDataColumn>
+    </Columns>
+</DxGrid>
+
+<DxPopup @bind-Visible="_showNew" HeaderText="สร้าง Lead / Opportunity" Width="520px">
+    <DxFormLayout>
+        <DxFormLayoutItem Caption="รหัสลูกค้า (Id)" ColSpanMd="6"><DxSpinEdit @bind-Value="_new.CustomerId" MinValue="1L" /></DxFormLayoutItem>
+        <DxFormLayoutItem Caption="มูลค่า" ColSpanMd="6"><DxSpinEdit @bind-Value="_new.Amount" MinValue="0m" /></DxFormLayoutItem>
+        <DxFormLayoutItem Caption="ชื่อดีล" ColSpanMd="12"><DxTextBox @bind-Text="_new.Title" /></DxFormLayoutItem>
+        <DxFormLayoutItem Caption="คาดว่าจะปิด" ColSpanMd="6"><DxDateEdit @bind-Date="_new.ExpectedCloseDate" /></DxFormLayoutItem>
+        <DxFormLayoutItem Caption="แหล่งที่มา" ColSpanMd="6"><DxTextBox @bind-Text="_new.Source" /></DxFormLayoutItem>
+    </DxFormLayout>
+    <div style="display:flex;justify-content:flex-end;gap:.5rem;margin-top:.75rem">
+        <DxButton Text="ยกเลิก" RenderStyle="ButtonRenderStyle.Secondary" Click="() => _showNew = false" />
+        <DxButton Text="บันทึก" RenderStyle="ButtonRenderStyle.Primary" Click="CreateAsync" />
+    </div>
+</DxPopup>
+
+@code {
+    private PipelineSummaryDTO? _summary;
+    private IReadOnlyList<OpportunityDTO> _items = [];
+    private bool _mine;
+    private bool _showNew;
+    private CreateOpportunityRequest _new = NewRequest();
+
+    private static CreateOpportunityRequest NewRequest() => new() { ExpectedCloseDate = DateOnly.FromDateTime(DateTime.Today.AddMonths(2)) };
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        await RunAsync(async () => _summary = await Api.GetAsync<PipelineSummaryDTO>("api/opportunities/summary"));
+        await RunAsync(async () => _items = await Api.GetAsync<List<OpportunityDTO>>($"api/opportunities?openOnly=true&mine={_mine.ToString().ToLowerInvariant()}"));
+    }
+
+    private async Task MoveAsync(OpportunityDTO o, PipelineStage stage)
+    {
+        // ต้องส่ง version ล่าสุด (optimistic concurrency) — ถ้ามีคนแก้ก่อน API ตอบ 409
+        if (await RunAsync(() => Api.PostAsync<OpportunityDTO>($"api/opportunities/{o.Id}/stage", new MoveStageRequest { Version = o.Version, Stage = stage })))
+        {
+            await LoadAsync();
+        }
+    }
+
+    private async Task CreateAsync()
+    {
+        if (await RunAsync(() => Api.PostAsync<OpportunityDTO>("api/opportunities", _new)))
+        {
+            _showNew = false;
+            _new = NewRequest();
+            await LoadAsync();
+        }
+    }
+}

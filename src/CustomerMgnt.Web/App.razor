@@ -1,0 +1,10 @@
+@* Router หลัก: ทุกหน้าใช้ MainLayout (ซึ่งตรวจการเข้าสู่ระบบ) ยกเว้นหน้า login *@
+<Router AppAssembly="@typeof(App).Assembly">
+    <Found Context="routeData">
+        <RouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)" />
+        <FocusOnNavigate RouteData="@routeData" Selector="h1" />
+    </Found>
+    <NotFound>
+        <LayoutView Layout="@typeof(MainLayout)"><p>ไม่พบหน้าที่ต้องการ</p></LayoutView>
+    </NotFound>
+</Router>

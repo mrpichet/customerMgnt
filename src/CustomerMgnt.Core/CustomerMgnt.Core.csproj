@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    CustomerMgnt.Core: Business logic ล้วน (Pure C#) — Domain (*DTO), DataAccess (I*DAO), Services (*Service), Analytics (ML)
+    ไม่รู้จัก HTTP, SQL หรือ MCP → ใช้ร่วมกันได้ทั้ง Web API, MCP server, unit test
+  -->
+  <PropertyGroup>
+    <RootNamespace>CustomerMgnt.Core</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\external\common\src\Common.Core\Common.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Options" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
+    <PackageReference Include="Microsoft.Extensions.Options.DataAnnotations" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="CustomerMgnt.Tests" />
+  </ItemGroup>
+</Project>

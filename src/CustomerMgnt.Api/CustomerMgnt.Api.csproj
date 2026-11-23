@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <!--
+    CustomerMgnt.Api: REST Web API (ASP.NET Core controllers) + MCP server over HTTP (/mcp) + โฮสต์ Blazor WASM UI (wwwroot)
+    business logic ทั้งหมดอยู่ใน CustomerMgnt.Core — ไฟล์ในโปรเจกต์นี้ทำหน้าที่แปลง HTTP ↔ service เท่านั้น
+  -->
+  <PropertyGroup>
+    <RootNamespace>CustomerMgnt.Api</RootNamespace>
+    <UserSecretsId>customermgnt-api-5d2a9c71</UserSecretsId>
+    <ServerGarbageCollection>true</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
+    <TieredPGO>true</TieredPGO>
+    <InvariantGlobalization>false</InvariantGlobalization>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\CustomerMgnt.Core\CustomerMgnt.Core.csproj" />
+    <ProjectReference Include="..\CustomerMgnt.Data\CustomerMgnt.Data.csproj" />
+    <ProjectReference Include="..\CustomerMgnt.Integrations\CustomerMgnt.Integrations.csproj" />
+    <ProjectReference Include="..\CustomerMgnt.AI\CustomerMgnt.AI.csproj" />
+    <ProjectReference Include="..\..\external\common\src\Common.AspNetCore\Common.AspNetCore.csproj" />
+    <ProjectReference Include="..\..\external\common\src\Common.Logging\Common.Logging.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <PackageReference Include="ModelContextProtocol.AspNetCore" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" />
+  </ItemGroup>
+  <!-- UI (Blazor WASM + DevExpress) แนบเมื่อ build ด้วย -p:IncludeWebUi=true (Dockerfile ใช้แบบนี้)
+       แยกเป็นตัวเลือกเพื่อให้ build/test ฝั่ง API ได้โดยไม่ต้องมี DevExpress license -->
+  <ItemGroup Condition="'$(IncludeWebUi)' == 'true'">
+    <ProjectReference Include="..\CustomerMgnt.Web\CustomerMgnt.Web.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="CustomerMgnt.Tests" />
+  </ItemGroup>
+</Project>

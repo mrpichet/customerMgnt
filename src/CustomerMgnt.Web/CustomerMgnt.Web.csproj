@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk.BlazorWebAssembly">
+  <!--
+    CustomerMgnt.Web: Blazor WebAssembly UI (DevExpress Blazor 26.1)
+    - โฮสต์โดย CustomerMgnt.Api (same origin → ไม่ต้องเปิด CORS, CSP connect-src 'self')
+    - ใช้ DTO/enum จาก CustomerMgnt.Core โดยตรง (ไม่เรียก service ฝั่ง client)
+    - ต้องมี DevExpress license key ตอน build (ไฟล์ DevExpress_License.txt หรือตัวแปร DevExpress_License)
+  -->
+  <PropertyGroup>
+    <RootNamespace>CustomerMgnt.Web</RootNamespace>
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <BlazorWebAssemblyLoadAllGlobalizationData>true</BlazorWebAssemblyLoadAllGlobalizationData>
+    <!-- โค้ด UI ไม่ใช่ library: ไม่บังคับ XML doc ทุก member ของ component -->
+    <NoWarn>$(NoWarn);CS1591;CA1515;CA2007;CA1031;CA1812</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\CustomerMgnt.Core\CustomerMgnt.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" PrivateAssets="all" />
+    <PackageReference Include="DevExpress.Blazor" />
+  </ItemGroup>
+</Project>

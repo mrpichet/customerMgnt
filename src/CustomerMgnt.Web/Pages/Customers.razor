@@ -1,0 +1,104 @@
+@page "/customers"
+@inherits PageBase
+@inject NavigationManager Nav
+
+@* ทะเบียนลูกค้า: ค้นหา + ลงทะเบียนบุคคล/นิติบุคคล *@
+<div class="topbar">
+    <h1>ลูกค้า</h1>
+    <div style="display:flex;gap:.5rem;align-items:center">
+        <DxTextBox @bind-Text="_text" NullText="ค้นหาชื่อ/รหัส/อีเมล" Width="260px" />
+        <DxComboBox Data="KindItems" @bind-Value="_kind" NullText="ทุกประเภท" ClearButtonDisplayMode="DataEditorClearButtonDisplayMode.Auto" Width="150px" />
+        <DxButton Text="ค้นหา" Click="() => LoadAsync(1)" />
+        @if (Auth.Has(Permissions.CustomerWrite)) { <DxButton Text="+ ลงทะเบียน" RenderStyle="ButtonRenderStyle.Primary" Click="() => _showNew = true" /> }
+    </div>
+</div>
+<ErrorBanner Message="@Error" />
+
+<DxGrid Data="_page?.Items" ShowAllRows="true" RowClick="OnRowClick" CssClass="clickable">
+    <Columns>
+        <DxGridDataColumn FieldName="@nameof(CustomerDTO.Code)" Caption="รหัส" Width="130px" />
+        <DxGridDataColumn FieldName="@nameof(CustomerDTO.DisplayName)" Caption="ชื่อ" />
+        <DxGridDataColumn FieldName="@nameof(CustomerDTO.Kind)" Caption="ประเภท" Width="100px" />
+        <DxGridDataColumn FieldName="@nameof(CustomerDTO.Status)" Caption="สถานะ" Width="100px" />
+        <DxGridDataColumn FieldName="@nameof(CustomerDTO.Segment)" Caption="กลุ่ม" Width="140px" />
+        <DxGridDataColumn FieldName="@nameof(CustomerDTO.Email)" Caption="อีเมล" />
+        <DxGridDataColumn FieldName="@nameof(CustomerDTO.Phone)" Caption="โทร" Width="130px" />
+    </Columns>
+</DxGrid>
+@if (_page is not null)
+{
+    <div style="margin-top:.5rem;display:flex;gap:.5rem;align-items:center">
+        <DxButton Text="‹" Enabled="@(_page.Page > 1)" Click="() => LoadAsync(_page.Page - 1)" />
+        <span>หน้า @_page.Page / @Math.Max(1, _page.TotalPages) (ทั้งหมด @_page.Total)</span>
+        <DxButton Text="›" Enabled="@(_page.Page < _page.TotalPages)" Click="() => LoadAsync(_page.Page + 1)" />
+    </div>
+}
+
+<DxPopup @bind-Visible="_showNew" HeaderText="ลงทะเบียนลูกค้า" Width="640px">
+    <ErrorBanner Message="@_formError" />
+    <DxFormLayout>
+        <DxFormLayoutItem Caption="ประเภท" ColSpanMd="6"><DxComboBox Data="KindItems" @bind-Value="_new.Kind" /></DxFormLayoutItem>
+        <DxFormLayoutItem Caption="สถานะ" ColSpanMd="6"><DxComboBox Data="Enum.GetValues<CustomerStatus>()" @bind-Value="_new.Status" /></DxFormLayoutItem>
+        @if (_new.Kind == CustomerKind.Person)
+        {
+            <DxFormLayoutItem Caption="ชื่อ" ColSpanMd="6"><DxTextBox @bind-Text="_new.FirstName" /></DxFormLayoutItem>
+            <DxFormLayoutItem Caption="นามสกุล" ColSpanMd="6"><DxTextBox @bind-Text="_new.LastName" /></DxFormLayoutItem>
+        }
+        else
+        {
+            <DxFormLayoutItem Caption="ชื่อนิติบุคคล" ColSpanMd="12"><DxTextBox @bind-Text="_new.LegalName" /></DxFormLayoutItem>
+            <DxFormLayoutItem Caption="อุตสาหกรรม" ColSpanMd="6"><DxTextBox @bind-Text="_new.Industry" /></DxFormLayoutItem>
+            <DxFormLayoutItem Caption="จำนวนพนักงาน" ColSpanMd="6"><DxSpinEdit @bind-Value="_new.EmployeeCount" MinValue="0" /></DxFormLayoutItem>
+        }
+        <DxFormLayoutItem Caption="เลขผู้เสียภาษี / บัตร (เข้ารหัส)" ColSpanMd="6"><DxTextBox @bind-Text="_new.TaxId" Password="true" /></DxFormLayoutItem>
+        <DxFormLayoutItem Caption="อีเมล" ColSpanMd="6"><DxTextBox @bind-Text="_new.Email" /></DxFormLayoutItem>
+        <DxFormLayoutItem Caption="โทรศัพท์" ColSpanMd="6"><DxTextBox @bind-Text="_new.Phone" /></DxFormLayoutItem>
+        <DxFormLayoutItem Caption="จังหวัด" ColSpanMd="6"><DxTextBox @bind-Text="_new.Province" /></DxFormLayoutItem>
+        <DxFormLayoutItem Caption="ที่อยู่" ColSpanMd="12"><DxMemo @bind-Text="_new.Address" Rows="2" /></DxFormLayoutItem>
+        <DxFormLayoutItem Caption="ยินยอมรับข่าวสาร (PDPA)" ColSpanMd="12"><DxCheckBox @bind-Checked="_new.MarketingConsent" /></DxFormLayoutItem>
+    </DxFormLayout>
+    <div style="display:flex;justify-content:flex-end;gap:.5rem;margin-top:.75rem">
+        <DxButton Text="ยกเลิก" RenderStyle="ButtonRenderStyle.Secondary" Click="() => _showNew = false" />
+        <DxButton Text="บันทึก" RenderStyle="ButtonRenderStyle.Primary" Enabled="@(!Busy)" Click="RegisterAsync" />
+    </div>
+</DxPopup>
+
+@code {
+    private static readonly CustomerKind[] KindItems = Enum.GetValues<CustomerKind>();
+    private PagedResultDTO<CustomerDTO>? _page;
+    private string? _text;
+    private CustomerKind? _kind;
+    private bool _showNew;
+    private string? _formError;
+    private RegisterCustomerRequest _new = NewRequest();
+
+    protected override Task OnInitializedAsync() => LoadAsync(1);
+
+    private static RegisterCustomerRequest NewRequest() => new() { Kind = CustomerKind.Juristic, Status = CustomerStatus.Prospect, Country = "TH", TimeZoneId = "Asia/Bangkok" };
+
+    private Task LoadAsync(int page) => RunAsync(async () =>
+    {
+        // Step 1: ค้นหาแบบแบ่งหน้า (ค่า query ถูก encode ทุกตัว)
+        string q = $"api/customers?page={page}&pageSize=50";
+        if (!string.IsNullOrWhiteSpace(_text)) q += "&text=" + Uri.EscapeDataString(_text.Trim());
+        if (_kind is { } k) q += "&kind=" + k;
+        _page = await Api.GetAsync<PagedResultDTO<CustomerDTO>>(q);
+    });
+
+    private void OnRowClick(GridRowClickEventArgs e) => Nav.NavigateTo($"customers/{((CustomerDTO)e.Grid.GetDataItem(e.VisibleIndex)).Id}");
+
+    private async Task RegisterAsync()
+    {
+        CustomerDTO? created = null;
+        if (await RunAsync(async () => created = await Api.PostAsync<CustomerDTO>("api/customers", _new)))
+        {
+            _showNew = false;
+            _new = NewRequest();
+            Nav.NavigateTo($"customers/{created!.Id}");
+        }
+        else
+        {
+            _formError = Error;
+        }
+    }
+}

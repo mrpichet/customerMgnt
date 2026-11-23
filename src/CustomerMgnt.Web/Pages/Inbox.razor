@@ -1,0 +1,93 @@
+@page "/inbox"
+@inherits PageBase
+
+@* ศูนย์รวมแชท omnichannel: ห้องที่ต้องดูแล (อารมณ์ลบ) ขึ้นก่อน, ตอบกลับผ่าน MessageHub *@
+<div class="topbar">
+    <h1>ศูนย์แชท</h1>
+    <div style="display:flex;gap:.5rem;align-items:center">
+        <DxComboBox Data="Enum.GetValues<ConversationStatus>()" @bind-Value="_status" NullText="ทุกสถานะ" ClearButtonDisplayMode="DataEditorClearButtonDisplayMode.Auto" Width="150px" />
+        <DxCheckBox @bind-Checked="_attentionOnly">เฉพาะที่ต้องดูแล</DxCheckBox>
+        <DxButton Text="รีเฟรช" Click="LoadAsync" />
+    </div>
+</div>
+<ErrorBanner Message="@Error" />
+<div class="chat">
+    <DxGrid Data="_conversations" ShowAllRows="true" FocusedRowEnabled="true" FocusedRowChanged="OnFocusedAsync">
+        <Columns>
+            <DxGridDataColumn FieldName="@nameof(ConversationDTO.CustomerName)" Caption="ลูกค้า">
+                <CellDisplayTemplate>@{ var c = (ConversationDTO)context.DataItem; }
+                    <div>@(c.CustomerName ?? c.ExternalUserId) @if (c.NeedsAttention) { <span class="badge bad">ต้องดูแล</span> }</div>
+                    <div class="muted">@c.Channel · @c.LastMessageAt.ToLocalTime().ToString("g")</div>
+                </CellDisplayTemplate>
+            </DxGridDataColumn>
+            <DxGridDataColumn FieldName="@nameof(ConversationDTO.Status)" Caption="สถานะ" Width="90px" />
+        </Columns>
+    </DxGrid>
+    <div style="display:flex;flex-direction:column;gap:.5rem;min-height:0">
+        @if (_current is null)
+        {
+            <p class="muted">เลือกห้องสนทนาทางซ้าย</p>
+        }
+        else
+        {
+            <div><b>@(_current.CustomerName ?? _current.ExternalUserId)</b> <span class="badge">@_current.Channel</span>
+                @if (_current.CustomerId is { } cid) { <a href="customers/@cid"> เปิดข้อมูลลูกค้า</a> }</div>
+            <div class="messages" style="flex:1">
+                @foreach (ChatMessageDTO m in _messages)
+                {
+                    <div class="msg @(m.Direction == MessageDirection.Inbound ? "in" : "out")">
+                        @m.Body
+                        <div class="muted" style="font-size:.75rem">@m.SentAt.ToLocalTime().ToString("g") @if (m.Direction == MessageDirection.Inbound) { <span class="badge @(m.SentimentLabel switch { SentimentLabel.Negative => "bad", SentimentLabel.Positive => "good", _ => "" })">@m.SentimentLabel</span> }</div>
+                    </div>
+                }
+            </div>
+            @if (Auth.Has(Permissions.ChatReply))
+            {
+                <DxMemo @bind-Text="_reply" Rows="3" NullText="พิมพ์ข้อความตอบกลับ…" />
+                <div style="display:flex;gap:.5rem;justify-content:flex-end">
+                    <DxCheckBox @bind-Checked="_resolve">ปิดเรื่องหลังตอบ</DxCheckBox>
+                    <DxButton Text="ส่ง" RenderStyle="ButtonRenderStyle.Primary" Enabled="@(!Busy && !string.IsNullOrWhiteSpace(_reply))" Click="SendAsync" />
+                </div>
+            }
+        }
+    </div>
+</div>
+
+@code {
+    private IReadOnlyList<ConversationDTO> _conversations = [];
+    private IReadOnlyList<ChatMessageDTO> _messages = [];
+    private ConversationDTO? _current;
+    private ConversationStatus? _status = ConversationStatus.Open;
+    private bool _attentionOnly;
+    private string? _reply;
+    private bool _resolve;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private Task LoadAsync() => RunAsync(async () =>
+    {
+        string q = $"api/conversations?needsAttentionOnly={_attentionOnly.ToString().ToLowerInvariant()}";
+        if (_status is { } s) q += "&status=" + s;
+        _conversations = await Api.GetAsync<List<ConversationDTO>>(q);
+    });
+
+    private async Task OnFocusedAsync(GridFocusedRowChangedEventArgs e)
+    {
+        _current = e.DataItem as ConversationDTO;
+        if (_current is not null)
+        {
+            await RunAsync(async () => _messages = await Api.GetAsync<List<ChatMessageDTO>>($"api/conversations/{_current.Id}/messages"));
+        }
+    }
+
+    private async Task SendAsync()
+    {
+        if (_current is null || string.IsNullOrWhiteSpace(_reply)) return;
+        if (await RunAsync(() => Api.PostAsync<ChatMessageDTO>($"api/conversations/{_current.Id}/reply", new ReplyRequest { Body = _reply.Trim(), Resolve = _resolve })))
+        {
+            _reply = null;
+            await RunAsync(async () => _messages = await Api.GetAsync<List<ChatMessageDTO>>($"api/conversations/{_current.Id}/messages"));
+            if (_resolve) await LoadAsync();
+        }
+    }
+}

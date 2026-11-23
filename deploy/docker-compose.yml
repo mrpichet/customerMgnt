@@ -1,0 +1,132 @@
+# =====================================================================================
+# CustomerMgnt.Api (REST + MCP /mcp + UI) + PostgreSQL
+#   ./deploy/generate-secrets.sh && docker compose -f deploy/docker-compose.yml up -d --build
+# ใช้ SQL Server แทน PostgreSQL:
+#   docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.sqlserver.yml up -d --build
+# Hardening: read_only rootfs, cap_drop ALL, no-new-privileges, non-root, tmpfs, secret เป็นไฟล์ (ไม่อยู่ใน env/image),
+#            จำกัด CPU/RAM/PIDs (deploy.resources.limits), ฐานข้อมูลอยู่ใน network ภายใน (ไม่ออก internet และไม่เปิด port ออกนอก host)
+# ต่อกับระบบที่รันอยู่แล้ว: ตั้ง AUTHSERVER_AUTHORITY, AUTHSERVER_JWKS_URI, LOGSERVER_URLS,
+#   ISSUETRACKING_URL, PROJECTMGNT_URL, REQUIREMENTMGNT_URL, MESSAGEHUB_URL, SERVICE_ACCOUNT_LOGIN (ใน .env หรือ shell)
+# =====================================================================================
+name: customermgnt
+
+x-hardening: &hardening
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "5" }
+
+services:
+  customermgnt-api:
+    <<: *hardening
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: runtime
+      secrets: [devexpress_license]
+    image: customermgnt-api:local
+    user: "1654:1654"
+    # ไฟล์ secret เป็นสิทธิ์ 640 ของเจ้าของบน host: ให้ process ในคอนเทนเนอร์อยู่ในกลุ่มนั้นเพื่ออ่านได้ (ค่าจาก deploy/.env ที่ generate-secrets.sh สร้าง)
+    group_add: ["${SECRETS_GID:?run deploy/generate-secrets.sh first}"]
+    tmpfs: ["/tmp:size=64m,mode=1777"]
+    ports: ["127.0.0.1:8095:8080"]   # เปิดเฉพาะ localhost — production ให้วางหลัง reverse proxy/TLS
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      Database__Provider: Postgres
+      Database__RunMigrations: "true"
+      AuthServer__Authority: ${AUTHSERVER_AUTHORITY:-https://auth.example.com}
+      AuthServer__JwksUri: ${AUTHSERVER_JWKS_URI:-}
+      AuthServer__Audience: ${AUTHSERVER_AUDIENCE:-authserver-api}
+      AuthServer__RequireHttpsMetadata: ${AUTHSERVER_REQUIRE_HTTPS:-true}
+      Logging__LogServer__ServerUrls: ${LOGSERVER_URLS:-}
+      Logging__LogServer__Source: customermgnt-api
+      Logging__LogServer__SpoolDirectory: /tmp/logserver-spool
+      Pqc__Mode: ${PQC_MODE:-Preferred}
+      Integrations__IssueTracking__BaseUrl: ${ISSUETRACKING_URL:-}
+      Integrations__ProjectMgnt__BaseUrl: ${PROJECTMGNT_URL:-}
+      Integrations__RequirementMgnt__BaseUrl: ${REQUIREMENTMGNT_URL:-}
+      Integrations__MessageHub__BaseUrl: ${MESSAGEHUB_URL:-}
+      Integrations__ServiceAccount__AuthServerUrl: ${AUTHSERVER_AUTHORITY:-}
+      Integrations__ServiceAccount__Login: ${SERVICE_ACCOUNT_LOGIN:-}
+    secrets:
+      - source: db_connection
+        target: Database__ConnectionString
+      - source: pqc_mldsa_seed
+        target: Pqc__MlDsaSeed
+      - source: pqc_mlkem_seed
+        target: Pqc__MlKemSeed
+      - source: pqc_ecdsa_key
+        target: Pqc__EcdsaPrivateKey
+      - source: pqc_ecdh_key
+        target: Pqc__EcdhPrivateKey
+      - source: pqc_hmac_key
+        target: Pqc__HmacKey
+      - source: privacy_blind_index_key
+        target: Privacy__BlindIndexKey
+      - source: webhook_line_secret
+        target: Webhooks__LineChannelSecret
+      - source: webhook_inbound_secret
+        target: Webhooks__InboundSecret
+      - source: service_account_password
+        target: Integrations__ServiceAccount__Password
+      - source: logserver_api_key
+        target: Logging__LogServer__ApiKey
+    networks: [frontend, backend]
+    depends_on:
+      postgres: { condition: service_healthy }
+    deploy:
+      resources:
+        limits: { cpus: "2.0", memory: 768M, pids: 256 }
+        reservations: { memory: 192M }
+
+  postgres:
+    image: postgres:17-alpine
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: customermgnt
+      POSTGRES_USER: customermgnt
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+    secrets: [db_password]
+    tmpfs: ["/tmp", "/var/run/postgresql"]
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    networks: [backend]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U customermgnt -d customermgnt"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 1G, pids: 256 }
+
+networks:
+  frontend: {}
+  backend:
+    internal: true   # ฐานข้อมูลไม่ออก internet
+
+volumes:
+  pg-data:
+
+secrets:
+  devexpress_license:       { file: ./secrets/devexpress_license.txt }   # ไฟล์ว่าง = evaluation mode
+  db_password:              { file: ./secrets/db_password.txt }
+  db_connection:            { file: ./secrets/db_connection.txt }
+  pqc_mldsa_seed:           { file: ./secrets/pqc_mldsa_seed.txt }
+  pqc_mlkem_seed:           { file: ./secrets/pqc_mlkem_seed.txt }
+  pqc_ecdsa_key:            { file: ./secrets/pqc_ecdsa_key.txt }
+  pqc_ecdh_key:             { file: ./secrets/pqc_ecdh_key.txt }
+  pqc_hmac_key:             { file: ./secrets/pqc_hmac_key.txt }
+  privacy_blind_index_key:  { file: ./secrets/privacy_blind_index_key.txt }
+  webhook_line_secret:      { file: ./secrets/webhook_line_secret.txt }
+  webhook_inbound_secret:   { file: ./secrets/webhook_inbound_secret.txt }
+  service_account_password: { file: ./secrets/service_account_password.txt }
+  logserver_api_key:        { file: ./secrets/logserver_api_key.txt }
