@@ -2,12 +2,13 @@ using System.Data.Common;
 using Common.Data.Infrastructure;
 using CustomerMgnt.Core.DataAccess;
 using CustomerMgnt.Core.Domain;
+using CustomerMgnt.Data.Infrastructure;
 using Dapper;
 using Microsoft.Extensions.Logging;
 
 namespace CustomerMgnt.Data.Ado;
 
-/// <summary>นโยบาย SLA และระดับ severity ต่อลูกค้า (PostgreSQL + Dapper)</summary>
+/// <summary>นโยบาย SLA และระดับ severity ต่อลูกค้า (PostgreSQL / SQL Server + Dapper)</summary>
 public sealed class SlaADO : AdoBase, ISlaDAO
 {
     /// <summary>คอลัมน์นโยบาย</summary>
@@ -30,13 +31,13 @@ public sealed class SlaADO : AdoBase, ISlaDAO
         {
             // Step 1: นโยบาย + ระดับ ใน transaction เดียว
             await using DbTransaction tx = await c.BeginTransactionAsync(ct).ConfigureAwait(false);
-            long id = await c.ExecuteScalarAsync<long>(Cmd("""
-                INSERT INTO sla_policy (customer_id, name, description, valid_from, valid_to, time_zone_id, business_start, business_end, working_days_mask,
-                    holidays, at_risk_threshold, is_active, version)
-                VALUES (@CustomerId, @Name, @Description, @ValidFrom, @ValidTo, @TimeZoneId, @BusinessStart, @BusinessEnd, @WorkingDaysMask,
-                    @Holidays, @AtRiskThreshold, @IsActive, 1)
-                RETURNING id
-                """, policy, ct, tx)).ConfigureAwait(false);
+            long id = await c.ExecuteScalarAsync<long>(Cmd(Dialect.InsertReturningId("sla_policy", """
+customer_id, name, description, valid_from, valid_to, time_zone_id, business_start, business_end, working_days_mask,
+                    holidays, at_risk_threshold, is_active, version
+""", """
+@CustomerId, @Name, @Description, @ValidFrom, @ValidTo, @TimeZoneId, @BusinessStart, @BusinessEnd, @WorkingDaysMask,
+                    @Holidays, @AtRiskThreshold, @IsActive, 1
+"""), policy, ct, tx)).ConfigureAwait(false);
             await InsertLevelsAsync(c, tx, id, policy.Levels, ct).ConfigureAwait(false);
             await tx.CommitAsync(ct).ConfigureAwait(false);
             return id;
@@ -90,8 +91,8 @@ public sealed class SlaADO : AdoBase, ISlaDAO
         {
             // Step 1: นโยบายของลูกค้า (null = นโยบายมาตรฐาน) + ระดับทั้งหมดของนโยบายเหล่านั้น
             string sql = $"""
-                SELECT {PolicyColumns} FROM sla_policy WHERE customer_id IS NOT DISTINCT FROM @customerId::bigint ORDER BY valid_from DESC, id DESC;
-                SELECT {LevelColumns} FROM severity_level WHERE policy_id IN (SELECT id FROM sla_policy WHERE customer_id IS NOT DISTINCT FROM @customerId::bigint) ORDER BY rank, code;
+                SELECT {PolicyColumns} FROM sla_policy WHERE customer_id IS NOT DISTINCT FROM CAST(@customerId AS bigint) ORDER BY valid_from DESC, id DESC;
+                SELECT {LevelColumns} FROM severity_level WHERE policy_id IN (SELECT id FROM sla_policy WHERE customer_id IS NOT DISTINCT FROM CAST(@customerId AS bigint)) ORDER BY rank, code;
                 """;
             using SqlMapper.GridReader grid = await c.QueryMultipleAsync(Cmd(sql, new { customerId }, ct)).ConfigureAwait(false);
             List<SlaPolicyDTO> policies = (await grid.ReadAsync<SlaPolicyDTO>().ConfigureAwait(false)).ToList();

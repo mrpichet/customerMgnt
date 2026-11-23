@@ -11,10 +11,10 @@ namespace CustomerMgnt.Data.Infrastructure;
 /// รัน migration ของ CustomerMgnt ตอนเริ่มระบบ (รูปแบบเดียวกับ Common.Data DatabaseMigrator แต่สแกน assembly นี้)
 /// <list type="number">
 /// <item>สร้างตาราง <c>customermgnt_schema_version</c> ถ้ายังไม่มี</item>
-/// <item>หา embedded resource <c>Sql/postgres/NNN_*.sql</c> เรียงตามชื่อ ข้ามไฟล์ที่รันแล้ว</item>
+/// <item>หา embedded resource <c>Sql/{postgres|sqlserver}/NNN_*.sql</c> ตาม provider เรียงตามชื่อ ข้ามไฟล์ที่รันแล้ว</item>
 /// <item>รันแต่ละไฟล์ใน transaction เดียว (ล้มเหลว = rollback ทั้งไฟล์) แล้วบันทึกเวอร์ชัน</item>
 /// </list>
-/// ใช้ advisory lock ป้องกันหลาย instance รัน migration พร้อมกัน
+/// ป้องกันหลาย instance รัน migration พร้อมกันด้วย pg_advisory_lock (PostgreSQL) หรือ sp_getapplock (SQL Server)
 /// </summary>
 public sealed class CustomerMgntMigrator : IHostedService
 {
@@ -40,7 +40,6 @@ public sealed class CustomerMgntMigrator : IHostedService
     /// <summary>รัน migration</summary>
     /// <param name="cancellationToken">ยกเลิก</param>
     /// <returns>Task</returns>
-    /// <exception cref="NotSupportedException">provider ไม่ใช่ PostgreSQL</exception>
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         // Step 1: ปิดได้ด้วย Database:RunMigrations=false (เช่น ให้ DBA รันเอง)
@@ -49,18 +48,18 @@ public sealed class CustomerMgntMigrator : IHostedService
             return;
         }
 
-        if (_db.Provider != DatabaseProvider.Postgres)
-        {
-            throw new NotSupportedException("CustomerMgnt supports PostgreSQL only (Database:Provider=Postgres).");
-        }
-
         // Step 2: lock ระดับฐานข้อมูล + ตารางเวอร์ชัน
         await using var conn = await _db.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await conn.ExecuteAsync(new CommandDefinition("SELECT pg_advisory_lock(@key)", new { key = AdvisoryLockKey }, cancellationToken: cancellationToken)).ConfigureAwait(false);
+        bool sqlServer = _db.Provider == DatabaseProvider.SqlServer;
+        string lockSql = sqlServer
+            ? "EXEC sp_getapplock @Resource = 'customermgnt_migration', @LockMode = 'Exclusive', @LockOwner = 'Session', @LockTimeout = 600000"
+            : "SELECT pg_advisory_lock(@key)";
+        await conn.ExecuteAsync(new CommandDefinition(lockSql, sqlServer ? null : new { key = AdvisoryLockKey }, commandTimeout: 660, cancellationToken: cancellationToken)).ConfigureAwait(false);
         try
         {
-            await conn.ExecuteAsync(new CommandDefinition(
-                "CREATE TABLE IF NOT EXISTS customermgnt_schema_version (version VARCHAR(100) PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT now())",
+            await conn.ExecuteAsync(new CommandDefinition(sqlServer
+                    ? "IF OBJECT_ID('customermgnt_schema_version') IS NULL CREATE TABLE customermgnt_schema_version (version VARCHAR(100) PRIMARY KEY, applied_at DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET())"
+                    : "CREATE TABLE IF NOT EXISTS customermgnt_schema_version (version VARCHAR(100) PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT now())",
                 cancellationToken: cancellationToken)).ConfigureAwait(false);
             var applied = (await conn.QueryAsync<string>(new CommandDefinition("SELECT version FROM customermgnt_schema_version", cancellationToken: cancellationToken)).ConfigureAwait(false))
                 .ToHashSet(StringComparer.Ordinal);
@@ -93,7 +92,10 @@ public sealed class CustomerMgntMigrator : IHostedService
         finally
         {
             // Step 5: ปล่อย lock เสมอ
-            await conn.ExecuteAsync(new CommandDefinition("SELECT pg_advisory_unlock(@key)", new { key = AdvisoryLockKey }, cancellationToken: CancellationToken.None)).ConfigureAwait(false);
+            string unlockSql = sqlServer
+                ? "EXEC sp_releaseapplock @Resource = 'customermgnt_migration', @LockOwner = 'Session'"
+                : "SELECT pg_advisory_unlock(@key)";
+            await conn.ExecuteAsync(new CommandDefinition(unlockSql, sqlServer ? null : new { key = AdvisoryLockKey }, cancellationToken: CancellationToken.None)).ConfigureAwait(false);
         }
     }
 

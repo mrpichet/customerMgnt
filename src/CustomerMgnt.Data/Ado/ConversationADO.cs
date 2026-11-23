@@ -1,12 +1,13 @@
 using Common.Data.Infrastructure;
 using CustomerMgnt.Core.DataAccess;
 using CustomerMgnt.Core.Domain;
+using CustomerMgnt.Data.Infrastructure;
 using Dapper;
 using Microsoft.Extensions.Logging;
 
 namespace CustomerMgnt.Data.Ado;
 
-/// <summary>ห้องสนทนาและข้อความ omnichannel (PostgreSQL + Dapper)</summary>
+/// <summary>ห้องสนทนาและข้อความ omnichannel (PostgreSQL / SQL Server + Dapper)</summary>
 public sealed class ConversationADO : AdoBase, IConversationDAO
 {
     /// <summary>SELECT ห้องพร้อมชื่อลูกค้า</summary>
@@ -29,11 +30,11 @@ public sealed class ConversationADO : AdoBase, IConversationDAO
 
     /// <inheritdoc />
     public Task<long> InsertAsync(ConversationDTO conversation, CancellationToken ct) =>
-        RunAsync("conversation.insert", c => c.ExecuteScalarAsync<long>(Cmd("""
-            INSERT INTO conversation (customer_id, channel, external_user_id, subject, status, assignee_subject, last_sentiment, needs_attention, last_message_at, first_response_at, created_at)
-            VALUES (@CustomerId, @Channel, @ExternalUserId, @Subject, @Status, @AssigneeSubject, @LastSentiment, @NeedsAttention, @LastMessageAt, @FirstResponseAt, @CreatedAt)
-            RETURNING id
-            """, Params(conversation), ct)), ct);
+        RunAsync("conversation.insert", c => c.ExecuteScalarAsync<long>(Cmd(Dialect.InsertReturningId("conversation", """
+customer_id, channel, external_user_id, subject, status, assignee_subject, last_sentiment, needs_attention, last_message_at, first_response_at, created_at
+""", """
+@CustomerId, @Channel, @ExternalUserId, @Subject, @Status, @AssigneeSubject, @LastSentiment, @NeedsAttention, @LastMessageAt, @FirstResponseAt, @CreatedAt
+"""), Params(conversation), ct)), ct);
 
     /// <inheritdoc />
     public Task UpdateAsync(ConversationDTO conversation, CancellationToken ct) =>
@@ -54,10 +55,10 @@ public sealed class ConversationADO : AdoBase, IConversationDAO
             // Step 1: ตัวกรองเป็น parameter ทั้งหมด เรียงตามข้อความล่าสุด
             string sql = $"""
                 {Select}
-                WHERE (@status::int IS NULL OR v.status = @status) AND (@customerId::bigint IS NULL OR v.customer_id = @customerId)
-                  AND (@needsAttentionOnly = FALSE OR v.needs_attention)
+                WHERE (CAST(@status AS int) IS NULL OR v.status = @status) AND (CAST(@customerId AS bigint) IS NULL OR v.customer_id = @customerId)
+                  AND (@needsAttentionOnly = {Dialect.Bool(false)} OR v.needs_attention = {Dialect.Bool(true)})
                 ORDER BY v.needs_attention DESC, v.last_message_at DESC
-                LIMIT @take
+                {Dialect.Take("@take")}
                 """;
             return (await c.QueryAsync<ConversationDTO>(Cmd(sql, new { status = (int?)status, customerId, needsAttentionOnly, take = Math.Clamp(take, 1, 1_000) }, ct)).ConfigureAwait(false)).ToList();
         }, ct);
@@ -66,13 +67,22 @@ public sealed class ConversationADO : AdoBase, IConversationDAO
     public Task<long?> InsertMessageAsync(ChatMessageDTO message, CancellationToken ct) =>
         RunAsync("message.insert", c =>
         {
-            // Step 1: ON CONFLICT DO NOTHING บน external_message_id → ข้อความซ้ำคืน null (idempotent webhook)
-            const string sql = """
-                INSERT INTO chat_message (conversation_id, direction, body, external_message_id, sender_subject, sentiment, sentiment_label, sent_at)
-                VALUES (@ConversationId, @Direction, @Body, @ExternalMessageId, @SenderSubject, @Sentiment, @SentimentLabel, @SentAt)
-                ON CONFLICT (conversation_id, external_message_id) WHERE external_message_id IS NOT NULL DO NOTHING
-                RETURNING id
-                """;
+            // Step 1: ข้อความซ้ำ (external_message_id เดิม) ไม่ insert และคืน null (idempotent webhook)
+            //         PostgreSQL: ON CONFLICT DO NOTHING; SQL Server: INSERT ... SELECT WHERE NOT EXISTS พร้อม UPDLOCK/HOLDLOCK กันแข่งกัน
+            string sql = Dialect.IsSqlServer()
+                ? """
+                  INSERT INTO chat_message (conversation_id, direction, body, external_message_id, sender_subject, sentiment, sentiment_label, sent_at)
+                  OUTPUT INSERTED.id
+                  SELECT @ConversationId, @Direction, @Body, @ExternalMessageId, @SenderSubject, @Sentiment, @SentimentLabel, @SentAt
+                  WHERE @ExternalMessageId IS NULL OR NOT EXISTS (
+                      SELECT 1 FROM chat_message WITH (UPDLOCK, HOLDLOCK) WHERE conversation_id = @ConversationId AND external_message_id = @ExternalMessageId)
+                  """
+                : """
+                  INSERT INTO chat_message (conversation_id, direction, body, external_message_id, sender_subject, sentiment, sentiment_label, sent_at)
+                  VALUES (@ConversationId, @Direction, @Body, @ExternalMessageId, @SenderSubject, @Sentiment, @SentimentLabel, @SentAt)
+                  ON CONFLICT (conversation_id, external_message_id) WHERE external_message_id IS NOT NULL DO NOTHING
+                  RETURNING id
+                  """;
             return c.ExecuteScalarAsync<long?>(Cmd(sql, new
             {
                 message.ConversationId,
@@ -91,10 +101,10 @@ public sealed class ConversationADO : AdoBase, IConversationDAO
         RunAsync<IReadOnlyList<ChatMessageDTO>>("message.list", async c =>
         {
             // Step 1: ดึงล่าสุด N ข้อความ แล้วเรียงจากเก่าไปใหม่เพื่อแสดงผล
-            const string sql = """
+            string sql = $"""
                 SELECT * FROM (
                     SELECT id, conversation_id, direction, body, external_message_id, sender_subject, sentiment, sentiment_label, sent_at
-                    FROM chat_message WHERE conversation_id = @conversationId ORDER BY sent_at DESC, id DESC LIMIT @take
+                    FROM chat_message WHERE conversation_id = @conversationId ORDER BY sent_at DESC, id DESC {Dialect.Take("@take")}
                 ) m ORDER BY sent_at, id
                 """;
             return (await c.QueryAsync<ChatMessageDTO>(Cmd(sql, new { conversationId, take = Math.Clamp(take, 1, 1_000) }, ct)).ConfigureAwait(false)).ToList();
@@ -106,13 +116,13 @@ public sealed class ConversationADO : AdoBase, IConversationDAO
         {
             // Step 1: เฉลี่ยอารมณ์ของข้อความขาเข้าต่อลูกค้า (aggregate ในฐานข้อมูล)
             if (customerIds.Count == 0) return new Dictionary<long, (double, int)>();
-            const string sql = """
-                SELECT v.customer_id AS customer_id, AVG(m.sentiment) AS average, COUNT(*)::int AS count
+            string sql = $"""
+                SELECT v.customer_id AS customer_id, AVG(CAST(m.sentiment AS float)) AS average, CAST(COUNT(*) AS int) AS count
                 FROM chat_message m JOIN conversation v ON v.id = m.conversation_id
-                WHERE v.customer_id = ANY(@ids) AND m.direction = 1 AND m.sent_at >= @since
+                WHERE {Dialect.InSet("v.customer_id", "ids")} AND m.direction = 1 AND m.sent_at >= @since
                 GROUP BY v.customer_id
                 """;
-            IEnumerable<SentimentRow> rows = await c.QueryAsync<SentimentRow>(Cmd(sql, new { ids = customerIds.ToArray(), since }, ct)).ConfigureAwait(false);
+            IEnumerable<SentimentRow> rows = await c.QueryAsync<SentimentRow>(Cmd(sql, new { ids = Dialect.SetParam(customerIds), since }, ct)).ConfigureAwait(false);
             return rows.ToDictionary(r => r.CustomerId, r => (r.Average, r.Count));
         }, ct);
 

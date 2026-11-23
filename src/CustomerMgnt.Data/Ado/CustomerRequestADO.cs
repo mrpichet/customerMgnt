@@ -2,12 +2,13 @@ using System.Data.Common;
 using Common.Data.Infrastructure;
 using CustomerMgnt.Core.DataAccess;
 using CustomerMgnt.Core.Domain;
+using CustomerMgnt.Data.Infrastructure;
 using Dapper;
 using Microsoft.Extensions.Logging;
 
 namespace CustomerMgnt.Data.Ado;
 
-/// <summary>คำขอของลูกค้า / TOR พร้อมรายการข้อกำหนด (PostgreSQL + Dapper)</summary>
+/// <summary>คำขอของลูกค้า / TOR พร้อมรายการข้อกำหนด (PostgreSQL / SQL Server + Dapper)</summary>
 public sealed class CustomerRequestADO : AdoBase, ICustomerRequestDAO
 {
     /// <summary>คอลัมน์ของคำขอ</summary>
@@ -27,13 +28,13 @@ public sealed class CustomerRequestADO : AdoBase, ICustomerRequestDAO
         {
             // Step 1: คำขอ + รายการ TOR ใน transaction เดียว (ไม่มีคำขอที่รายการหายครึ่งทาง)
             await using DbTransaction tx = await c.BeginTransactionAsync(ct).ConfigureAwait(false);
-            long id = await c.ExecuteScalarAsync<long>(Cmd("""
-                INSERT INTO customer_request (request_no, customer_id, contact_person_id, kind, title, description, status, severity_code, budget, desired_date,
-                    owner_subject, forward_signature, forwarded_at, created_at, updated_at, version)
-                VALUES (@RequestNo, @CustomerId, @ContactPersonId, @Kind, @Title, @Description, @Status, @SeverityCode, @Budget, @DesiredDate,
-                    @OwnerSubject, @ForwardSignature, @ForwardedAt, @CreatedAt, @UpdatedAt, @Version)
-                RETURNING id
-                """, Params(request), ct, tx)).ConfigureAwait(false);
+            long id = await c.ExecuteScalarAsync<long>(Cmd(Dialect.InsertReturningId("customer_request", """
+request_no, customer_id, contact_person_id, kind, title, description, status, severity_code, budget, desired_date,
+                    owner_subject, forward_signature, forwarded_at, created_at, updated_at, version
+""", """
+@RequestNo, @CustomerId, @ContactPersonId, @Kind, @Title, @Description, @Status, @SeverityCode, @Budget, @DesiredDate,
+                    @OwnerSubject, @ForwardSignature, @ForwardedAt, @CreatedAt, @UpdatedAt, @Version
+"""), Params(request), ct, tx)).ConfigureAwait(false);
 
             // Step 2: รายการ TOR (Dapper รันคำสั่งต่อรายการใน connection เดียวกัน)
             if (request.Items.Count > 0)
@@ -102,19 +103,28 @@ public sealed class CustomerRequestADO : AdoBase, ICustomerRequestDAO
             // Step 1: รายการคำขอ (ไม่โหลดรายการ TOR เพื่อความเร็ว — ดูรายละเอียดผ่าน GetAsync)
             string sql = $"""
                 SELECT {Columns} FROM customer_request
-                WHERE (@customerId::bigint IS NULL OR customer_id = @customerId) AND (@status::int IS NULL OR status = @status)
-                ORDER BY created_at DESC LIMIT @take
+                WHERE (CAST(@customerId AS bigint) IS NULL OR customer_id = @customerId) AND (CAST(@status AS int) IS NULL OR status = @status)
+                ORDER BY created_at DESC {Dialect.Take("@take")}
                 """;
             return (await c.QueryAsync<CustomerRequestDTO>(Cmd(sql, new { customerId, status = (int?)status, take = Math.Clamp(take, 1, 1_000) }, ct)).ConfigureAwait(false)).ToList();
         }, ct);
 
     /// <inheritdoc />
     public Task<int> NextSequenceAsync(int year, CancellationToken ct) =>
-        RunAsync("request.next_sequence", c => c.ExecuteScalarAsync<int>(Cmd("""
-            INSERT INTO request_sequence (year, value) VALUES (@year, 1)
-            ON CONFLICT (year) DO UPDATE SET value = request_sequence.value + 1
-            RETURNING value
-            """, new { year }, ct)), ct);
+        RunAsync("request.next_sequence", c => c.ExecuteScalarAsync<int>(Cmd(Dialect.IsSqlServer()
+            // SQL Server: MERGE + HOLDLOCK = upsert แบบ atomic (กันเลขซ้ำเมื่อสร้างพร้อมกัน)
+            ? """
+              MERGE request_sequence WITH (HOLDLOCK) AS t
+              USING (SELECT @year AS year) AS s ON t.year = s.year
+              WHEN MATCHED THEN UPDATE SET value = t.value + 1
+              WHEN NOT MATCHED THEN INSERT (year, value) VALUES (@year, 1)
+              OUTPUT INSERTED.value;
+              """
+            : """
+              INSERT INTO request_sequence (year, value) VALUES (@year, 1)
+              ON CONFLICT (year) DO UPDATE SET value = request_sequence.value + 1
+              RETURNING value
+              """, new { year }, ct)), ct);
 
     /// <summary>parameter object</summary>
     private static object Params(CustomerRequestDTO x) => new

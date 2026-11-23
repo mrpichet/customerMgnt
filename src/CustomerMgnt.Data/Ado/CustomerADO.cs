@@ -3,12 +3,13 @@ using Common.Core.Security;
 using Common.Data.Infrastructure;
 using CustomerMgnt.Core.DataAccess;
 using CustomerMgnt.Core.Domain;
+using CustomerMgnt.Data.Infrastructure;
 using Dapper;
 using Microsoft.Extensions.Logging;
 
 namespace CustomerMgnt.Data.Ado;
 
-/// <summary>ลูกค้า (PostgreSQL + Dapper)</summary>
+/// <summary>ลูกค้า (PostgreSQL / SQL Server + Dapper)</summary>
 public sealed class CustomerADO : AdoBase, ICustomerDAO
 {
     /// <summary>คอลัมน์ทั้งหมดของ customer</summary>
@@ -28,15 +29,15 @@ public sealed class CustomerADO : AdoBase, ICustomerDAO
         RunAsync("customer.insert", async c =>
         {
             // Step 1: insert แล้วคืน id (version เริ่มที่ค่าใน DTO)
-            const string sql = """
-                INSERT INTO customer (code, kind, display_name, legal_name, first_name, last_name, tax_id_masked, tax_id_envelope, tax_id_hash, email, phone,
+            string sql = Dialect.InsertReturningId("customer", """
+code, kind, display_name, legal_name, first_name, last_name, tax_id_masked, tax_id_envelope, tax_id_hash, email, phone,
                     industry, employee_count, annual_revenue, website, address, province, country, time_zone_id, status, owner_subject, tags, segment,
-                    marketing_consent, created_at, updated_at, version)
-                VALUES (@Code, @Kind, @DisplayName, @LegalName, @FirstName, @LastName, @TaxIdMasked, @TaxIdEnvelope, @TaxIdHash, @Email, @Phone,
+                    marketing_consent, created_at, updated_at, version
+""", """
+@Code, @Kind, @DisplayName, @LegalName, @FirstName, @LastName, @TaxIdMasked, @TaxIdEnvelope, @TaxIdHash, @Email, @Phone,
                     @Industry, @EmployeeCount, @AnnualRevenue, @Website, @Address, @Province, @Country, @TimeZoneId, @Status, @OwnerSubject, @Tags, @Segment,
-                    @MarketingConsent, @CreatedAt, @UpdatedAt, @Version)
-                RETURNING id
-                """;
+                    @MarketingConsent, @CreatedAt, @UpdatedAt, @Version
+""");
             return await c.ExecuteScalarAsync<long>(Cmd(sql, Params(customer), ct)).ConfigureAwait(false);
         }, ct);
 
@@ -86,14 +87,16 @@ public sealed class CustomerADO : AdoBase, ICustomerDAO
                 offset = (page - 1) * pageSize,
                 take = pageSize,
             };
-            const string where = """
-                WHERE (@text IS NULL OR display_name ILIKE @text ESCAPE '\' OR code ILIKE @text ESCAPE '\' OR email ILIKE @text ESCAPE '\' OR legal_name ILIKE @text ESCAPE '\')
-                  AND (@kind::int IS NULL OR kind = @kind) AND (@status::int IS NULL OR status = @status)
-                  AND (@owner::varchar IS NULL OR owner_subject = @owner) AND (@segment::varchar IS NULL OR segment = @segment)
+            // ILIKE (PostgreSQL) / LIKE (SQL Server — collation ปกติไม่สนตัวพิมพ์อยู่แล้ว)
+            string like = Dialect.LikeOperator;
+            string where = $"""
+                WHERE (CAST(@text AS varchar(300)) IS NULL OR display_name {like} @text ESCAPE '\' OR code {like} @text ESCAPE '\' OR email {like} @text ESCAPE '\' OR legal_name {like} @text ESCAPE '\')
+                  AND (CAST(@kind AS int) IS NULL OR kind = @kind) AND (CAST(@status AS int) IS NULL OR status = @status)
+                  AND (CAST(@owner AS varchar(200)) IS NULL OR owner_subject = @owner) AND (CAST(@segment AS varchar(200)) IS NULL OR segment = @segment)
                 """;
 
             // Step 2: นับทั้งหมด + ดึงหน้าเดียวใน round-trip เดียว
-            string sql = $"SELECT COUNT(*) FROM customer {where};\nSELECT {Columns} FROM customer {where} ORDER BY display_name, id OFFSET @offset LIMIT @take;";
+            string sql = $"SELECT COUNT(*) FROM customer {where};\nSELECT {Columns} FROM customer {where} ORDER BY display_name, id {Dialect.Page("@offset", "@take")};";
             using SqlMapper.GridReader grid = await c.QueryMultipleAsync(Cmd(sql, p, ct)).ConfigureAwait(false);
             long total = await grid.ReadSingleAsync<long>().ConfigureAwait(false);
             List<CustomerDTO> items = (await grid.ReadAsync<CustomerDTO>().ConfigureAwait(false)).ToList();
@@ -105,13 +108,13 @@ public sealed class CustomerADO : AdoBase, ICustomerDAO
         RunAsync<IReadOnlyList<CustomerDTO>>("customer.get_many", async c =>
         {
             if (ids.Count == 0) return [];
-            return (await c.QueryAsync<CustomerDTO>(Cmd($"SELECT {Columns} FROM customer WHERE id = ANY(@ids)", new { ids = ids.ToArray() }, ct)).ConfigureAwait(false)).ToList();
+            return (await c.QueryAsync<CustomerDTO>(Cmd($"SELECT {Columns} FROM customer WHERE {Dialect.InSet("id", "ids")}", new { ids = Dialect.SetParam(ids) }, ct)).ConfigureAwait(false)).ToList();
         }, ct);
 
     /// <inheritdoc />
     public Task<IReadOnlyList<CustomerDTO>> ListBatchAsync(long afterId, int take, CancellationToken ct) =>
         RunAsync<IReadOnlyList<CustomerDTO>>("customer.list_batch", async c =>
-            (await c.QueryAsync<CustomerDTO>(Cmd($"SELECT {Columns} FROM customer WHERE id > @afterId ORDER BY id LIMIT @take", new { afterId, take = Math.Clamp(take, 1, 10_000) }, ct)).ConfigureAwait(false)).ToList(), ct);
+            (await c.QueryAsync<CustomerDTO>(Cmd($"SELECT {Columns} FROM customer WHERE id > @afterId ORDER BY id {Dialect.Take("@take")}", new { afterId, take = Math.Clamp(take, 1, 10_000) }, ct)).ConfigureAwait(false)).ToList(), ct);
 
     /// <inheritdoc />
     public Task UpdateSegmentsAsync(IReadOnlyDictionary<long, string> segments, CancellationToken ct) =>
@@ -120,6 +123,18 @@ public sealed class CustomerADO : AdoBase, ICustomerDAO
             // Step 1: bulk update ด้วย unnest ของ array คู่ (เร็วกว่าอัปเดตทีละแถวมาก) แบ่งชุดละ 10k
             foreach (KeyValuePair<long, string>[] chunk in segments.Chunk(10_000))
             {
+                // SQL Server: ส่งคู่ (id, segment) เป็น JSON แล้วแตกด้วย OPENJSON (1 parameter ต่อชุด)
+                if (Dialect.IsSqlServer())
+                {
+                    const string sqlServer = """
+                        UPDATE t SET segment = s.segment
+                        FROM customer AS t JOIN OPENJSON(@rows) WITH (id bigint '$.id', segment nvarchar(100) '$.segment') AS s ON t.id = s.id
+                        WHERE t.segment IS DISTINCT FROM s.segment
+                        """;
+                    await c.ExecuteAsync(Cmd(sqlServer, new { rows = SqlText.Rows(chunk.Select(kv => new { id = kv.Key, segment = kv.Value })) }, ct)).ConfigureAwait(false);
+                    continue;
+                }
+
                 const string sql = """
                     UPDATE customer AS t SET segment = s.segment
                     FROM unnest(@ids, @names) AS s(id, segment)

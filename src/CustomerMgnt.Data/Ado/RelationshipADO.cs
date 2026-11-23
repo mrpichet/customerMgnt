@@ -1,12 +1,13 @@
 using Common.Data.Infrastructure;
 using CustomerMgnt.Core.DataAccess;
 using CustomerMgnt.Core.Domain;
+using CustomerMgnt.Data.Infrastructure;
 using Dapper;
 using Microsoft.Extensions.Logging;
 
 namespace CustomerMgnt.Data.Ado;
 
-/// <summary>ความสัมพันธ์บุคคล ↔ นิติบุคคล และตัวตนในช่องทางต่าง ๆ (PostgreSQL + Dapper)</summary>
+/// <summary>ความสัมพันธ์บุคคล ↔ นิติบุคคล และตัวตนในช่องทางต่าง ๆ (PostgreSQL / SQL Server + Dapper)</summary>
 public sealed class RelationshipADO : AdoBase, IRelationshipDAO
 {
     /// <summary>SELECT พร้อมชื่อบุคคล/บริษัท</summary>
@@ -25,11 +26,11 @@ public sealed class RelationshipADO : AdoBase, IRelationshipDAO
 
     /// <inheritdoc />
     public Task<long> InsertAsync(PartyRelationshipDTO relationship, CancellationToken ct) =>
-        RunAsync("relationship.insert", c => c.ExecuteScalarAsync<long>(Cmd("""
-            INSERT INTO party_relationship (person_id, organization_id, position, department, is_primary_contact, is_decision_maker, valid_from, valid_to)
-            VALUES (@PersonId, @OrganizationId, @Position, @Department, @IsPrimaryContact, @IsDecisionMaker, @ValidFrom, @ValidTo)
-            RETURNING id
-            """, relationship, ct)), ct);
+        RunAsync("relationship.insert", c => c.ExecuteScalarAsync<long>(Cmd(Dialect.InsertReturningId("party_relationship", """
+person_id, organization_id, position, department, is_primary_contact, is_decision_maker, valid_from, valid_to
+""", """
+@PersonId, @OrganizationId, @Position, @Department, @IsPrimaryContact, @IsDecisionMaker, @ValidFrom, @ValidTo
+"""), relationship, ct)), ct);
 
     /// <inheritdoc />
     public Task<bool> EndAsync(long id, DateOnly validTo, CancellationToken ct) =>
@@ -43,15 +44,15 @@ public sealed class RelationshipADO : AdoBase, IRelationshipDAO
     /// <inheritdoc />
     public Task<IReadOnlyList<PartyRelationshipDTO>> ListByCustomerAsync(long customerId, CancellationToken ct) =>
         RunAsync<IReadOnlyList<PartyRelationshipDTO>>("relationship.list", async c =>
-            (await c.QueryAsync<PartyRelationshipDTO>(Cmd($"{Select} WHERE r.person_id = @customerId OR r.organization_id = @customerId ORDER BY r.valid_to NULLS FIRST, r.valid_from DESC", new { customerId }, ct)).ConfigureAwait(false)).ToList(), ct);
+            (await c.QueryAsync<PartyRelationshipDTO>(Cmd($"{Select} WHERE r.person_id = @customerId OR r.organization_id = @customerId ORDER BY r.valid_to{Dialect.NullsFirst()}, r.valid_from DESC", new { customerId }, ct)).ConfigureAwait(false)).ToList(), ct);
 
     /// <inheritdoc />
     public Task<long> InsertIdentityAsync(ChannelIdentityDTO identity, CancellationToken ct) =>
-        RunAsync("identity.insert", c => c.ExecuteScalarAsync<long>(Cmd("""
-            INSERT INTO channel_identity (customer_id, channel, external_id, display_name, verified)
-            VALUES (@CustomerId, @Channel, @ExternalId, @DisplayName, @Verified)
-            RETURNING id
-            """, new { identity.CustomerId, Channel = (int)identity.Channel, identity.ExternalId, identity.DisplayName, identity.Verified }, ct)), ct);
+        RunAsync("identity.insert", c => c.ExecuteScalarAsync<long>(Cmd(Dialect.InsertReturningId("channel_identity", """
+customer_id, channel, external_id, display_name, verified
+""", """
+@CustomerId, @Channel, @ExternalId, @DisplayName, @Verified
+"""), new { identity.CustomerId, Channel = (int)identity.Channel, identity.ExternalId, identity.DisplayName, identity.Verified }, ct)), ct);
 
     /// <inheritdoc />
     public Task<ChannelIdentityDTO?> FindIdentityAsync(ChannelKind channel, string externalId, CancellationToken ct) =>

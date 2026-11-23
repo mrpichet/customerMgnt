@@ -39,7 +39,6 @@ public static class ServiceCollectionExtensions
         services.Configure<DatabaseOptions>(configuration.GetSection(DatabaseOptions.SectionName));
         services.PostConfigure<DatabaseOptions>(o =>
         {
-            o.Provider = DatabaseProvider.Postgres;
             if (o.ApplicationName == "Common") o.ApplicationName = "CustomerMgnt";
         });
         services.TryAddSingleton<IDbConnectionFactory, DbConnectionFactory>();
