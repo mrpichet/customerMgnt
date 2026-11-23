@@ -2,8 +2,10 @@
 **/obj
 **/.vs
 **/TestResults
+**/.git
 .git
 .env
-secrets
+**/secrets
 docs
-*.md
+**/*.md
+DevExpress_License.txt

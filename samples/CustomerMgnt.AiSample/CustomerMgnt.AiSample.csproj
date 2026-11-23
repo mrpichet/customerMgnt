@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- ตัวอย่างการให้ AI เรียกฟังก์ชันของ CustomerMgnt ผ่าน Microsoft.Extensions.AI (IChatClient + FunctionInvokingChatClient)
+       รันได้ทันทีโดยไม่ต้องมีฐานข้อมูล/API key (ดูคำสั่งรันใน README) -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <NoWarn>$(NoWarn);CA1812;CA2007</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\CustomerMgnt.Core\CustomerMgnt.Core.csproj" />
+    <ProjectReference Include="..\..\src\CustomerMgnt.Data\CustomerMgnt.Data.csproj" />
+    <ProjectReference Include="..\..\src\CustomerMgnt.AI\CustomerMgnt.AI.csproj" />
+    <ProjectReference Include="..\..\src\CustomerMgnt.Integrations\CustomerMgnt.Integrations.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+  </ItemGroup>
+</Project>

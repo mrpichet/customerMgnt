@@ -1,0 +1,24 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/CustomerMgnt.Core/CustomerMgnt.Core.csproj" />
+    <Project Path="src/CustomerMgnt.Data/CustomerMgnt.Data.csproj" />
+    <Project Path="src/CustomerMgnt.Integrations/CustomerMgnt.Integrations.csproj" />
+    <Project Path="src/CustomerMgnt.AI/CustomerMgnt.AI.csproj" />
+    <Project Path="src/CustomerMgnt.Api/CustomerMgnt.Api.csproj" />
+    <Project Path="src/CustomerMgnt.Mcp/CustomerMgnt.Mcp.csproj" />
+    <Project Path="src/CustomerMgnt.Web/CustomerMgnt.Web.csproj" />
+  </Folder>
+  <Folder Name="/samples/">
+    <Project Path="samples/CustomerMgnt.AiSample/CustomerMgnt.AiSample.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/CustomerMgnt.Tests/CustomerMgnt.Tests.csproj" />
+  </Folder>
+  <Folder Name="/external/common/">
+    <Project Path="external/common/src/Common.Core/Common.Core.csproj" />
+    <Project Path="external/common/src/Common.Data/Common.Data.csproj" />
+    <Project Path="external/common/src/Common.Logging/Common.Logging.csproj" />
+    <Project Path="external/common/src/Common.AspNetCore/Common.AspNetCore.csproj" />
+    <Project Path="external/common/src/Common.AI/Common.AI.csproj" />
+  </Folder>
+</Solution>
