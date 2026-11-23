@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    CustomerMgnt.AI: AI tools ตามแนวทาง Microsoft.Extensions.AI
+      method ที่มี [Description] → AIFunctionFactory → AIFunction (ใช้กับ IChatClient ใดก็ได้) → McpServerTool (เปิดผ่าน MCP ด้วย ModelContextProtocol SDK ทางการ)
+    ใช้ร่วมกันทั้ง MCP over HTTP (CustomerMgnt.Api /mcp) และ MCP stdio (CustomerMgnt.Mcp)
+  -->
+  <PropertyGroup>
+    <RootNamespace>CustomerMgnt.AI</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\CustomerMgnt.Core\CustomerMgnt.Core.csproj" />
+    <ProjectReference Include="..\..\external\common\src\Common.AI\Common.AI.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.AI" />
+    <PackageReference Include="ModelContextProtocol" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="CustomerMgnt.Tests" />
+  </ItemGroup>
+</Project>

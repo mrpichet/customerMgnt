@@ -1,0 +1,9 @@
+**/bin
+**/obj
+**/.vs
+**/TestResults
+.git
+.env
+secrets
+docs
+*.md

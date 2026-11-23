@@ -1,0 +1,1126 @@
+{
+  "system": "CustomerMgnt",
+  "version": "1.0.0.0",
+  "authentication": "Authorization: Bearer <AuthServer access token>",
+  "endpoints": [
+    {
+      "method": "POST",
+      "route": "/api/activities",
+      "controller": "ActivitiesController",
+      "action": "Create",
+      "summary": "สร้างกิจกรรม (ถ้าเป็น Meeting และตั้งค่า MessageHub ไว้ จะสร้างการประชุม + เชิญ + ตั้งเตือนให้)",
+      "auth": "perm:activity.write"
+    },
+    {
+      "method": "POST",
+      "route": "/api/activities/{id:long}/complete",
+      "controller": "ActivitiesController",
+      "action": "Complete",
+      "summary": "ปิดกิจกรรม (พร้อมสร้างงานติดตามต่อได้)",
+      "auth": "perm:activity.write"
+    },
+    {
+      "method": "GET",
+      "route": "/api/activities/mine",
+      "controller": "ActivitiesController",
+      "action": "Mine",
+      "summary": "งานค้างของฉัน (เลยกำหนด + ภายใน N วันข้างหน้า)",
+      "auth": "perm:customer.read"
+    },
+    {
+      "method": "GET",
+      "route": "/api/activities/customer/{customerId:long}",
+      "controller": "ActivitiesController",
+      "action": "ByCustomer",
+      "summary": "กิจกรรมของลูกค้า",
+      "auth": "perm:customer.read"
+    },
+    {
+      "method": "GET",
+      "route": "/api/customers/{customerId:long}/agenda",
+      "controller": "ActivitiesController",
+      "action": "Agenda",
+      "summary": "วาระ/งานค้างของลูกค้า (นัดหมายถัดไป, งานเลยกำหนด, วาระประชุมจาก MessageHub)",
+      "auth": "perm:customer.read"
+    },
+    {
+      "method": "GET",
+      "route": "/api/ai/tools",
+      "controller": "AiController",
+      "action": "Tools",
+      "summary": "รายชื่อ tools พร้อมคำอธิบายและ JSON schema ของพารามิเตอร์",
+      "auth": "perm:analytics.read"
+    },
+    {
+      "method": "GET",
+      "route": "/api/analytics/leads",
+      "controller": "AnalyticsController",
+      "action": "Leads",
+      "summary": "คะแนน lead (โอกาสปิดการขาย) พร้อมปัจจัยที่มีผล",
+      "auth": "perm:analytics.read"
+    },
+    {
+      "method": "GET",
+      "route": "/api/analytics/churn",
+      "controller": "AnalyticsController",
+      "action": "Churn",
+      "summary": "ความเสี่ยงลูกค้าเลิกใช้บริการ (churn)",
+      "auth": "perm:analytics.read"
+    },
+    {
+      "method": "GET",
+      "route": "/api/analytics/renewals",
+      "controller": "AnalyticsController",
+      "action": "Renewals",
+      "summary": "พยากรณ์การต่อสัญญา MA และโอกาส upsell ของสัญญาที่จะหมดอายุ",
+      "auth": "perm:analytics.read"
+    },
+    {
+      "method": "GET",
+      "route": "/api/analytics/forecast/sales",
+      "controller": "AnalyticsController",
+      "action": "ForecastSales",
+      "summary": "พยากรณ์ยอดขายรายเดือน (Holt-Winters + pipeline ถ่วงน้ำหนัก)",
+      "auth": "perm:analytics.read"
+    },
+    {
+      "method": "GET",
+      "route": "/api/analytics/forecast/budget/{customerId:long}",
+      "controller": "AnalyticsController",
+      "action": "ForecastBudget",
+      "summary": "พยากรณ์งบประมาณ/การใช้จ่ายของลูกค้าตามฤดูกาล",
+      "auth": "perm:analytics.read"
+    },
+    {
+      "method": "GET",
+      "route": "/api/analytics/nba/{customerId:long}",
+      "controller": "AnalyticsController",
+      "action": "NextBestAction",
+      "summary": "สิ่งที่ควรทำต่อไปกับลูกค้า (next best action)",
+      "auth": "perm:analytics.read"
+    },
+    {
+      "method": "GET",
+      "route": "/api/analytics/recommendations/{customerId:long}",
+      "controller": "AnalyticsController",
+      "action": "Recommend",
+      "summary": "แนะนำสินค้า/บริการ/บทความ (item-based collaborative filtering)",
+      "auth": "perm:analytics.read"
+    },
+    {
+      "method": "GET",
+      "route": "/api/analytics/send-time/{customerId:long}",
+      "controller": "AnalyticsController",
+      "action": "SendTime",
+      "summary": "เวลาที่เหมาะสมที่สุดในการส่งข้อความหาลูกค้า",
+      "auth": "perm:analytics.read"
+    },
+    {
+      "method": "GET",
+      "route": "/api/analytics/segments",
+      "controller": "AnalyticsController",
+      "action": "Segments",
+      "summary": "แบ่งกลุ่มลูกค้าแบบ dynamic (k-means) — ไม่บันทึกผล",
+      "auth": "perm:analytics.read"
+    },
+    {
+      "method": "POST",
+      "route": "/api/analytics/segments",
+      "controller": "AnalyticsController",
+      "action": "PersistSegments",
+      "summary": "แบ่งกลุ่มลูกค้าและบันทึกชื่อกลุ่มลงข้อมูลลูกค้า (ต้องมีสิทธิ์ customer.write ด้วย)",
+      "auth": "perm:analytics.read"
+    },
+    {
+      "method": "POST",
+      "route": "/api/analytics/sentiment",
+      "controller": "AnalyticsController",
+      "action": "Sentiment",
+      "summary": "วิเคราะห์อารมณ์ข้อความ (ไทย/อังกฤษ)",
+      "auth": "perm:analytics.read"
+    },
+    {
+      "method": "GET",
+      "route": "/api/analytics/risk/{customerId:long}",
+      "controller": "AnalyticsController",
+      "action": "Risk",
+      "summary": "คะแนนความเสี่ยงของลูกค้า (churn, SLA breach, อายุ issue, อารมณ์, สัญญาใกล้หมด, งานค้าง)",
+      "auth": "perm:analytics.read"
+    },
+    {
+      "method": "GET",
+      "route": "/api/analytics/risk/portfolio",
+      "controller": "AnalyticsController",
+      "action": "RiskPortfolio",
+      "summary": "ภาพรวมความเสี่ยงของลูกค้ากลุ่มเสี่ยงสูงสุด",
+      "auth": "perm:analytics.read"
+    },
+    {
+      "method": "GET",
+      "route": "/api/analytics/models",
+      "controller": "AnalyticsController",
+      "action": "Models",
+      "summary": "ข้อมูลโมเดลที่ใช้อยู่ (จำนวนตัวอย่าง, log loss, เวลาฝึก)",
+      "auth": "perm:analytics.read"
+    },
+    {
+      "method": "POST",
+      "route": "/api/analytics/models/retrain",
+      "controller": "AnalyticsController",
+      "action": "Retrain",
+      "summary": "ล้าง cache โมเดล (ฝึกใหม่ในการเรียกครั้งถัดไป) — ใช้หลังนำเข้าข้อมูลชุดใหญ่",
+      "auth": "perm:data.ingest"
+    },
+    {
+      "method": "POST",
+      "route": "/api/contracts",
+      "controller": "ContractsController",
+      "action": "Create",
+      "summary": "บันทึกสัญญา",
+      "auth": "perm:customer.write"
+    },
+    {
+      "method": "GET",
+      "route": "/api/conversations",
+      "controller": "ConversationsController",
+      "action": "List",
+      "summary": "รายการห้องสนทนา (ห้องที่ต้องดูแลขึ้นก่อน)",
+      "auth": "perm:chat.read"
+    },
+    {
+      "method": "GET",
+      "route": "/api/conversations/{id:long}/messages",
+      "controller": "ConversationsController",
+      "action": "Messages",
+      "summary": "ข้อความในห้อง",
+      "auth": "perm:chat.read"
+    },
+    {
+      "method": "POST",
+      "route": "/api/conversations/{id:long}/reply",
+      "controller": "ConversationsController",
+      "action": "Reply",
+      "summary": "ตอบกลับลูกค้า (ส่งผ่าน MessageHub ตามช่องทางของห้อง)",
+      "auth": "perm:chat.reply"
+    },
+    {
+      "method": "PATCH",
+      "route": "/api/conversations/{id:long}",
+      "controller": "ConversationsController",
+      "action": "Update",
+      "summary": "มอบหมาย/ผูกลูกค้า/เปลี่ยนสถานะห้อง",
+      "auth": "perm:chat.reply"
+    },
+    {
+      "method": "GET",
+      "route": "/api/customers",
+      "controller": "CustomersController",
+      "action": "Search",
+      "summary": "ค้นหาลูกค้า",
+      "auth": "perm:customer.read"
+    },
+    {
+      "method": "POST",
+      "route": "/api/customers",
+      "controller": "CustomersController",
+      "action": "Register",
+      "summary": "ลงทะเบียนลูกค้าใหม่ (เลขผู้เสียภาษีถูกเข้ารหัส PQC และตรวจซ้ำด้วย blind index)",
+      "auth": "perm:customer.write"
+    },
+    {
+      "method": "GET",
+      "route": "/api/customers/{id:long}",
+      "controller": "CustomersController",
+      "action": "Get",
+      "summary": "อ่านลูกค้า",
+      "auth": "perm:customer.read"
+    },
+    {
+      "method": "GET",
+      "route": "/api/customers/by-code/{code}",
+      "controller": "CustomersController",
+      "action": "GetByCode",
+      "summary": "อ่านลูกค้าจากรหัสลูกค้า (เช่น CUST-000123)",
+      "auth": "perm:customer.read"
+    },
+    {
+      "method": "PUT",
+      "route": "/api/customers/{id:long}",
+      "controller": "CustomersController",
+      "action": "Update",
+      "summary": "แก้ไขลูกค้า (ต้องส่ง version ล่าสุด)",
+      "auth": "perm:customer.write"
+    },
+    {
+      "method": "GET",
+      "route": "/api/customers/{id:long}/360",
+      "controller": "CustomersController",
+      "action": "Get360",
+      "summary": "ภาพรวม 360° ของลูกค้า",
+      "auth": "perm:customer.read"
+    },
+    {
+      "method": "POST",
+      "route": "/api/customers/{id:long}/identities",
+      "controller": "CustomersController",
+      "action": "AddIdentity",
+      "summary": "เพิ่มตัวตนในช่องทาง (LINE userId, Facebook PSID, อีเมล, ...)",
+      "auth": "perm:customer.write"
+    },
+    {
+      "method": "GET",
+      "route": "/api/customers/{id:long}/relationships",
+      "controller": "CustomersController",
+      "action": "Relationships",
+      "summary": "ความสัมพันธ์ของลูกค้า (บุคคล → บริษัทที่สังกัด, บริษัท → ผู้ติดต่อ)",
+      "auth": "perm:customer.read"
+    },
+    {
+      "method": "POST",
+      "route": "/api/customers/{id:long}/links",
+      "controller": "CustomersController",
+      "action": "Link",
+      "summary": "ผูกลูกค้ากับโครงการ/issue/การประชุมในระบบอื่น",
+      "auth": "perm:customer.write"
+    },
+    {
+      "method": "GET",
+      "route": "/api/customers/{id:long}/projects",
+      "controller": "CustomersController",
+      "action": "Projects",
+      "summary": "สรุปโครงการของลูกค้า (Active/Closed พร้อมสถานะและความคืบหน้าจาก ProjectMgnt)",
+      "auth": "perm:customer.read"
+    },
+    {
+      "method": "GET",
+      "route": "/api/customers/{id:long}/contracts",
+      "controller": "CustomersController",
+      "action": "Contracts",
+      "summary": "สัญญาของลูกค้า",
+      "auth": "perm:customer.read"
+    },
+    {
+      "method": "POST",
+      "route": "/api/ingest/events",
+      "controller": "IngestionController",
+      "action": "Events",
+      "summary": "นำเข้าเหตุการณ์พฤติกรรม (ซื้อ, เปิดอีเมล, เข้าเว็บ, ...) สูงสุด 10,000 รายการต่อครั้ง",
+      "auth": "perm:data.ingest"
+    },
+    {
+      "method": "GET",
+      "route": "/api/ingest/catalog",
+      "controller": "IngestionController",
+      "action": "Catalog",
+      "summary": "รายการแคตตาล็อก",
+      "auth": "perm:customer.read"
+    },
+    {
+      "method": "PUT",
+      "route": "/api/ingest/catalog/{code}",
+      "controller": "IngestionController",
+      "action": "UpsertCatalog",
+      "summary": "เพิ่ม/แก้รายการแคตตาล็อก",
+      "auth": "perm:data.ingest"
+    },
+    {
+      "method": "GET",
+      "route": "/api/insights/issues/aging",
+      "controller": "InsightsController",
+      "action": "IssueAging",
+      "summary": "สรุป issue ที่ยังเปิด แยกตาม severity และช่วงอายุ (customerId ว่าง = ทุกลูกค้า)",
+      "auth": "perm:customer.read"
+    },
+    {
+      "method": "POST",
+      "route": "/api/opportunities",
+      "controller": "PipelineController",
+      "action": "Create",
+      "summary": "สร้าง lead/opportunity",
+      "auth": "perm:sales.write"
+    },
+    {
+      "method": "GET",
+      "route": "/api/opportunities",
+      "controller": "PipelineController",
+      "action": "List",
+      "summary": "รายการ opportunity",
+      "auth": "perm:sales.read"
+    },
+    {
+      "method": "POST",
+      "route": "/api/opportunities/{id:long}/stage",
+      "controller": "PipelineController",
+      "action": "MoveStage",
+      "summary": "ย้าย stage (ต้องส่ง version ล่าสุด; Won/Lost ปิดดีล)",
+      "auth": "perm:sales.write"
+    },
+    {
+      "method": "GET",
+      "route": "/api/opportunities/summary",
+      "controller": "PipelineController",
+      "action": "Summary",
+      "summary": "สรุป pipeline ตาม stage (มูลค่า, มูลค่าถ่วงน้ำหนัก, win rate)",
+      "auth": "perm:sales.read"
+    },
+    {
+      "method": "GET",
+      "route": "/api/me/profile",
+      "controller": "ProfileController",
+      "action": "Mine",
+      "summary": "โปรไฟล์ของฉัน",
+      "auth": "perm:customer.read"
+    },
+    {
+      "method": "PUT",
+      "route": "/api/me/profile",
+      "controller": "ProfileController",
+      "action": "UpdateMine",
+      "summary": "แก้โปรไฟล์ของฉัน",
+      "auth": "perm:customer.read"
+    },
+    {
+      "method": "PUT",
+      "route": "/api/users/{subject}/profile",
+      "controller": "ProfileController",
+      "action": "Upsert",
+      "summary": "ตั้งโปรไฟล์ของผู้ใช้อื่น (ผู้ดูแลระบบเท่านั้น — ตรวจใน service)",
+      "auth": "perm:customer.write"
+    },
+    {
+      "method": "POST",
+      "route": "/api/relationships",
+      "controller": "RelationshipsController",
+      "action": "Link",
+      "summary": "ผูกบุคคลกับบริษัท",
+      "auth": "perm:customer.write"
+    },
+    {
+      "method": "POST",
+      "route": "/api/relationships/{id:long}/end",
+      "controller": "RelationshipsController",
+      "action": "End",
+      "summary": "สิ้นสุดความสัมพันธ์ (เช่น ลาออก/ย้ายตำแหน่ง)",
+      "auth": "perm:customer.write"
+    },
+    {
+      "method": "POST",
+      "route": "/api/requests",
+      "controller": "RequestsController",
+      "action": "Create",
+      "summary": "บันทึกคำร้อง/TOR ใหม่",
+      "auth": "perm:request.write"
+    },
+    {
+      "method": "GET",
+      "route": "/api/requests",
+      "controller": "RequestsController",
+      "action": "List",
+      "summary": "รายการคำร้อง",
+      "auth": "perm:request.read"
+    },
+    {
+      "method": "GET",
+      "route": "/api/requests/{id:long}",
+      "controller": "RequestsController",
+      "action": "Get",
+      "summary": "อ่านคำร้อง",
+      "auth": "perm:request.read"
+    },
+    {
+      "method": "POST",
+      "route": "/api/requests/{id:long}/decision",
+      "controller": "RequestsController",
+      "action": "Decide",
+      "summary": "ตัดสินคำร้อง (เริ่มประเมิน / อนุมัติ / ปฏิเสธ)",
+      "auth": "perm:request.write"
+    },
+    {
+      "method": "POST",
+      "route": "/api/requests/{id:long}/forward",
+      "controller": "RequestsController",
+      "action": "Forward",
+      "summary": "ส่งต่อคำร้องที่อนุมัติแล้วไป ProjectMgnt / requirementMgnt (ลงนามด้วย PQC เพื่อพิสูจน์ความถูกต้องภายหลัง)",
+      "auth": "perm:request.forward"
+    },
+    {
+      "method": "GET",
+      "route": "/api/requests/{id:long}/verify-signature",
+      "controller": "RequestsController",
+      "action": "VerifySignature",
+      "summary": "ตรวจลายเซ็นของคำร้องที่ส่งต่อแล้ว (ตรวจว่าเนื้อหาไม่ถูกแก้หลังส่ง)",
+      "auth": "perm:request.read"
+    },
+    {
+      "method": "POST",
+      "route": "/api/session/login",
+      "controller": "SessionController",
+      "action": "Login",
+      "summary": "เข้าสู่ระบบด้วยชื่อผู้ใช้/รหัสผ่าน (จำกัดอัตราแบบเข้ม)",
+      "auth": "anonymous"
+    },
+    {
+      "method": "GET",
+      "route": "/api/session/me",
+      "controller": "SessionController",
+      "action": "Me",
+      "summary": "ข้อมูลผู้ใช้ปัจจุบัน (สิทธิ์ที่มี — ให้ UI ซ่อน/แสดงเมนู)",
+      "auth": "authenticated"
+    },
+    {
+      "method": "POST",
+      "route": "/api/sla/calculate",
+      "controller": "SlaController",
+      "action": "Calculate",
+      "summary": "คำนวณกำหนดเวลา response/resolution ของงานตาม SLA ของลูกค้าและ severity",
+      "auth": "perm:sla.read"
+    },
+    {
+      "method": "POST",
+      "route": "/api/sla/evaluate",
+      "controller": "SlaController",
+      "action": "Evaluate",
+      "summary": "ประเมินสถานะ SLA ของงาน (OnTrack / AtRisk / Breached)",
+      "auth": "perm:sla.read"
+    },
+    {
+      "method": "GET",
+      "route": "/api/sla/customers/{code}/policy",
+      "controller": "SlaController",
+      "action": "EffectivePolicy",
+      "summary": "นโยบาย SLA ที่มีผลกับลูกค้า (ใช้ sync ระดับ severity ไปยัง IssueTracking)",
+      "auth": "perm:sla.read"
+    },
+    {
+      "method": "GET",
+      "route": "/api/sla/customers/{id:long}/compliance",
+      "controller": "SlaController",
+      "action": "Compliance",
+      "summary": "สรุปการปฏิบัติตาม SLA ของลูกค้า (จาก issue ใน IssueTracking)",
+      "auth": "perm:sla.read"
+    },
+    {
+      "method": "GET",
+      "route": "/api/sla/policies",
+      "controller": "SlaController",
+      "action": "Policies",
+      "summary": "รายการนโยบาย (customerId = เฉพาะของลูกค้านั้น + นโยบายกลาง)",
+      "auth": "perm:sla.read"
+    },
+    {
+      "method": "POST",
+      "route": "/api/sla/policies",
+      "controller": "SlaController",
+      "action": "CreatePolicy",
+      "summary": "สร้างนโยบาย SLA พร้อมระดับ severity ของลูกค้า",
+      "auth": "perm:sla.manage"
+    },
+    {
+      "method": "PUT",
+      "route": "/api/sla/policies/{id:long}",
+      "controller": "SlaController",
+      "action": "UpdatePolicy",
+      "summary": "แก้ไขนโยบาย SLA (แทนที่ระดับ severity ทั้งชุด; ต้องส่ง version ล่าสุด)",
+      "auth": "perm:sla.manage"
+    },
+    {
+      "method": "POST",
+      "route": "/api/webhooks/line",
+      "controller": "WebhooksController",
+      "action": "Line",
+      "summary": "LINE Messaging API webhook — ตรวจ X-Line-Signature = Base64(HMAC-SHA256(channelSecret, body)) แล้วนำข้อความ text เข้าสู่ inbox (ข้อความซ้ำจาก LINE retry ถูกกรองด้วย message id)",
+      "auth": "anonymous"
+    },
+    {
+      "method": "POST",
+      "route": "/api/webhooks/inbound",
+      "controller": "WebhooksController",
+      "action": "Inbound",
+      "summary": "webhook กลางสำหรับช่องทางอื่น (email gateway, Facebook/Instagram relay, web chat) — body = InboundMessageRequest, header X-Signature: sha256=<hex HMAC-SHA256(secret, body)>",
+      "auth": "anonymous"
+    }
+  ],
+  "tools": [
+    {
+      "name": "analyze_sentiment",
+      "description": "Sentiment analysis of a Thai or English message: score -1..1, label, confidence, detected signals and whether it needs attention (escalation words).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "description": "Message text (max 8000 characters)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ]
+      }
+    },
+    {
+      "name": "assess_portfolio_risk",
+      "description": "Ranks the riskiest customers in the portfolio (candidates from the churn model) with a full risk score each, plus a summary (average, P90, count per level).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "top": {
+            "description": "How many customers to assess (1-50)",
+            "type": "integer",
+            "default": 20
+          }
+        }
+      }
+    },
+    {
+      "name": "calculate_customer_risk",
+      "description": "Calculates the overall account risk score (0-100) of one customer by combining churn probability (ML), SLA breach ratio and aging of open issues (IssueTracking), negative chat sentiment, contract expiry, overdue follow-ups and contact gap. Returns the level (Low/Medium/High/Critical), each factor value and the top contributors.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "customerCode": {
+            "description": "Customer code, e.g. CUST-000123",
+            "type": "string"
+          }
+        },
+        "required": [
+          "customerCode"
+        ]
+      }
+    },
+    {
+      "name": "calculate_sla_targets",
+      "description": "Calculates SLA response and resolution due dates for a customer and one of its severity codes, honoring the policy's business hours, working days and holidays.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "customerCode": {
+            "description": "Customer code",
+            "type": "string"
+          },
+          "severityCode": {
+            "description": "Severity code defined in the customer's SLA, e.g. S1",
+            "type": "string"
+          },
+          "startedAt": {
+            "description": "Start time (ISO 8601); default now",
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "default": null
+          }
+        },
+        "required": [
+          "customerCode",
+          "severityCode"
+        ]
+      }
+    },
+    {
+      "name": "create_customer_request",
+      "description": "Records a new customer request (Request, Tor, ChangeRequest or Incident). Incidents require a severity code from the customer's SLA. Does not forward it to other systems. Requires request.write.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "customerCode": {
+            "description": "Customer code",
+            "type": "string"
+          },
+          "kind": {
+            "description": "Request, Tor, ChangeRequest or Incident",
+            "type": "string",
+            "enum": [
+              "Request",
+              "Tor",
+              "ChangeRequest",
+              "Incident"
+            ]
+          },
+          "title": {
+            "description": "Title",
+            "type": "string"
+          },
+          "description": {
+            "description": "Description",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "severityCode": {
+            "description": "Severity code (required for Incident)",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "customerCode",
+          "kind",
+          "title"
+        ]
+      }
+    },
+    {
+      "name": "create_follow_up",
+      "description": "Creates a follow-up activity (call, email, task, visit, note) for a customer, owned by the current user, with a reminder 30 minutes before. Requires activity.write.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "customerCode": {
+            "description": "Customer code",
+            "type": "string"
+          },
+          "kind": {
+            "description": "Call, Email, Task, Visit or Note (meetings are created through the API with attendees)",
+            "type": "string",
+            "enum": [
+              "Call",
+              "Meeting",
+              "Email",
+              "Chat",
+              "Task",
+              "Note",
+              "Visit"
+            ]
+          },
+          "subject": {
+            "description": "Subject (max 300 characters)",
+            "type": "string"
+          },
+          "dueAt": {
+            "description": "Due time (ISO 8601)",
+            "type": "string",
+            "format": "date-time"
+          },
+          "notes": {
+            "description": "Notes (optional)",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "customerCode",
+          "kind",
+          "subject",
+          "dueAt"
+        ]
+      }
+    },
+    {
+      "name": "forecast_renewals",
+      "description": "Forecasts maintenance (MA) contract renewals ending within N days: renewal probability, expected renewal value, upsell/expansion probability and suggested upsell item.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "withinDays": {
+            "description": "Contracts ending within this many days (1-730)",
+            "type": "integer",
+            "default": 180
+          }
+        }
+      }
+    },
+    {
+      "name": "forecast_sales",
+      "description": "Sales forecast per month (Holt-Winters on purchase history + weighted open pipeline) with ~80% confidence band and monthly seasonal index.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "horizonMonths": {
+            "description": "Months ahead (1-24)",
+            "type": "integer",
+            "default": 6
+          },
+          "customerCode": {
+            "description": "Customer code (optional)",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          }
+        }
+      }
+    },
+    {
+      "name": "forecast_seasonal_budget",
+      "description": "Seasonal budget forecast of one customer: expected spend per month and the seasonal index (1.0 = average month) to time proposals with the customer's budget cycle.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "customerCode": {
+            "description": "Customer code",
+            "type": "string"
+          },
+          "horizonMonths": {
+            "description": "Months ahead (1-24)",
+            "type": "integer",
+            "default": 12
+          }
+        },
+        "required": [
+          "customerCode"
+        ]
+      }
+    },
+    {
+      "name": "get_best_send_time",
+      "description": "Send-time optimization: best day/hour (customer's local time) to send a message on a channel, the next send time and expected open rate.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "customerCode": {
+            "description": "Customer code",
+            "type": "string"
+          },
+          "channel": {
+            "description": "Channel: Email, Line, Sms, ...",
+            "type": "string",
+            "enum": [
+              "Line",
+              "Email",
+              "Facebook",
+              "Instagram",
+              "WebChat",
+              "Phone",
+              "Sms",
+              "Teams",
+              "WhatsApp",
+              "Telegram",
+              "Review"
+            ],
+            "default": "Email"
+          }
+        },
+        "required": [
+          "customerCode"
+        ]
+      }
+    },
+    {
+      "name": "get_customer_360",
+      "description": "Customer 360 view: profile, relationships (people/companies and positions), channel identities, recent conversations, open activities, requests, open opportunities and links to projects/issues.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "customerCode": {
+            "description": "Customer code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "customerCode"
+        ]
+      }
+    },
+    {
+      "name": "get_customer_agenda",
+      "description": "Customer agenda: upcoming meetings (MessageHub), pending agenda items carried from past meetings, open activities and overdue count.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "customerCode": {
+            "description": "Customer code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "customerCode"
+        ]
+      }
+    },
+    {
+      "name": "get_issue_aging",
+      "description": "Summary of open issues in IssueTracking by aging bucket and customer-specific severity, SLA breached/at-risk counts and the oldest issues. Leave customerCode empty for all customers.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "customerCode": {
+            "description": "Customer code (optional)",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          }
+        }
+      }
+    },
+    {
+      "name": "get_pipeline_summary",
+      "description": "Sales pipeline summary per stage: count, amount, weighted amount, average days in stage and win rate (12 months).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "get_project_portfolio",
+      "description": "Active and closed projects of a customer from ProjectMgnt with phase, actual vs planned progress, health and forecast end date.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "customerCode": {
+            "description": "Customer code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "customerCode"
+        ]
+      }
+    },
+    {
+      "name": "get_sla_compliance",
+      "description": "SLA compliance of a customer: issues met/breached/at-risk/on-track and compliance percentage per severity level.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "customerCode": {
+            "description": "Customer code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "customerCode"
+        ]
+      }
+    },
+    {
+      "name": "get_sla_policy",
+      "description": "Effective SLA policy of a customer (customer-specific or the default): business hours, holidays and the customer-defined severity levels with response/resolution minutes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "customerCode": {
+            "description": "Customer code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "customerCode"
+        ]
+      }
+    },
+    {
+      "name": "list_customer_requests",
+      "description": "Lists customer requests / TOR / change requests / incidents with status.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "customerCode": {
+            "description": "Customer code (optional)",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "status": {
+            "description": "New, UnderReview, Approved, Forwarded, Rejected, Closed",
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "New",
+              "UnderReview",
+              "Approved",
+              "Forwarded",
+              "Rejected",
+              "Closed",
+              null
+            ],
+            "default": null
+          }
+        }
+      }
+    },
+    {
+      "name": "predict_churn",
+      "description": "Predicts churn probability (logistic regression trained on churned vs. active customers) with the signals that drive it and a recommended retention action. Leave customerCode empty to rank all active customers.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "customerCode": {
+            "description": "Customer code (optional)",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "minProbability": {
+            "description": "Only return customers with probability >= this value (0..1)",
+            "type": "number",
+            "default": 0
+          },
+          "top": {
+            "description": "Maximum rows (1-500)",
+            "type": "integer",
+            "default": 20
+          }
+        }
+      }
+    },
+    {
+      "name": "recommend_next_best_action",
+      "description": "Recommends the next best actions for a customer (respond to complaint, retention call, renewal, follow-up, discovery meeting, check-in, offer) with reason, priority, channel and best send time.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "customerCode": {
+            "description": "Customer code",
+            "type": "string"
+          },
+          "max": {
+            "description": "Maximum actions (1-10)",
+            "type": "integer",
+            "default": 3
+          }
+        },
+        "required": [
+          "customerCode"
+        ]
+      }
+    },
+    {
+      "name": "recommend_products",
+      "description": "Product, service or content recommendations for a customer (item-based collaborative filtering on purchases and views, popularity fallback).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "customerCode": {
+            "description": "Customer code",
+            "type": "string"
+          },
+          "top": {
+            "description": "Number of items (1-50)",
+            "type": "integer",
+            "default": 5
+          },
+          "kind": {
+            "description": "Filter: Product, Service, Content or Promotion",
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "Product",
+              "Service",
+              "Content",
+              "Promotion",
+              null
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "customerCode"
+        ]
+      }
+    },
+    {
+      "name": "score_leads",
+      "description": "Predictive lead scoring: probability (0-100) that each open opportunity will be won, grade A-D and the factors behind the score.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "customerCode": {
+            "description": "Customer code (optional)",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "top": {
+            "description": "Maximum rows (1-500)",
+            "type": "integer",
+            "default": 20
+          }
+        }
+      }
+    },
+    {
+      "name": "search_customers",
+      "description": "Searches customers (persons or juristic persons) by name, code, email or legal name, with optional filters.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "description": "Search text",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "kind": {
+            "description": "Person or Juristic",
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "Person",
+              "Juristic",
+              null
+            ],
+            "default": null
+          },
+          "status": {
+            "description": "Prospect, Active, Inactive or Churned",
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "Prospect",
+              "Active",
+              "Inactive",
+              "Churned",
+              null
+            ],
+            "default": null
+          },
+          "segment": {
+            "description": "Segment name",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "page": {
+            "description": "Page (1..)",
+            "type": "integer",
+            "default": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "segment_customers",
+      "description": "Dynamic segmentation (RFM + engagement, k-means++): segment names (Champions, Loyal, At Risk, ...), sizes and centroids. Does not modify customers.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "segmentCount": {
+            "description": "Number of segments (2-12)",
+            "type": "integer",
+            "default": 5
+          }
+        }
+      }
+    }
+  ]
+}

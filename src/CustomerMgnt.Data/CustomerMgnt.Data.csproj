@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    CustomerMgnt.Data: Implementation ของ I*DAO
+      * Ado/      : *ADO ด้วย Dapper บน PostgreSQL (ผ่าน Common.Data DbConnectionFactory/AdoBase)
+      * InMemory/ : *ADO ในหน่วยความจำ สำหรับ dev/demo/test (Database:Provider = InMemory)
+      * Sql/      : migration script (embedded resource) รันอัตโนมัติตอน start
+  -->
+  <PropertyGroup>
+    <RootNamespace>CustomerMgnt.Data</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\CustomerMgnt.Core\CustomerMgnt.Core.csproj" />
+    <ProjectReference Include="..\..\external\common\src\Common.Data\Common.Data.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Dapper" />
+    <PackageReference Include="Npgsql" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Sql\**\*.sql" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="CustomerMgnt.Tests" />
+  </ItemGroup>
+</Project>

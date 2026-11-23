@@ -1,0 +1,27 @@
+/* สไตล์ของแอป (ส่วนที่ theme Fluent ไม่ครอบคลุม) */
+html, body { margin: 0; height: 100%; font-family: "Segoe UI", "Noto Sans Thai", "Sarabun", system-ui, sans-serif; }
+.app-loading { display: grid; place-items: center; height: 100vh; color: #666; }
+#blazor-error-ui { display: none; position: fixed; bottom: 0; left: 0; right: 0; padding: .6rem 1rem; background: #fde7e9; color: #a4262c; z-index: 1000; }
+.shell { display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; }
+.shell nav { background: #1b1f2a; color: #fff; padding: 1rem .5rem; }
+.shell nav .brand { font-weight: 600; font-size: 1.1rem; padding: 0 .75rem 1rem; }
+.shell nav a { display: block; color: #cfd6e4; text-decoration: none; padding: .45rem .75rem; border-radius: 6px; }
+.shell nav a.active, .shell nav a:hover { background: #2d3446; color: #fff; }
+.shell main { padding: 1.25rem 1.5rem; overflow-x: auto; }
+.topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; gap: 1rem; flex-wrap: wrap; }
+.topbar h1 { font-size: 1.35rem; margin: 0; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: .75rem; margin-bottom: 1rem; }
+.card { background: #fff; border: 1px solid #e3e6ec; border-radius: 8px; padding: .8rem 1rem; }
+.card .label { color: #666; font-size: .85rem; }
+.card .value { font-size: 1.5rem; font-weight: 600; }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+.error { background: #fde7e9; color: #a4262c; padding: .5rem .75rem; border-radius: 6px; margin-bottom: .75rem; }
+.muted { color: #777; }
+.badge { display: inline-block; padding: 0 .5rem; border-radius: 10px; font-size: .8rem; background: #eef1f6; }
+.badge.bad { background: #fde7e9; color: #a4262c; } .badge.warn { background: #fff4ce; color: #8a6d00; } .badge.good { background: #dff6dd; color: #107c10; }
+.chat { display: grid; grid-template-columns: 340px 1fr; gap: 1rem; height: calc(100vh - 120px); }
+.messages { overflow-y: auto; border: 1px solid #e3e6ec; border-radius: 8px; padding: .75rem; background: #fafbfc; }
+.msg { max-width: 70%; margin: .35rem 0; padding: .45rem .7rem; border-radius: 10px; white-space: pre-wrap; }
+.msg.in { background: #fff; border: 1px solid #e3e6ec; } .msg.out { background: #deecf9; margin-left: auto; }
+.login { max-width: 360px; margin: 12vh auto; }
+@media (max-width: 900px) { .shell { grid-template-columns: 1fr; } .grid-2, .chat { grid-template-columns: 1fr; } }
