@@ -140,3 +140,10 @@ public sealed record CustomerAgendaDTO(string CustomerCode, IReadOnlyList<Extern
 /// <param name="Signature">ลายเซ็น PQC ของเนื้อหาที่ส่งต่อ</param>
 /// <param name="Warnings">ระบบที่ส่งไม่สำเร็จ (ทำซ้ำได้: ระบบที่สำเร็จแล้วจะไม่ถูกสร้างซ้ำ)</param>
 public sealed record ForwardResultDTO(long RequestId, IReadOnlyList<ExternalLinkDTO> Links, string Signature, IReadOnlyList<string> Warnings);
+
+/// <summary>ลูกค้าที่มีสัญญา Active ของผลิตภัณฑ์ (ตอบ ProductMgnt ใช้ตรวจผลกระทบก่อนเลิกผลิตภัณฑ์) — ข้อมูลเท่าที่จำเป็น ไม่มี PII อื่น</summary>
+/// <param name="CustomerCode">รหัสลูกค้า</param>
+/// <param name="CustomerName">ชื่อที่แสดง</param>
+/// <param name="ContractNo">เลขที่สัญญา</param>
+/// <param name="ContractEnd">วันสิ้นสุดสัญญา</param>
+public sealed record ProductCustomerDTO(string CustomerCode, string CustomerName, string? ContractNo, DateOnly? ContractEnd);

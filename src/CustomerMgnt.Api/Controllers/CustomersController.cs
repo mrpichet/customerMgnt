@@ -159,3 +159,18 @@ public sealed class ContractsController(DataIngestionService ingestion) : Custom
     [RequirePermission(Permissions.CustomerWrite)]
     public async Task<ActionResult<ContractDTO>> Create([FromBody] ContractRequest request, CancellationToken ct) => Ok(await ingestion.CreateContractAsync(CurrentUser, request, ct));
 }
+
+/// <summary>ข้อมูลลูกค้าตามผลิตภัณฑ์ของ ProductMgnt (ใช้ตรวจผลกระทบก่อนเลิกผลิตภัณฑ์)</summary>
+/// <param name="ingestion">บริการสัญญา</param>
+[Route("api/products")]
+public sealed class ProductCustomersController(DataIngestionService ingestion) : CustomerMgntControllerBase
+{
+    /// <summary>ลูกค้าที่มีสัญญา Active ของผลิตภัณฑ์</summary>
+    /// <param name="code">รหัสผลิตภัณฑ์ใน ProductMgnt</param>
+    /// <param name="ct">ยกเลิก</param>
+    /// <returns>ลูกค้า + สัญญา</returns>
+    [HttpGet("{code}/customers")]
+    [RequirePermission(Permissions.CustomerRead)]
+    public async Task<ActionResult<IReadOnlyList<ProductCustomerDTO>>> Customers(string code, CancellationToken ct) =>
+        Ok(await ingestion.ListCustomersByProductAsync(CurrentUser, code, ct));
+}

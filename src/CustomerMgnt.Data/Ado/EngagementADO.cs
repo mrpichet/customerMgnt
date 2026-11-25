@@ -11,7 +11,7 @@ namespace CustomerMgnt.Data.Ado;
 public sealed class EngagementADO : AdoBase, IEngagementDAO
 {
     /// <summary>คอลัมน์สัญญา</summary>
-    private const string ContractColumns = "id, customer_id, contract_no, title, start_date, end_date, annual_value, status, renewal_count, sla_policy_id";
+    private const string ContractColumns = "id, customer_id, contract_no, title, start_date, end_date, annual_value, status, renewal_count, sla_policy_id, product_code";
 
     /// <summary>สร้าง ADO</summary>
     /// <param name="db">connection factory</param>
@@ -93,10 +93,10 @@ public sealed class EngagementADO : AdoBase, IEngagementDAO
     /// <inheritdoc />
     public Task<long> InsertContractAsync(ContractDTO contract, CancellationToken ct) =>
         RunAsync("contract.insert", c => c.ExecuteScalarAsync<long>(Cmd(Dialect.InsertReturningId("contract", """
-customer_id, contract_no, title, start_date, end_date, annual_value, status, renewal_count, sla_policy_id
+customer_id, contract_no, title, start_date, end_date, annual_value, status, renewal_count, sla_policy_id, product_code
 """, """
-@CustomerId, @ContractNo, @Title, @StartDate, @EndDate, @AnnualValue, @Status, @RenewalCount, @SlaPolicyId
-"""), new { contract.CustomerId, contract.ContractNo, contract.Title, contract.StartDate, contract.EndDate, contract.AnnualValue, Status = (int)contract.Status, contract.RenewalCount, contract.SlaPolicyId }, ct)), ct);
+@CustomerId, @ContractNo, @Title, @StartDate, @EndDate, @AnnualValue, @Status, @RenewalCount, @SlaPolicyId, @ProductCode
+"""), new { contract.CustomerId, contract.ContractNo, contract.Title, contract.StartDate, contract.EndDate, contract.AnnualValue, Status = (int)contract.Status, contract.RenewalCount, contract.SlaPolicyId, contract.ProductCode }, ct)), ct);
 
     /// <inheritdoc />
     public Task<IReadOnlyList<ContractDTO>> ListContractsEndingAsync(DateOnly from, DateOnly to, CancellationToken ct) =>
@@ -112,6 +112,34 @@ customer_id, contract_no, title, start_date, end_date, annual_value, status, ren
     public Task<IReadOnlyList<ContractDTO>> ListContractsAsync(long customerId, CancellationToken ct) =>
         RunAsync<IReadOnlyList<ContractDTO>>("contract.list", async c =>
             (await c.QueryAsync<ContractDTO>(Cmd($"SELECT {ContractColumns} FROM contract WHERE customer_id = @customerId ORDER BY end_date DESC", new { customerId }, ct)).ConfigureAwait(false)).ToList(), ct);
+
+    /// <inheritdoc />
+    public Task<IReadOnlyList<ProductCustomerDTO>> ListActiveCustomersByProductAsync(string productCode, DateOnly today, CancellationToken ct) =>
+        RunAsync<IReadOnlyList<ProductCustomerDTO>>("contract.by-product", async c =>
+        {
+            // Step 1: สัญญา Active (status 1) ที่ยังไม่สิ้นสุด + ชื่อลูกค้า (ใช้ index ix_contract_product)
+            const string sql = """
+                SELECT cu.code AS CustomerCode, cu.display_name AS CustomerName, ct.contract_no AS ContractNo, ct.end_date AS ContractEnd
+                FROM contract ct
+                JOIN customer cu ON cu.id = ct.customer_id
+                WHERE ct.product_code = @productCode AND ct.status = 1 AND ct.end_date >= @today
+                ORDER BY cu.code, ct.end_date
+                """;
+            return (await c.QueryAsync<ProductCustomerRow>(Cmd(sql, new { productCode, today }, ct)).ConfigureAwait(false))
+                .Select(r => new ProductCustomerDTO(r.CustomerCode, r.CustomerName, r.ContractNo, r.ContractEnd)).ToList();
+        }, ct);
+
+    /// <summary>แถวผลลัพธ์ของ <see cref="ListActiveCustomersByProductAsync"/> (Dapper map ตามชื่อคอลัมน์)</summary>
+    private sealed class ProductCustomerRow
+    {
+        public string CustomerCode { get; set; } = string.Empty;
+
+        public string CustomerName { get; set; } = string.Empty;
+
+        public string? ContractNo { get; set; }
+
+        public DateOnly? ContractEnd { get; set; }
+    }
 
     /// <inheritdoc />
     public Task<IReadOnlyList<CatalogItemDTO>> ListCatalogAsync(CancellationToken ct) =>
