@@ -28,11 +28,19 @@ Authentication: `Authorization: Bearer <AuthServer access token>`
 | GET | `/api/analytics/risk/portfolio` | perm:analytics.read | ภาพรวมความเสี่ยงของลูกค้ากลุ่มเสี่ยงสูงสุด |
 | GET | `/api/analytics/models` | perm:analytics.read | ข้อมูลโมเดลที่ใช้อยู่ (จำนวนตัวอย่าง, log loss, เวลาฝึก) |
 | POST | `/api/analytics/models/retrain` | perm:data.ingest | ล้าง cache โมเดล (ฝึกใหม่ในการเรียกครั้งถัดไป) — ใช้หลังนำเข้าข้อมูลชุดใหญ่ |
+| POST | `/api/v1/campaign-messages` | perm:campaign.message.send | ตั้งงานส่งข้อความ (ส่งเฉพาะคนที่ยินยอมช่องทางนั้น) |
+| GET | `/api/v1/campaign-messages` | perm:campaign.message.send | สถานะงานส่งข้อความ |
 | POST | `/api/contracts` | perm:customer.write | บันทึกสัญญา |
 | GET | `/api/conversations` | perm:chat.read | รายการห้องสนทนา (ห้องที่ต้องดูแลขึ้นก่อน) |
 | GET | `/api/conversations/{id:long}/messages` | perm:chat.read | ข้อความในห้อง |
 | POST | `/api/conversations/{id:long}/reply` | perm:chat.reply | ตอบกลับลูกค้า (ส่งผ่าน MessageHub ตามช่องทางของห้อง) |
 | PATCH | `/api/conversations/{id:long}` | perm:chat.reply | มอบหมาย/ผูกลูกค้า/เปลี่ยนสถานะห้อง |
+| GET | `/api/v1/coupons/batches` | perm:coupon.read | ชุดคูปอง |
+| POST | `/api/v1/coupons/batches` | perm:coupon.write | สร้างชุดคูปอง (สร้างรหัสเบื้องหลัง) |
+| GET | `/api/v1/coupons` | perm:coupon.read | ค้นหาคูปอง |
+| GET | `/api/v1/coupons/{code}` | perm:coupon.read | อ่านคูปองพร้อมประวัติ |
+| POST | `/api/v1/coupons/{code}/cancel` | perm:coupon.write | ยกเลิกคูปอง |
+| POST | `/api/v1/coupons/issue` | perm:coupon.write | แจกคูปองให้สมาชิก / Segment (เบื้องหลัง) |
 | GET | `/api/customers` | perm:customer.read | ค้นหาลูกค้า |
 | POST | `/api/customers` | perm:customer.write | ลงทะเบียนลูกค้าใหม่ (เลขผู้เสียภาษีถูกเข้ารหัส PQC และตรวจซ้ำด้วย blind index) |
 | GET | `/api/customers/{id:long}` | perm:customer.read | อ่านลูกค้า |
@@ -48,14 +56,98 @@ Authentication: `Authorization: Bearer <AuthServer access token>`
 | GET | `/api/ingest/catalog` | perm:customer.read | รายการแคตตาล็อก |
 | PUT | `/api/ingest/catalog/{code}` | perm:data.ingest | เพิ่ม/แก้รายการแคตตาล็อก |
 | GET | `/api/insights/issues/aging` | perm:customer.read | สรุป issue ที่ยังเปิด แยกตาม severity และช่วงอายุ (customerId ว่าง = ทุกลูกค้า) |
+| GET | `/api/v1/members` | perm:member.read | ค้นหาสมาชิก (ข้อมูลส่วนบุคคลแบบ mask) |
+| POST | `/api/v1/members` | perm:member.write | สมัครสมาชิกโดยเจ้าหน้าที่ (สถานะ PendingVerification และส่ง OTP) |
+| GET | `/api/v1/members/{id:long}` | perm:member.read | อ่านสมาชิก |
+| GET | `/api/v1/members/by-no/{memberNo}` | perm:member.read | อ่านสมาชิกจากเลขสมาชิก |
+| PUT | `/api/v1/members/{id:long}` | perm:member.write | แก้ข้อมูลสมาชิก — เปลี่ยนเบอร์ได้ 202 พร้อม OTP ของเบอร์ใหม่ |
+| POST | `/api/v1/members/{id:long}/reveal` | perm:member.pii | ดูข้อมูลส่วนบุคคลเต็ม (บันทึก audit) |
+| POST | `/api/v1/members/{id:long}/otp` | perm:member.write | ส่ง OTP ใหม่ |
+| POST | `/api/v1/members/{id:long}/verify` | perm:member.write | ยืนยัน OTP → Active |
+| POST | `/api/v1/members/{id:long}/verify-override` | perm:member.verify.override | ยืนยันแทน OTP (ตรวจบัตรต่อหน้า) |
+| PUT | `/api/v1/members/{id:long}/status` | perm:member.status | เปลี่ยนสถานะสมาชิก |
+| PUT | `/api/v1/members/{id:long}/customer` | perm:member.write | ผูกกับลูกค้า (customerCode = null ให้ระบบสร้างลูกค้าบุคคลใหม่) |
+| GET | `/api/v1/members/{id:long}/tier-history` | perm:member.read | ประวัติ Tier |
+| GET | `/api/v1/members/{id:long}/consents` | perm:member.read | ประวัติความยินยอม |
+| GET | `/api/v1/members/{id:long}/audit` | perm:audit.read | audit log ของสมาชิกคนนี้ |
+| POST | `/api/v1/members/duplicates/check` | perm:member.write | ตรวจเบอร์/อีเมลซ้ำ |
+| GET | `/api/v1/members/merges/preview` | perm:member.merge | เทียบข้อมูลก่อนรวมบัญชี |
+| POST | `/api/v1/members/merges` | perm:member.merge | ยื่นขอรวมบัญชี (รออนุมัติ) |
+| GET | `/api/v1/approvals` | authenticated | ค้นหาคำขอ |
+| GET | `/api/v1/approvals/pending-count` | authenticated | จำนวนคำขอที่รอฉันพิจารณา |
+| GET | `/api/v1/approvals/{id:long}` | authenticated | อ่านคำขอ |
+| POST | `/api/v1/approvals/{id:long}/decision` | authenticated | อนุมัติ / ไม่อนุมัติ (ไม่อนุมัติต้องมีหมายเหตุ, อนุมัติงานตัวเองไม่ได้) |
+| POST | `/api/v1/approvals/{id:long}/cancel` | authenticated | ผู้ยื่นยกเลิกคำขอ |
+| GET | `/api/v1/dashboard` | perm:member.read | ตัวเลขภาพรวมตามสิทธิ์ของผู้เรียก |
+| GET | `/api/v1/reports/{report:regex(^(members|points|promotions|transactions)$)}` | perm:report.read | รายงานบนหน้าจอ (members / points / promotions / transactions, ≤ 5,000 แถว) |
+| POST | `/api/v1/reports/exports` | perm:report.export | ขอส่งออกรายงาน (เบื้องหลัง) |
+| GET | `/api/v1/reports/exports` | perm:report.export | งานส่งออกของฉัน |
+| GET | `/api/v1/reports/exports/{id:long}/file` | perm:report.export | ดาวน์โหลดไฟล์ (เจ้าของงานเท่านั้น หมดอายุ 24 ชม.) |
+| GET | `/api/v1/settings/rules` | perm:settings.manage | กฎธุรกิจปัจจุบัน |
+| PUT | `/api/v1/settings/rules` | perm:settings.manage | บันทึกกฎธุรกิจ (ต้องส่ง version) |
+| GET | `/api/v1/settings/consents` | perm:settings.manage | ฉบับความยินยอม |
+| POST | `/api/v1/settings/consents` | perm:settings.manage | ร่างฉบับใหม่ |
+| POST | `/api/v1/settings/consents/{id:long}/publish` | perm:settings.manage | เผยแพร่ฉบับ (แก้ไม่ได้อีก) |
+| GET | `/api/v1/settings/integrations` | perm:settings.manage | ระบบภายนอกที่เรียก API |
+| PUT | `/api/v1/settings/integrations` | perm:settings.manage | เพิ่ม/แก้ระบบภายนอก |
+| GET | `/api/v1/settings/roles` | perm:settings.manage | บทบาทและสิทธิ์ที่แนะนำให้สร้างใน AuthServer |
+| GET | `/api/v1/audit` | perm:audit.read | ค้น audit log ของระบบสมาชิก |
+| GET | `/api/v1/transactions` | perm:txn.read | ค้นหารายการขาย |
+| GET | `/api/v1/transactions/{id:long}` | perm:txn.read | รายละเอียดรายการขาย (สินค้า สิทธิประโยชน์ คะแนน การคืน) |
 | POST | `/api/opportunities` | perm:sales.write | สร้าง lead/opportunity |
 | GET | `/api/opportunities` | perm:sales.read | รายการ opportunity |
 | POST | `/api/opportunities/{id:long}/stage` | perm:sales.write | ย้าย stage (ต้องส่ง version ล่าสุด; Won/Lost ปิดดีล) |
 | GET | `/api/opportunities/summary` | perm:sales.read | สรุป pipeline ตาม stage (มูลค่า, มูลค่าถ่วงน้ำหนัก, win rate) |
+| GET | `/api/v1/points/balances/{memberId:long}` | perm:points.read | ยอดคะแนนของสมาชิก |
+| GET | `/api/v1/points/ledger` | perm:points.read | รายการเคลื่อนไหวคะแนน (append-only) |
+| GET | `/api/v1/points/lots/{memberId:long}` | perm:points.read | lot คะแนน (FEFO) |
+| GET | `/api/v1/points/rules` | perm:points.read | กฎการได้คะแนน |
+| POST | `/api/v1/points/rules` | perm:points.rule.manage | สร้างกฎ (รออนุมัติ) |
+| PUT | `/api/v1/points/rules/{id:long}` | perm:points.rule.manage | แก้กฎ (field ที่ต้องอนุมัติ → PendingApproval) |
+| POST | `/api/v1/points/adjustments` | perm:points.adjust | ยื่นปรับคะแนน (ในวงเงิน = Applied, เกิน = PendingApproval) |
+| GET | `/api/v1/points/adjustments` | perm:points.read | รายการปรับคะแนน |
+| GET | `/api/v1/me/member` | authenticated | ข้อมูลสมาชิกของฉัน (ไม่ mask) |
+| POST | `/api/v1/me/registration` | authenticated | เริ่มสมัคร — ส่ง OTP ไปที่เบอร์ |
+| POST | `/api/v1/me/registration/verify` | authenticated | ยืนยัน OTP แล้วสร้าง/ผูกสมาชิก |
+| PUT | `/api/v1/me/member` | authenticated | แก้ข้อมูลของฉัน — เปลี่ยนเบอร์ได้ 202 + OTP |
+| POST | `/api/v1/me/member/phone/verify` | authenticated | ยืนยัน OTP ของเบอร์ใหม่ |
+| GET | `/api/v1/me/points` | authenticated | ยอดคะแนนของฉัน |
+| GET | `/api/v1/me/points/ledger` | authenticated | รายการเคลื่อนไหวคะแนนของฉัน |
+| GET | `/api/v1/me/rewards` | authenticated | ของรางวัลที่แลกด้วยคะแนนได้ |
+| POST | `/api/v1/me/rewards/{rewardId:long}/redeem` | authenticated | แลกของรางวัล (ต้องมี Idempotency-Key) |
+| GET | `/api/v1/me/coupons` | authenticated | คูปองของฉัน (มี qrPayload) |
+| GET | `/api/v1/me/promotions` | authenticated | โปรโมชันที่ฉันมีสิทธิ์ |
+| GET | `/api/v1/me/purchases` | authenticated | ประวัติการซื้อของฉัน |
+| GET | `/api/v1/me/consents/current` | authenticated | ฉบับความยินยอมปัจจุบัน (ใช้ตอนสมัคร ยังไม่ต้องเป็นสมาชิก) |
+| GET | `/api/v1/me/consents` | authenticated | ความยินยอมของฉันและฉบับปัจจุบัน |
+| PUT | `/api/v1/me/consents` | authenticated | ให้/ถอนความยินยอม |
+| POST | `/api/v1/me/privacy-requests` | authenticated | ยื่นคำขอใช้สิทธิ์ตาม PDPA |
+| GET | `/api/v1/me/privacy-requests` | authenticated | คำขอ PDPA ของฉัน |
+| GET | `/api/v1/pos/members/lookup` | perm:pos.lookup | ค้นหาสมาชิกด้วยเบอร์ / เลขสมาชิก / รหัสคูปอง |
+| POST | `/api/v1/pos/checkout/quote` | perm:pos.checkout | คำนวณส่วนลด/คะแนน (ไม่จองอะไร) |
+| POST | `/api/v1/pos/checkout/reserve` | perm:pos.checkout | จองคะแนน คูปอง และสิทธิ์ — ผลต่างจาก quoteId เดิม = 409 quote_changed พร้อม quote ใหม่ใน payload |
+| POST | `/api/v1/pos/checkout/{reservationId}/commit` | perm:pos.checkout | ยืนยันการขาย (ตัดคะแนน ใช้คูปอง ให้คะแนน) |
+| POST | `/api/v1/pos/checkout/{reservationId}/release` | perm:pos.checkout | ยกเลิกการจอง (ซ้ำได้) |
+| POST | `/api/v1/pos/transactions` | perm:pos.transaction | บันทึกการขายที่ไม่ผ่าน checkout (offline — ได้คะแนนพื้นฐานอย่างเดียว) |
+| GET | `/api/v1/pos/transactions/{transactionId}` | perm:pos.transaction | อ่านรายการขายของระบบต้นทางนี้ |
+| POST | `/api/v1/pos/transactions/{transactionId}/cancel` | perm:pos.transaction | ยกเลิกรายการขาย (void) |
+| POST | `/api/v1/pos/transactions/{transactionId}/returns` | perm:pos.transaction | คืนสินค้า — ยังไม่พบรายการขาย (มาผิดลำดับ) = 202 PendingOriginal แล้วประมวลผลภายหลัง |
+| GET | `/api/v1/privacy-requests` | perm:privacy.manage | คำขอทั้งหมด |
+| GET | `/api/v1/privacy-requests/{id:long}` | perm:privacy.manage | อ่านคำขอ |
+| POST | `/api/v1/privacy-requests/{id:long}/complete` | perm:privacy.manage | ปิดคำขอ (Erase = ลบข้อมูลส่วนบุคคลและปิดบัญชี) |
 | GET | `/api/products/{code}/customers` | perm:customer.read | ลูกค้าที่มีสัญญา Active ของผลิตภัณฑ์ |
 | GET | `/api/me/profile` | perm:customer.read | โปรไฟล์ของฉัน |
 | PUT | `/api/me/profile` | perm:customer.read | แก้โปรไฟล์ของฉัน |
 | PUT | `/api/users/{subject}/profile` | perm:customer.write | ตั้งโปรไฟล์ของผู้ใช้อื่น (ผู้ดูแลระบบเท่านั้น — ตรวจใน service) |
+| GET | `/api/v1/promotions` | perm:promotion.read | ค้นหาแคมเปญ |
+| POST | `/api/v1/promotions` | perm:promotion.write | สร้างแคมเปญ (Draft) |
+| GET | `/api/v1/promotions/{id:long}` | perm:promotion.read | อ่านแคมเปญ (รวมการใช้สิทธิ์) |
+| PUT | `/api/v1/promotions/{id:long}` | perm:promotion.write | แก้แคมเปญ (field ที่ต้องอนุมัติหลังอนุมัติแล้ว → กลับไป PendingApproval) |
+| POST | `/api/v1/promotions/{id:long}/submit` | perm:promotion.write | ส่งอนุมัติ |
+| POST | `/api/v1/promotions/{id:long}/pause` | perm:promotion.write | หยุดชั่วคราว |
+| POST | `/api/v1/promotions/{id:long}/resume` | perm:promotion.write | ใช้งานต่อ |
+| POST | `/api/v1/promotions/{id:long}/cancel` | perm:promotion.write | ยกเลิก |
+| POST | `/api/v1/promotions/simulate` | perm:promotion.read | จำลองการคำนวณ (รวมแคมเปญ Draft ได้ ไม่บันทึกอะไร) |
 | POST | `/api/relationships` | perm:customer.write | ผูกบุคคลกับบริษัท |
 | POST | `/api/relationships/{id:long}/end` | perm:customer.write | สิ้นสุดความสัมพันธ์ (เช่น ลาออก/ย้ายตำแหน่ง) |
 | POST | `/api/requests` | perm:request.write | บันทึกคำร้อง/TOR ใหม่ |
@@ -64,6 +156,13 @@ Authentication: `Authorization: Bearer <AuthServer access token>`
 | POST | `/api/requests/{id:long}/decision` | perm:request.write | ตัดสินคำร้อง (เริ่มประเมิน / อนุมัติ / ปฏิเสธ) |
 | POST | `/api/requests/{id:long}/forward` | perm:request.forward | ส่งต่อคำร้องที่อนุมัติแล้วไป ProjectMgnt / requirementMgnt (ลงนามด้วย PQC เพื่อพิสูจน์ความถูกต้องภายหลัง) |
 | GET | `/api/requests/{id:long}/verify-signature` | perm:request.read | ตรวจลายเซ็นของคำร้องที่ส่งต่อแล้ว (ตรวจว่าเนื้อหาไม่ถูกแก้หลังส่ง) |
+| GET | `/api/v1/segments` | perm:segment.read | Segment ทั้งหมด |
+| GET | `/api/v1/segments/{id:long}` | perm:segment.read | อ่าน Segment |
+| POST | `/api/v1/segments` | perm:segment.write | สร้าง Segment |
+| PUT | `/api/v1/segments/{id:long}` | perm:segment.write | แก้ Segment (ต้องส่ง version) |
+| POST | `/api/v1/segments/preview` | perm:segment.read | ดูจำนวนและตัวอย่างสมาชิกของเงื่อนไข |
+| POST | `/api/v1/segments/{id:long}/refresh` | perm:segment.write | คำนวณสมาชิกใหม่ (เบื้องหลัง) |
+| GET | `/api/v1/segments/{id:long}/members` | perm:segment.read | สมาชิกใน Segment |
 | POST | `/api/session/login` | anonymous | เข้าสู่ระบบด้วยชื่อผู้ใช้/รหัสผ่าน (จำกัดอัตราแบบเข้ม) |
 | GET | `/api/session/me` | authenticated | ข้อมูลผู้ใช้ปัจจุบัน (สิทธิ์ที่มี — ให้ UI ซ่อน/แสดงเมนู) |
 | POST | `/api/sla/calculate` | perm:sla.read | คำนวณกำหนดเวลา response/resolution ของงานตาม SLA ของลูกค้าและ severity |
@@ -73,6 +172,11 @@ Authentication: `Authorization: Bearer <AuthServer access token>`
 | GET | `/api/sla/policies` | perm:sla.read | รายการนโยบาย (customerId = เฉพาะของลูกค้านั้น + นโยบายกลาง) |
 | POST | `/api/sla/policies` | perm:sla.manage | สร้างนโยบาย SLA พร้อมระดับ severity ของลูกค้า |
 | PUT | `/api/sla/policies/{id:long}` | perm:sla.manage | แก้ไขนโยบาย SLA (แทนที่ระดับ severity ทั้งชุด; ต้องส่ง version ล่าสุด) |
+| GET | `/api/v1/tiers` | perm:member.read | Tier ทั้งหมด (เรียงตาม rank) |
+| GET | `/api/v1/tiers/{id:long}` | perm:member.read | อ่าน Tier |
+| POST | `/api/v1/tiers` | perm:tier.manage | สร้าง Tier |
+| PUT | `/api/v1/tiers/{id:long}` | perm:tier.manage | แก้ Tier (ต้องส่ง version) |
+| POST | `/api/v1/tiers/evaluate` | perm:tier.manage | สั่งประเมิน Tier (งานเบื้องหลัง) |
 | POST | `/api/webhooks/line` | anonymous | LINE Messaging API webhook — ตรวจ X-Line-Signature = Base64(HMAC-SHA256(channelSecret, body)) แล้วนำข้อความ text เข้าสู่ inbox (ข้อความซ้ำจาก LINE retry ถูกกรองด้วย message id) |
 | POST | `/api/webhooks/inbound` | anonymous | webhook กลางสำหรับช่องทางอื่น (email gateway, Facebook/Instagram relay, web chat) — body = InboundMessageRequest, header X-Signature: sha256=<hex HMAC-SHA256(secret, body)> |
 

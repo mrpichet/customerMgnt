@@ -173,6 +173,22 @@
     },
     {
       "method": "POST",
+      "route": "/api/v1/campaign-messages",
+      "controller": "CampaignMessagesController",
+      "action": "Create",
+      "summary": "ตั้งงานส่งข้อความ (ส่งเฉพาะคนที่ยินยอมช่องทางนั้น)",
+      "auth": "perm:campaign.message.send"
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/campaign-messages",
+      "controller": "CampaignMessagesController",
+      "action": "List",
+      "summary": "สถานะงานส่งข้อความ",
+      "auth": "perm:campaign.message.send"
+    },
+    {
+      "method": "POST",
       "route": "/api/contracts",
       "controller": "ContractsController",
       "action": "Create",
@@ -210,6 +226,54 @@
       "action": "Update",
       "summary": "มอบหมาย/ผูกลูกค้า/เปลี่ยนสถานะห้อง",
       "auth": "perm:chat.reply"
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/coupons/batches",
+      "controller": "CouponsController",
+      "action": "Batches",
+      "summary": "ชุดคูปอง",
+      "auth": "perm:coupon.read"
+    },
+    {
+      "method": "POST",
+      "route": "/api/v1/coupons/batches",
+      "controller": "CouponsController",
+      "action": "CreateBatch",
+      "summary": "สร้างชุดคูปอง (สร้างรหัสเบื้องหลัง)",
+      "auth": "perm:coupon.write"
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/coupons",
+      "controller": "CouponsController",
+      "action": "Search",
+      "summary": "ค้นหาคูปอง",
+      "auth": "perm:coupon.read"
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/coupons/{code}",
+      "controller": "CouponsController",
+      "action": "Get",
+      "summary": "อ่านคูปองพร้อมประวัติ",
+      "auth": "perm:coupon.read"
+    },
+    {
+      "method": "POST",
+      "route": "/api/v1/coupons/{code}/cancel",
+      "controller": "CouponsController",
+      "action": "Cancel",
+      "summary": "ยกเลิกคูปอง",
+      "auth": "perm:coupon.write"
+    },
+    {
+      "method": "POST",
+      "route": "/api/v1/coupons/issue",
+      "controller": "CouponsController",
+      "action": "Issue",
+      "summary": "แจกคูปองให้สมาชิก / Segment (เบื้องหลัง)",
+      "auth": "perm:coupon.write"
     },
     {
       "method": "GET",
@@ -332,6 +396,310 @@
       "auth": "perm:customer.read"
     },
     {
+      "method": "GET",
+      "route": "/api/v1/members",
+      "controller": "MembersController",
+      "action": "Search",
+      "summary": "ค้นหาสมาชิก (ข้อมูลส่วนบุคคลแบบ mask)",
+      "auth": "perm:member.read"
+    },
+    {
+      "method": "POST",
+      "route": "/api/v1/members",
+      "controller": "MembersController",
+      "action": "Register",
+      "summary": "สมัครสมาชิกโดยเจ้าหน้าที่ (สถานะ PendingVerification และส่ง OTP)",
+      "auth": "perm:member.write"
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/members/{id:long}",
+      "controller": "MembersController",
+      "action": "Get",
+      "summary": "อ่านสมาชิก",
+      "auth": "perm:member.read"
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/members/by-no/{memberNo}",
+      "controller": "MembersController",
+      "action": "GetByNo",
+      "summary": "อ่านสมาชิกจากเลขสมาชิก",
+      "auth": "perm:member.read"
+    },
+    {
+      "method": "PUT",
+      "route": "/api/v1/members/{id:long}",
+      "controller": "MembersController",
+      "action": "Update",
+      "summary": "แก้ข้อมูลสมาชิก — เปลี่ยนเบอร์ได้ 202 พร้อม OTP ของเบอร์ใหม่",
+      "auth": "perm:member.write"
+    },
+    {
+      "method": "POST",
+      "route": "/api/v1/members/{id:long}/reveal",
+      "controller": "MembersController",
+      "action": "Reveal",
+      "summary": "ดูข้อมูลส่วนบุคคลเต็ม (บันทึก audit)",
+      "auth": "perm:member.pii"
+    },
+    {
+      "method": "POST",
+      "route": "/api/v1/members/{id:long}/otp",
+      "controller": "MembersController",
+      "action": "ResendOtp",
+      "summary": "ส่ง OTP ใหม่",
+      "auth": "perm:member.write"
+    },
+    {
+      "method": "POST",
+      "route": "/api/v1/members/{id:long}/verify",
+      "controller": "MembersController",
+      "action": "Verify",
+      "summary": "ยืนยัน OTP → Active",
+      "auth": "perm:member.write"
+    },
+    {
+      "method": "POST",
+      "route": "/api/v1/members/{id:long}/verify-override",
+      "controller": "MembersController",
+      "action": "VerifyOverride",
+      "summary": "ยืนยันแทน OTP (ตรวจบัตรต่อหน้า)",
+      "auth": "perm:member.verify.override"
+    },
+    {
+      "method": "PUT",
+      "route": "/api/v1/members/{id:long}/status",
+      "controller": "MembersController",
+      "action": "ChangeStatus",
+      "summary": "เปลี่ยนสถานะสมาชิก",
+      "auth": "perm:member.status"
+    },
+    {
+      "method": "PUT",
+      "route": "/api/v1/members/{id:long}/customer",
+      "controller": "MembersController",
+      "action": "LinkCustomer",
+      "summary": "ผูกกับลูกค้า (customerCode = null ให้ระบบสร้างลูกค้าบุคคลใหม่)",
+      "auth": "perm:member.write"
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/members/{id:long}/tier-history",
+      "controller": "MembersController",
+      "action": "TierHistory",
+      "summary": "ประวัติ Tier",
+      "auth": "perm:member.read"
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/members/{id:long}/consents",
+      "controller": "MembersController",
+      "action": "Consents",
+      "summary": "ประวัติความยินยอม",
+      "auth": "perm:member.read"
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/members/{id:long}/audit",
+      "controller": "MembersController",
+      "action": "Audit",
+      "summary": "audit log ของสมาชิกคนนี้",
+      "auth": "perm:audit.read"
+    },
+    {
+      "method": "POST",
+      "route": "/api/v1/members/duplicates/check",
+      "controller": "MembersController",
+      "action": "CheckDuplicate",
+      "summary": "ตรวจเบอร์/อีเมลซ้ำ",
+      "auth": "perm:member.write"
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/members/merges/preview",
+      "controller": "MembersController",
+      "action": "PreviewMerge",
+      "summary": "เทียบข้อมูลก่อนรวมบัญชี",
+      "auth": "perm:member.merge"
+    },
+    {
+      "method": "POST",
+      "route": "/api/v1/members/merges",
+      "controller": "MembersController",
+      "action": "RequestMerge",
+      "summary": "ยื่นขอรวมบัญชี (รออนุมัติ)",
+      "auth": "perm:member.merge"
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/approvals",
+      "controller": "MembershipApprovalsController",
+      "action": "Search",
+      "summary": "ค้นหาคำขอ",
+      "auth": "authenticated"
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/approvals/pending-count",
+      "controller": "MembershipApprovalsController",
+      "action": "PendingCount",
+      "summary": "จำนวนคำขอที่รอฉันพิจารณา",
+      "auth": "authenticated"
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/approvals/{id:long}",
+      "controller": "MembershipApprovalsController",
+      "action": "Get",
+      "summary": "อ่านคำขอ",
+      "auth": "authenticated"
+    },
+    {
+      "method": "POST",
+      "route": "/api/v1/approvals/{id:long}/decision",
+      "controller": "MembershipApprovalsController",
+      "action": "Decide",
+      "summary": "อนุมัติ / ไม่อนุมัติ (ไม่อนุมัติต้องมีหมายเหตุ, อนุมัติงานตัวเองไม่ได้)",
+      "auth": "authenticated"
+    },
+    {
+      "method": "POST",
+      "route": "/api/v1/approvals/{id:long}/cancel",
+      "controller": "MembershipApprovalsController",
+      "action": "Cancel",
+      "summary": "ผู้ยื่นยกเลิกคำขอ",
+      "auth": "authenticated"
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/dashboard",
+      "controller": "MembershipReportsController",
+      "action": "Dashboard",
+      "summary": "ตัวเลขภาพรวมตามสิทธิ์ของผู้เรียก",
+      "auth": "perm:member.read"
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/reports/{report:regex(^(members|points|promotions|transactions)$)}",
+      "controller": "MembershipReportsController",
+      "action": "Report",
+      "summary": "รายงานบนหน้าจอ (members / points / promotions / transactions, ≤ 5,000 แถว)",
+      "auth": "perm:report.read"
+    },
+    {
+      "method": "POST",
+      "route": "/api/v1/reports/exports",
+      "controller": "MembershipReportsController",
+      "action": "RequestExport",
+      "summary": "ขอส่งออกรายงาน (เบื้องหลัง)",
+      "auth": "perm:report.export"
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/reports/exports",
+      "controller": "MembershipReportsController",
+      "action": "Exports",
+      "summary": "งานส่งออกของฉัน",
+      "auth": "perm:report.export"
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/reports/exports/{id:long}/file",
+      "controller": "MembershipReportsController",
+      "action": "Download",
+      "summary": "ดาวน์โหลดไฟล์ (เจ้าของงานเท่านั้น หมดอายุ 24 ชม.)",
+      "auth": "perm:report.export"
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/settings/rules",
+      "controller": "MembershipSettingsController",
+      "action": "GetRules",
+      "summary": "กฎธุรกิจปัจจุบัน",
+      "auth": "perm:settings.manage"
+    },
+    {
+      "method": "PUT",
+      "route": "/api/v1/settings/rules",
+      "controller": "MembershipSettingsController",
+      "action": "SaveRules",
+      "summary": "บันทึกกฎธุรกิจ (ต้องส่ง version)",
+      "auth": "perm:settings.manage"
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/settings/consents",
+      "controller": "MembershipSettingsController",
+      "action": "Consents",
+      "summary": "ฉบับความยินยอม",
+      "auth": "perm:settings.manage"
+    },
+    {
+      "method": "POST",
+      "route": "/api/v1/settings/consents",
+      "controller": "MembershipSettingsController",
+      "action": "CreateConsent",
+      "summary": "ร่างฉบับใหม่",
+      "auth": "perm:settings.manage"
+    },
+    {
+      "method": "POST",
+      "route": "/api/v1/settings/consents/{id:long}/publish",
+      "controller": "MembershipSettingsController",
+      "action": "PublishConsent",
+      "summary": "เผยแพร่ฉบับ (แก้ไม่ได้อีก)",
+      "auth": "perm:settings.manage"
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/settings/integrations",
+      "controller": "MembershipSettingsController",
+      "action": "Integrations",
+      "summary": "ระบบภายนอกที่เรียก API",
+      "auth": "perm:settings.manage"
+    },
+    {
+      "method": "PUT",
+      "route": "/api/v1/settings/integrations",
+      "controller": "MembershipSettingsController",
+      "action": "SaveIntegration",
+      "summary": "เพิ่ม/แก้ระบบภายนอก",
+      "auth": "perm:settings.manage"
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/settings/roles",
+      "controller": "MembershipSettingsController",
+      "action": "Roles",
+      "summary": "บทบาทและสิทธิ์ที่แนะนำให้สร้างใน AuthServer",
+      "auth": "perm:settings.manage"
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/audit",
+      "controller": "MembershipSettingsController",
+      "action": "Audit",
+      "summary": "ค้น audit log ของระบบสมาชิก",
+      "auth": "perm:audit.read"
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/transactions",
+      "controller": "MembershipTransactionsController",
+      "action": "Search",
+      "summary": "ค้นหารายการขาย",
+      "auth": "perm:txn.read"
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/transactions/{id:long}",
+      "controller": "MembershipTransactionsController",
+      "action": "Get",
+      "summary": "รายละเอียดรายการขาย (สินค้า สิทธิประโยชน์ คะแนน การคืน)",
+      "auth": "perm:txn.read"
+    },
+    {
       "method": "POST",
       "route": "/api/opportunities",
       "controller": "PipelineController",
@@ -365,6 +733,302 @@
     },
     {
       "method": "GET",
+      "route": "/api/v1/points/balances/{memberId:long}",
+      "controller": "PointsController",
+      "action": "Balance",
+      "summary": "ยอดคะแนนของสมาชิก",
+      "auth": "perm:points.read"
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/points/ledger",
+      "controller": "PointsController",
+      "action": "Ledger",
+      "summary": "รายการเคลื่อนไหวคะแนน (append-only)",
+      "auth": "perm:points.read"
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/points/lots/{memberId:long}",
+      "controller": "PointsController",
+      "action": "Lots",
+      "summary": "lot คะแนน (FEFO)",
+      "auth": "perm:points.read"
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/points/rules",
+      "controller": "PointsController",
+      "action": "Rules",
+      "summary": "กฎการได้คะแนน",
+      "auth": "perm:points.read"
+    },
+    {
+      "method": "POST",
+      "route": "/api/v1/points/rules",
+      "controller": "PointsController",
+      "action": "CreateRule",
+      "summary": "สร้างกฎ (รออนุมัติ)",
+      "auth": "perm:points.rule.manage"
+    },
+    {
+      "method": "PUT",
+      "route": "/api/v1/points/rules/{id:long}",
+      "controller": "PointsController",
+      "action": "UpdateRule",
+      "summary": "แก้กฎ (field ที่ต้องอนุมัติ → PendingApproval)",
+      "auth": "perm:points.rule.manage"
+    },
+    {
+      "method": "POST",
+      "route": "/api/v1/points/adjustments",
+      "controller": "PointsController",
+      "action": "Adjust",
+      "summary": "ยื่นปรับคะแนน (ในวงเงิน = Applied, เกิน = PendingApproval)",
+      "auth": "perm:points.adjust"
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/points/adjustments",
+      "controller": "PointsController",
+      "action": "Adjustments",
+      "summary": "รายการปรับคะแนน",
+      "auth": "perm:points.read"
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/me/member",
+      "controller": "PortalController",
+      "action": "Me",
+      "summary": "ข้อมูลสมาชิกของฉัน (ไม่ mask)",
+      "auth": "authenticated"
+    },
+    {
+      "method": "POST",
+      "route": "/api/v1/me/registration",
+      "controller": "PortalController",
+      "action": "StartRegistration",
+      "summary": "เริ่มสมัคร — ส่ง OTP ไปที่เบอร์",
+      "auth": "authenticated"
+    },
+    {
+      "method": "POST",
+      "route": "/api/v1/me/registration/verify",
+      "controller": "PortalController",
+      "action": "CompleteRegistration",
+      "summary": "ยืนยัน OTP แล้วสร้าง/ผูกสมาชิก",
+      "auth": "authenticated"
+    },
+    {
+      "method": "PUT",
+      "route": "/api/v1/me/member",
+      "controller": "PortalController",
+      "action": "Update",
+      "summary": "แก้ข้อมูลของฉัน — เปลี่ยนเบอร์ได้ 202 + OTP",
+      "auth": "authenticated"
+    },
+    {
+      "method": "POST",
+      "route": "/api/v1/me/member/phone/verify",
+      "controller": "PortalController",
+      "action": "VerifyPhone",
+      "summary": "ยืนยัน OTP ของเบอร์ใหม่",
+      "auth": "authenticated"
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/me/points",
+      "controller": "PortalController",
+      "action": "Points",
+      "summary": "ยอดคะแนนของฉัน",
+      "auth": "authenticated"
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/me/points/ledger",
+      "controller": "PortalController",
+      "action": "Ledger",
+      "summary": "รายการเคลื่อนไหวคะแนนของฉัน",
+      "auth": "authenticated"
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/me/rewards",
+      "controller": "PortalController",
+      "action": "Rewards",
+      "summary": "ของรางวัลที่แลกด้วยคะแนนได้",
+      "auth": "authenticated"
+    },
+    {
+      "method": "POST",
+      "route": "/api/v1/me/rewards/{rewardId:long}/redeem",
+      "controller": "PortalController",
+      "action": "Redeem",
+      "summary": "แลกของรางวัล (ต้องมี Idempotency-Key)",
+      "auth": "authenticated"
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/me/coupons",
+      "controller": "PortalController",
+      "action": "Coupons",
+      "summary": "คูปองของฉัน (มี qrPayload)",
+      "auth": "authenticated"
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/me/promotions",
+      "controller": "PortalController",
+      "action": "Promotions",
+      "summary": "โปรโมชันที่ฉันมีสิทธิ์",
+      "auth": "authenticated"
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/me/purchases",
+      "controller": "PortalController",
+      "action": "Purchases",
+      "summary": "ประวัติการซื้อของฉัน",
+      "auth": "authenticated"
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/me/consents/current",
+      "controller": "PortalController",
+      "action": "CurrentConsent",
+      "summary": "ฉบับความยินยอมปัจจุบัน (ใช้ตอนสมัคร ยังไม่ต้องเป็นสมาชิก)",
+      "auth": "authenticated"
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/me/consents",
+      "controller": "PortalController",
+      "action": "Consents",
+      "summary": "ความยินยอมของฉันและฉบับปัจจุบัน",
+      "auth": "authenticated"
+    },
+    {
+      "method": "PUT",
+      "route": "/api/v1/me/consents",
+      "controller": "PortalController",
+      "action": "UpdateConsents",
+      "summary": "ให้/ถอนความยินยอม",
+      "auth": "authenticated"
+    },
+    {
+      "method": "POST",
+      "route": "/api/v1/me/privacy-requests",
+      "controller": "PortalController",
+      "action": "CreatePrivacyRequest",
+      "summary": "ยื่นคำขอใช้สิทธิ์ตาม PDPA",
+      "auth": "authenticated"
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/me/privacy-requests",
+      "controller": "PortalController",
+      "action": "PrivacyRequests",
+      "summary": "คำขอ PDPA ของฉัน",
+      "auth": "authenticated"
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/pos/members/lookup",
+      "controller": "PosController",
+      "action": "Lookup",
+      "summary": "ค้นหาสมาชิกด้วยเบอร์ / เลขสมาชิก / รหัสคูปอง",
+      "auth": "perm:pos.lookup"
+    },
+    {
+      "method": "POST",
+      "route": "/api/v1/pos/checkout/quote",
+      "controller": "PosController",
+      "action": "Quote",
+      "summary": "คำนวณส่วนลด/คะแนน (ไม่จองอะไร)",
+      "auth": "perm:pos.checkout"
+    },
+    {
+      "method": "POST",
+      "route": "/api/v1/pos/checkout/reserve",
+      "controller": "PosController",
+      "action": "Reserve",
+      "summary": "จองคะแนน คูปอง และสิทธิ์ — ผลต่างจาก quoteId เดิม = 409 quote_changed พร้อม quote ใหม่ใน payload",
+      "auth": "perm:pos.checkout"
+    },
+    {
+      "method": "POST",
+      "route": "/api/v1/pos/checkout/{reservationId}/commit",
+      "controller": "PosController",
+      "action": "Commit",
+      "summary": "ยืนยันการขาย (ตัดคะแนน ใช้คูปอง ให้คะแนน)",
+      "auth": "perm:pos.checkout"
+    },
+    {
+      "method": "POST",
+      "route": "/api/v1/pos/checkout/{reservationId}/release",
+      "controller": "PosController",
+      "action": "Release",
+      "summary": "ยกเลิกการจอง (ซ้ำได้)",
+      "auth": "perm:pos.checkout"
+    },
+    {
+      "method": "POST",
+      "route": "/api/v1/pos/transactions",
+      "controller": "PosController",
+      "action": "Record",
+      "summary": "บันทึกการขายที่ไม่ผ่าน checkout (offline — ได้คะแนนพื้นฐานอย่างเดียว)",
+      "auth": "perm:pos.transaction"
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/pos/transactions/{transactionId}",
+      "controller": "PosController",
+      "action": "GetTransaction",
+      "summary": "อ่านรายการขายของระบบต้นทางนี้",
+      "auth": "perm:pos.transaction"
+    },
+    {
+      "method": "POST",
+      "route": "/api/v1/pos/transactions/{transactionId}/cancel",
+      "controller": "PosController",
+      "action": "CancelTransaction",
+      "summary": "ยกเลิกรายการขาย (void)",
+      "auth": "perm:pos.transaction"
+    },
+    {
+      "method": "POST",
+      "route": "/api/v1/pos/transactions/{transactionId}/returns",
+      "controller": "PosController",
+      "action": "Return",
+      "summary": "คืนสินค้า — ยังไม่พบรายการขาย (มาผิดลำดับ) = 202 PendingOriginal แล้วประมวลผลภายหลัง",
+      "auth": "perm:pos.transaction"
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/privacy-requests",
+      "controller": "PrivacyRequestsController",
+      "action": "List",
+      "summary": "คำขอทั้งหมด",
+      "auth": "perm:privacy.manage"
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/privacy-requests/{id:long}",
+      "controller": "PrivacyRequestsController",
+      "action": "Get",
+      "summary": "อ่านคำขอ",
+      "auth": "perm:privacy.manage"
+    },
+    {
+      "method": "POST",
+      "route": "/api/v1/privacy-requests/{id:long}/complete",
+      "controller": "PrivacyRequestsController",
+      "action": "Complete",
+      "summary": "ปิดคำขอ (Erase = ลบข้อมูลส่วนบุคคลและปิดบัญชี)",
+      "auth": "perm:privacy.manage"
+    },
+    {
+      "method": "GET",
       "route": "/api/products/{code}/customers",
       "controller": "ProductCustomersController",
       "action": "Customers",
@@ -394,6 +1058,78 @@
       "action": "Upsert",
       "summary": "ตั้งโปรไฟล์ของผู้ใช้อื่น (ผู้ดูแลระบบเท่านั้น — ตรวจใน service)",
       "auth": "perm:customer.write"
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/promotions",
+      "controller": "PromotionsController",
+      "action": "Search",
+      "summary": "ค้นหาแคมเปญ",
+      "auth": "perm:promotion.read"
+    },
+    {
+      "method": "POST",
+      "route": "/api/v1/promotions",
+      "controller": "PromotionsController",
+      "action": "Create",
+      "summary": "สร้างแคมเปญ (Draft)",
+      "auth": "perm:promotion.write"
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/promotions/{id:long}",
+      "controller": "PromotionsController",
+      "action": "Get",
+      "summary": "อ่านแคมเปญ (รวมการใช้สิทธิ์)",
+      "auth": "perm:promotion.read"
+    },
+    {
+      "method": "PUT",
+      "route": "/api/v1/promotions/{id:long}",
+      "controller": "PromotionsController",
+      "action": "Update",
+      "summary": "แก้แคมเปญ (field ที่ต้องอนุมัติหลังอนุมัติแล้ว → กลับไป PendingApproval)",
+      "auth": "perm:promotion.write"
+    },
+    {
+      "method": "POST",
+      "route": "/api/v1/promotions/{id:long}/submit",
+      "controller": "PromotionsController",
+      "action": "Submit",
+      "summary": "ส่งอนุมัติ",
+      "auth": "perm:promotion.write"
+    },
+    {
+      "method": "POST",
+      "route": "/api/v1/promotions/{id:long}/pause",
+      "controller": "PromotionsController",
+      "action": "Pause",
+      "summary": "หยุดชั่วคราว",
+      "auth": "perm:promotion.write"
+    },
+    {
+      "method": "POST",
+      "route": "/api/v1/promotions/{id:long}/resume",
+      "controller": "PromotionsController",
+      "action": "Resume",
+      "summary": "ใช้งานต่อ",
+      "auth": "perm:promotion.write"
+    },
+    {
+      "method": "POST",
+      "route": "/api/v1/promotions/{id:long}/cancel",
+      "controller": "PromotionsController",
+      "action": "Cancel",
+      "summary": "ยกเลิก",
+      "auth": "perm:promotion.write"
+    },
+    {
+      "method": "POST",
+      "route": "/api/v1/promotions/simulate",
+      "controller": "PromotionsController",
+      "action": "Simulate",
+      "summary": "จำลองการคำนวณ (รวมแคมเปญ Draft ได้ ไม่บันทึกอะไร)",
+      "auth": "perm:promotion.read"
     },
     {
       "method": "POST",
@@ -458,6 +1194,62 @@
       "action": "VerifySignature",
       "summary": "ตรวจลายเซ็นของคำร้องที่ส่งต่อแล้ว (ตรวจว่าเนื้อหาไม่ถูกแก้หลังส่ง)",
       "auth": "perm:request.read"
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/segments",
+      "controller": "SegmentsController",
+      "action": "List",
+      "summary": "Segment ทั้งหมด",
+      "auth": "perm:segment.read"
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/segments/{id:long}",
+      "controller": "SegmentsController",
+      "action": "Get",
+      "summary": "อ่าน Segment",
+      "auth": "perm:segment.read"
+    },
+    {
+      "method": "POST",
+      "route": "/api/v1/segments",
+      "controller": "SegmentsController",
+      "action": "Create",
+      "summary": "สร้าง Segment",
+      "auth": "perm:segment.write"
+    },
+    {
+      "method": "PUT",
+      "route": "/api/v1/segments/{id:long}",
+      "controller": "SegmentsController",
+      "action": "Update",
+      "summary": "แก้ Segment (ต้องส่ง version)",
+      "auth": "perm:segment.write"
+    },
+    {
+      "method": "POST",
+      "route": "/api/v1/segments/preview",
+      "controller": "SegmentsController",
+      "action": "Preview",
+      "summary": "ดูจำนวนและตัวอย่างสมาชิกของเงื่อนไข",
+      "auth": "perm:segment.read"
+    },
+    {
+      "method": "POST",
+      "route": "/api/v1/segments/{id:long}/refresh",
+      "controller": "SegmentsController",
+      "action": "Refresh",
+      "summary": "คำนวณสมาชิกใหม่ (เบื้องหลัง)",
+      "auth": "perm:segment.write"
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/segments/{id:long}/members",
+      "controller": "SegmentsController",
+      "action": "Members",
+      "summary": "สมาชิกใน Segment",
+      "auth": "perm:segment.read"
     },
     {
       "method": "POST",
@@ -530,6 +1322,46 @@
       "action": "UpdatePolicy",
       "summary": "แก้ไขนโยบาย SLA (แทนที่ระดับ severity ทั้งชุด; ต้องส่ง version ล่าสุด)",
       "auth": "perm:sla.manage"
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/tiers",
+      "controller": "TiersController",
+      "action": "List",
+      "summary": "Tier ทั้งหมด (เรียงตาม rank)",
+      "auth": "perm:member.read"
+    },
+    {
+      "method": "GET",
+      "route": "/api/v1/tiers/{id:long}",
+      "controller": "TiersController",
+      "action": "Get",
+      "summary": "อ่าน Tier",
+      "auth": "perm:member.read"
+    },
+    {
+      "method": "POST",
+      "route": "/api/v1/tiers",
+      "controller": "TiersController",
+      "action": "Create",
+      "summary": "สร้าง Tier",
+      "auth": "perm:tier.manage"
+    },
+    {
+      "method": "PUT",
+      "route": "/api/v1/tiers/{id:long}",
+      "controller": "TiersController",
+      "action": "Update",
+      "summary": "แก้ Tier (ต้องส่ง version)",
+      "auth": "perm:tier.manage"
+    },
+    {
+      "method": "POST",
+      "route": "/api/v1/tiers/evaluate",
+      "controller": "TiersController",
+      "action": "Evaluate",
+      "summary": "สั่งประเมิน Tier (งานเบื้องหลัง)",
+      "auth": "perm:tier.manage"
     },
     {
       "method": "POST",

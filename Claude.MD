@@ -425,7 +425,8 @@ MCP over HTTP (ModelContextProtocol SDK) ใช้ Bearer token ของ AuthSe
 
 # ส่วนที่ 2 — ระบบสมาชิกและโปรโมชัน (Membership & Promotion)
 
-> **สถานะ: ออกแบบแล้ว รอ implement** (2026-11-26) — เมื่อ implement เสร็จ หัวข้อนี้จะเปลี่ยนเป็นสัญญาจริงจากโค้ด
+> **สถานะ: implement แล้ว** (2026-11-26) — ตรงกับโค้ดใน `src/CustomerMgnt.Api/Controllers/{MembershipControllers,MembershipOperationsControllers,PromotionControllers}.cs` และ `docs/api-catalog` (สร้างด้วย `--export-catalog`)
+> หน้าจอ: Blazor WASM `src/CustomerMgnt.Membership.Web` (Back Office + Member Portal ใช้ submodule `external/webcommon`) โฮสต์โดย API ที่ `/membership/` — ดู §27
 > ที่มาของกฎและสูตร: เอกสาร spec สูตรคำนวณ (FEFO lot, การคืนตามสัดส่วนสะสม, ลำดับโปรโมชัน) — สูตรอยู่ใน `MemberMgnt` service ของ `CustomerMgnt.Core`
 
 ## 16. หลักการร่วมของ Membership API
@@ -480,10 +481,10 @@ MCP over HTTP (ModelContextProtocol SDK) ใช้ Bearer token ของ AuthSe
 | Method | Route | สิทธิ์ | ขาเข้า | คืนค่า |
 |---|---|---|---|---|
 | GET | `/api/v1/members` | member.read | query `MemberSearchCriteria` | `PagedResultDTO<MemberSummaryDTO>` |
-| POST | `/api/v1/members` | member.write | `RegisterMemberRequest` (สมัครโดยเจ้าหน้าที่) | 201 `MemberDTO` (`PendingVerification` + ส่ง OTP) / 409 `duplicate_member` |
+| POST | `/api/v1/members` | member.write | `RegisterMemberRequest` (สมัครโดยเจ้าหน้าที่) | 201 `MemberRegistrationResultDTO { member: MemberDTO, challenge: { challengeId, expiresAt } }` (`PendingVerification` + ส่ง OTP) / 409 `duplicate_member` / 503 `dependency_unavailable` (ส่ง SMS ไม่ได้) |
 | GET | `/api/v1/members/{id}` | member.read | – | `MemberDTO` |
 | GET | `/api/v1/members/by-no/{memberNo}` | member.read | – | `MemberDTO` |
-| PUT | `/api/v1/members/{id}` | member.write | `UpdateMemberRequest` (`version`) | `MemberDTO` |
+| PUT | `/api/v1/members/{id}` | member.write | `UpdateMemberRequest` (`version`) | `UpdateMemberResultDTO { member, challenge }` — 200 / 202 เมื่อเปลี่ยนเบอร์ (ยืนยันด้วย `/verify`) |
 | POST | `/api/v1/members/{id}/reveal` | member.pii | `{ fields: ["phone","email","birthDate"], reason }` | `MemberPiiDTO` (บันทึก audit) |
 | POST | `/api/v1/members/{id}/otp` | member.write | – | 202 `{ challengeId, expiresAt }` (ส่ง OTP ใหม่) |
 | POST | `/api/v1/members/{id}/verify` | member.write | `{ challengeId, code }` | `MemberDTO` (`Active`) |
@@ -592,6 +593,7 @@ MCP over HTTP (ModelContextProtocol SDK) ใช้ Bearer token ของ AuthSe
 | POST | `/api/v1/coupons/issue` | coupon.write | `{ campaignId, memberIds? , segmentId? }` | 202 `JobDTO` |
 | GET | `/api/v1/segments` | segment.read | – | `SegmentDTO[]` |
 | POST | `/api/v1/segments` | segment.write | `SegmentRequest` | 201 `SegmentDTO` |
+| GET | `/api/v1/segments/{id}` | segment.read | – | `SegmentDTO` |
 | PUT | `/api/v1/segments/{id}` | segment.write | `SegmentRequest` (`version`) | `SegmentDTO` |
 | POST | `/api/v1/segments/preview` | segment.read | `{ rule }` | `{ count, sample: MemberSummaryDTO[10] }` |
 | POST | `/api/v1/segments/{id}/refresh` | segment.write | – | 202 `JobDTO` |
@@ -626,16 +628,16 @@ MCP over HTTP (ModelContextProtocol SDK) ใช้ Bearer token ของ AuthSe
 // operator: Eq, Ne, In, NotIn, Gt, Gte, Lt, Lte, Between — แปลงเป็น SQL แบบ parameterized เท่านั้น
 ```
 
-## 22. POS / ระบบต้นทาง — `api/v1/pos` (client_credentials, ต้องมี `Idempotency-Key` ทุก POST)
+## 22. POS / ระบบต้นทาง — `api/v1/pos` (client_credentials, ต้องมี `Idempotency-Key` ทุก POST ยกเว้น `quote`)
 
 | Method | Route | scope | ขาเข้า | คืนค่า |
 |---|---|---|---|---|
 | GET | `/api/v1/pos/members/lookup?phone=` \| `?memberNo=` \| `?couponCode=` | pos.lookup | – | `PosMemberDTO` / 404 |
-| POST | `/api/v1/pos/checkout/quote` | pos.checkout | `QuoteRequest` | `QuoteDTO` (ไม่จองอะไร) |
-| POST | `/api/v1/pos/checkout/reserve` | pos.checkout | `QuoteRequest` + `quoteId?` | 201 `ReservationDTO` / 409 `quote_changed` (ผลต่างจาก quote เดิม แนบ quote ใหม่) |
+| POST | `/api/v1/pos/checkout/quote` | pos.checkout | `QuoteRequest` | `QuoteDTO` (ไม่จองอะไร ไม่ต้องมี `Idempotency-Key`) |
+| POST | `/api/v1/pos/checkout/reserve` | pos.checkout | `QuoteRequest` + `quoteId?` | 201 `ReservationDTO` / 409 `quote_changed` (ผลต่างจาก quote เดิม — quote ใหม่อยู่ใน extension `payload` ของ ProblemDetails) |
 | POST | `/api/v1/pos/checkout/{reservationId}/commit` | pos.checkout | `CommitRequest` | `CheckoutResultDTO` / 410 `reservation_expired` |
 | POST | `/api/v1/pos/checkout/{reservationId}/release` | pos.checkout | `{ reason }` | 204 (release ซ้ำ = 204) |
-| POST | `/api/v1/pos/transactions` | pos.transaction | `SalesTransactionRequest` (ขายที่ไม่ได้ผ่าน checkout เช่น ตอน offline — ได้คะแนนอย่างเดียว ภายใน `pos.lateSubmitDays`) | 201 `TransactionResultDTO` / 200 เมื่อ transactionId เคยบันทึกแล้ว |
+| POST | `/api/v1/pos/transactions` | pos.transaction | `SalesTransactionRequest` (ขายที่ไม่ได้ผ่าน checkout เช่น ตอน offline — ได้**คะแนนฐาน**อย่างเดียว ไม่คิดโปรโมชัน/คะแนนพิเศษ ภายใน `pos.lateSubmitDays`) | 201 `TransactionResultDTO` / 200 เมื่อ transactionId เคยบันทึกแล้ว |
 | GET | `/api/v1/pos/transactions/{transactionId}` | pos.transaction | – | `TransactionResultDTO` |
 | POST | `/api/v1/pos/transactions/{transactionId}/cancel` | pos.transaction | `{ reason }` | `TransactionResultDTO` |
 | POST | `/api/v1/pos/transactions/{transactionId}/returns` | pos.transaction | `ReturnRequest` | 200 `ReturnResultDTO` / **202** `{ status: "PendingOriginal" }` เมื่อยังไม่พบรายการขาย (มาผิดลำดับ) |
@@ -652,7 +654,7 @@ MCP over HTTP (ModelContextProtocol SDK) ใช้ Bearer token ของ AuthSe
 
 // QuoteDTO
 { "quoteId": "q_...", "subtotal": 2350.00, "lineDiscounts": 0, "promotionDiscount": 235.00, "couponDiscount": 0, "billDiscount": 100.00,
-  "pointsRedeemed": 200, "pointsTender": 50.00, "netPayable": 1965.00, "pointsToEarn": 132,
+  "pointsRedeemed": 200, "pointsTender": 50.00, "netPayable": 1965.00, "pointsToEarn": 117,   // GOLD ×1.5: floor(1,965/25)=78 → 117
   "benefits": [ { "campaignId": 7, "campaignCode": "XMAS26", "kind": "PercentDiscount", "amount": 235.00, "lineNos": [1], "couponCode": null } ],
   "rejectedCoupons": [ { "code": "OLD-1", "reason": "coupon_expired" } ],
   "lines": [ { "lineNo": 1, "linePaid": 1965.00, "eligible": true } ],
@@ -665,7 +667,7 @@ MCP over HTTP (ModelContextProtocol SDK) ใช้ Bearer token ของ AuthSe
 { "transactionId": "T-0001", "receiptNo": "R-889", "paidAt": "...", "paidAmount": 1965.00 }
 
 // CheckoutResultDTO
-{ "transactionId": "T-0001", "memberNo": "M2600001", "pointsEarned": 132, "pointsRedeemed": 200,
+{ "transactionId": "T-0001", "memberNo": "M2600001", "pointsEarned": 117, "pointsRedeemed": 200,
   "balance": PointBalanceDTO, "couponsRedeemed": ["XMAS-8K2Q"], "couponsIssued": [], "tierChanged": null }
 
 // SalesTransactionRequest = QuoteRequest (ไม่มี couponCodes / pointsToRedeem) + transactionId, receiptNo, paidAt, paidAmount, offline: true
@@ -686,9 +688,11 @@ MCP over HTTP (ModelContextProtocol SDK) ใช้ Bearer token ของ AuthSe
 | Method | Route | ขาเข้า | คืนค่า |
 |---|---|---|---|
 | GET | `/api/v1/me/member` | – | `MemberDTO` (ข้อมูลตัวเองไม่ mask) / 404 `not_registered` |
+| GET | `/api/v1/me/consents/current` | – | `ConsentVersionDTO` ฉบับปัจจุบัน / 204 ยังไม่ประกาศ (ใช้ตอนสมัคร ยังไม่ต้องเป็นสมาชิก) |
 | POST | `/api/v1/me/registration` | `RegisterMemberRequest` (ไม่มี customerCode) | 202 `{ registrationId, challengeId, expiresAt }` |
 | POST | `/api/v1/me/registration/verify` | `{ registrationId, challengeId, code }` | 201 `MemberDTO` (ผูก `sub` กับสมาชิก; เบอร์ตรงสมาชิกที่เจ้าหน้าที่สมัครให้ = ผูกกับคนเดิม) |
-| PUT | `/api/v1/me/member` | `UpdateMemberRequest` | `MemberDTO` / 202 (เปลี่ยนเบอร์ต้อง OTP) |
+| PUT | `/api/v1/me/member` | `UpdateMemberRequest` | `UpdateMemberResultDTO { member, challenge }` — 200 / 202 เมื่อเปลี่ยนเบอร์ |
+| POST | `/api/v1/me/member/phone/verify` | `{ challengeId, code }` | `MemberDTO` (ยืนยัน OTP ของเบอร์ใหม่) |
 | GET | `/api/v1/me/points` | – | `PointBalanceDTO` |
 | GET | `/api/v1/me/points/ledger?page=&pageSize=` | – | `PagedResultDTO<PointLedgerDTO>` |
 | GET | `/api/v1/me/rewards` | – | `RewardDTO[]` (ของรางวัลที่แลกด้วยคะแนนได้) |
@@ -708,15 +712,16 @@ MCP over HTTP (ModelContextProtocol SDK) ใช้ Bearer token ของ AuthSe
 | GET | `/api/v1/transactions` | txn.read | `?memberId=&transactionId=&sourceSystem=&branchCode=&from=&to=&status=&page=&pageSize=` | `PagedResultDTO<TransactionSummaryDTO>` |
 | GET | `/api/v1/transactions/{id}` | txn.read | – | `TransactionDetailDTO` (lines, benefits, points, returns) |
 | GET | `/api/v1/approvals` | (ผู้มีสิทธิ์ approve ของเรื่องนั้น) | `?status=Pending&type=Campaign|Adjustment|Merge|EarnRule&mine=` | `ApprovalRequestDTO[]` |
+| GET | `/api/v1/approvals/pending-count` | ผู้ใช้ที่ login | – | `int` จำนวนคำขอที่รอฉันพิจารณา (badge เมนู) |
 | GET | `/api/v1/approvals/{id}` | เดียวกัน | – | `ApprovalRequestDTO` (before/after แบบ mask) |
 | POST | `/api/v1/approvals/{id}/decision` | `*.approve` ของเรื่องนั้น | `{ decision: "Approve|Reject", comment }` (Reject ต้องมี comment) | `ApprovalRequestDTO` / 403 `self_approval` |
 | POST | `/api/v1/approvals/{id}/cancel` | ผู้ยื่น | `{ comment? }` | `ApprovalRequestDTO` |
-| GET | `/api/v1/reports/members` · `/points` · `/promotions` | report.read | query ช่วงวัน + ตัวกรอง | `ReportDTO { columns, rows, totals }` (≤ 5,000 แถว) |
+| GET | `/api/v1/reports/members` · `/points` · `/promotions` · `/transactions` | report.read | query ช่วงวัน + ตัวกรอง | `ReportDTO { columns, rows, totals }` (≤ 5,000 แถว) |
 | POST | `/api/v1/reports/exports` | report.export (+ member.export ถ้ามีข้อมูลสมาชิก) | `{ report, filters, format: "Xlsx|Csv" }` | 202 `ExportJobDTO` (บันทึกผู้ส่งออกและตัวกรอง) |
 | GET | `/api/v1/reports/exports` | report.export | – | `ExportJobDTO[]` (ของตัวเอง) |
 | GET | `/api/v1/reports/exports/{id}/file` | report.export (เจ้าของงาน) | – | ไฟล์ (หมดอายุ 24 ชม.) |
 | GET | `/api/v1/dashboard` | member.read | – | `DashboardDTO` (ตัวเลขตามสิทธิ์ของผู้เรียก) |
-| POST | `/api/v1/campaign-messages` | campaign.message.send | `{ segmentId? , memberIds?, channel, templateCode, variables, scheduledAt? }` | 202 `MessageJobDTO` (ส่งเฉพาะคนที่ยินยอมช่องทางนั้น ผ่าน MessageHub `api/v1/messages/bulk`) |
+| POST | `/api/v1/campaign-messages` | campaign.message.send | `{ segmentId? , memberIds?, channel, templateCode, variables, scheduledAt? }` | 202 `MessageJobDTO` (ส่งเฉพาะคนที่ยินยอมช่องทางนั้น ผ่าน MessageHub `api/v1/messages/bulk`) — ช่องทาง `Line` ยังไม่มี LINE user id ของสมาชิก จึงข้ามผู้รับทุกคน (นับเป็น skipped) |
 | GET | `/api/v1/campaign-messages` | campaign.message.send | – | `MessageJobDTO[]` (สถานะส่ง) |
 | GET | `/api/v1/settings/rules` | settings.manage | – | `BusinessRulesDTO` (ทุก key ในหัวข้อ 1 ของ spec) |
 | PUT | `/api/v1/settings/rules` | settings.manage | `BusinessRulesDTO` (`version`) | `BusinessRulesDTO` |
@@ -775,3 +780,17 @@ MCP over HTTP (ModelContextProtocol SDK) ใช้ Bearer token ของ AuthSe
 - การเรียกออก (MessageHub `api/v1/messages`, CustomerMgnt ภายใน, AuthServer) ใช้ `Microsoft.Extensions.Http.Resilience`: timeout 10 วินาที, retry 3 ครั้ง exponential + jitter เฉพาะ 408/429/5xx, circuit breaker เปิด 30 วินาทีเมื่อ error ≥ 50% ใน 30 วินาที (ขั้นต่ำ 20 คำขอ)
 - ข้อความที่ส่งออกมี `eventId` ไม่ซ้ำ ปลายทางใช้กันซ้ำได้; ข้อความขาเข้า (เช่น returns) ตรวจลำดับด้วย state machine ของรายการขาย
 - event ที่ outbox ส่ง: `member.registered`, `member.updated`, `member.tier_changed`, `points.earned`, `points.redeemed`, `points.expiring`, `coupon.issued`, `campaign.status_changed`
+
+## 27. หน้าจอ (Blazor WASM) และการตั้งค่า
+
+| หัวข้อ | รายละเอียด |
+|---|---|
+| โปรเจกต์ | `src/CustomerMgnt.Membership.Web` (Blazor WebAssembly, `StaticWebAssetBasePath=membership`) ใช้ `external/webcommon` (`WebCommon.UI`: AppShell, ListTemplate, FormTemplate, ReportTemplate) — หน้าสร้าง/ดู/แก้เป็นหน้าเต็ม ไม่ใช้ popup |
+| URL | Back Office `/membership/`, Member Portal `/membership/portal/...` — API โฮสต์ไฟล์เอง (`/membership` → 302 `/membership/`, `/membership/_content/*` → `/_content/*`, SPA fallback `membership/{*path:nonfile}`) |
+| Build | API อ้างอิงโปรเจกต์ UI เว้นแต่ `-p:IncludeMembershipUi=false` (ใช้กับ test / build ที่ไม่ต้องการ UI) — clone ต้อง `git submodule update --init --recursive` |
+| Login เจ้าหน้าที่ | AuthServer `POST api/v1/auth/login` ด้วย client `customermgnt-membership` (ค่า `Auth:*` ใน `wwwroot/appsettings.json`) — เมนูซ่อนตามสิทธิ์ใน claim `permissions` |
+| Login สมาชิก | Google Identity Services / Facebook SDK → `POST api/v1/auth/external` ด้วย client `membership-portal` (`Portal:ClientId`, `Portal:GoogleClientId`, `Portal:FacebookAppId`) → ยังไม่ผูกสมาชิก (`not_registered`) ไปหน้าสมัคร |
+| CSP | `/membership/*` อนุญาต script/frame/connect ของ `accounts.google.com/gsi` และ Facebook เท่านั้น ไม่มี inline script; AuthServer คนละ origin ให้เพิ่มใน `Membership:Ui:ConnectSrc` (https origin คั่นด้วยช่องว่าง) |
+| OTP ตอนพัฒนา | `Membership:OtpFixedCodeForDevelopment` (เช่น `123456`) = ไม่ส่ง SMS ใช้รหัสคงที่ — ตั้งได้เฉพาะ Development (environment อื่น API ไม่ start) |
+| ภาษา / วันที่ | ข้อความ webcommon เป็นภาษาไทย (`UiText.Override = Thai`) วันที่แสดงเป็นปีพุทธศักราช |
+| Library ใหม่ | `QRCoder` 1.6.0 (MIT) สร้าง QR ของคูปองเป็น SVG ฝั่ง client |
