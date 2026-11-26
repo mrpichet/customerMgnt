@@ -1256,7 +1256,7 @@
       "route": "/api/session/login",
       "controller": "SessionController",
       "action": "Login",
-      "summary": "เข้าสู่ระบบด้วยชื่อผู้ใช้/รหัสผ่าน (จำกัดอัตราแบบเข้ม)",
+      "summary": "เข้าสู่ระบบด้วยชื่อผู้ใช้/รหัสผ่าน (จำกัดอัตราแบบเข้ม) ผ่าน AuthServer POST api/v1/auth/login ผู้ใช้ที่เปิด MFA: ครั้งแรกได้ 401 code = mfa_required แล้วส่งซ้ำพร้อม otpCode",
       "auth": "anonymous"
     },
     {

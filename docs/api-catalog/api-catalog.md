@@ -163,7 +163,7 @@ Authentication: `Authorization: Bearer <AuthServer access token>`
 | POST | `/api/v1/segments/preview` | perm:segment.read | ดูจำนวนและตัวอย่างสมาชิกของเงื่อนไข |
 | POST | `/api/v1/segments/{id:long}/refresh` | perm:segment.write | คำนวณสมาชิกใหม่ (เบื้องหลัง) |
 | GET | `/api/v1/segments/{id:long}/members` | perm:segment.read | สมาชิกใน Segment |
-| POST | `/api/session/login` | anonymous | เข้าสู่ระบบด้วยชื่อผู้ใช้/รหัสผ่าน (จำกัดอัตราแบบเข้ม) |
+| POST | `/api/session/login` | anonymous | เข้าสู่ระบบด้วยชื่อผู้ใช้/รหัสผ่าน (จำกัดอัตราแบบเข้ม) ผ่าน AuthServer POST api/v1/auth/login ผู้ใช้ที่เปิด MFA: ครั้งแรกได้ 401 code = mfa_required แล้วส่งซ้ำพร้อม otpCode |
 | GET | `/api/session/me` | authenticated | ข้อมูลผู้ใช้ปัจจุบัน (สิทธิ์ที่มี — ให้ UI ซ่อน/แสดงเมนู) |
 | POST | `/api/sla/calculate` | perm:sla.read | คำนวณกำหนดเวลา response/resolution ของงานตาม SLA ของลูกค้าและ severity |
 | POST | `/api/sla/evaluate` | perm:sla.read | ประเมินสถานะ SLA ของงาน (OnTrack / AtRisk / Breached) |

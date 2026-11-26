@@ -78,7 +78,7 @@ dotnet run --project src/CustomerMgnt.Api                        # API อย่
 
 - โหมด Development ใช้ **ฐานข้อมูลในหน่วยความจำ** และคีย์เข้ารหัสชั่วคราว (`appsettings.Development.json`) จึงรันได้ทันที
   นอก Development แอปจะไม่ยอมเริ่มถ้าไม่มี `Database:ConnectionString` (กันข้อมูลหายเพราะ deploy ผิดค่า)
-- การเข้าสู่ระบบใช้ AuthServer: ตั้ง `AuthServer:Authority` ให้ชี้ไป AuthServer ของคุณ แล้ว UI จะ login ผ่าน `/api/session/login`
+- การเข้าสู่ระบบใช้ AuthServer: ตั้ง `AuthServer:Authority` ให้ชี้ไป AuthServer ของคุณ แล้ว UI จะ login ผ่าน `/api/session/login` (ส่งต่อไป AuthServer `api/v1/auth/login`, รองรับ OTP ของผู้ใช้ที่เปิด MFA)
 - OpenAPI (เฉพาะ Development): `GET /openapi/v1.json`
 - ระบบสมาชิก: Back Office `http://localhost:5180/membership/` และ Member Portal `/membership/portal/` (ไม่ต้องใช้ DevExpress; ปิดด้วย `-p:IncludeMembershipUi=false`)
   ตอนพัฒนาตั้ง `Membership__OtpFixedCodeForDevelopment=123456` เพื่อใช้ OTP คงที่โดยไม่ส่ง SMS (ใช้ได้เฉพาะ Development)
@@ -93,6 +93,7 @@ dotnet run --project src/CustomerMgnt.Api                        # API อย่
 | `Database:Provider` | `Postgres` (ค่าเริ่มต้น) หรือ `SqlServer` |
 | `Database:ConnectionString` | connection string |
 | `AuthServer:Authority` / `AuthServer:Audience` | AuthServer ที่ออก JWT |
+| `AuthServer:LoginClientId` | OAuth client ของหน้าจอหลักใน AuthServer (ค่าเริ่มต้น `customermgnt-web`) ที่ `/api/session/login` ใช้ |
 | `Integrations:{IssueTracking,ProjectMgnt,RequirementMgnt,MessageHub}:BaseUrl` | ปล่อยว่าง = ปิดการเชื่อมระบบนั้น |
 | `Integrations:ServiceAccount:*` | บัญชีบริการสำหรับงานเบื้องหลัง (เตือนนัดหมาย, ฝึกโมเดล) ที่ไม่มี token ของผู้ใช้ |
 | `Privacy:BlindIndexKey` | คีย์ HMAC (base64 ≥ 32 byte) สำหรับตรวจซ้ำเลขผู้เสียภาษี/อีเมล — ห้ามเปลี่ยนหลังมีข้อมูล |

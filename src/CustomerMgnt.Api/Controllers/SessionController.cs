@@ -17,13 +17,30 @@ namespace CustomerMgnt.Api.Controllers;
 /// </summary>
 /// <param name="factory">HttpClient factory (client ชื่อ <see cref="HttpClientName"/>)</param>
 /// <param name="logger">logger</param>
+/// <param name="configuration">ค่าตั้ง (AuthServer:LoginClientId, AuthServer:LoginSource)</param>
 [Route("api/session")]
-public sealed class SessionController(IHttpClientFactory factory, ILogger<SessionController> logger) : CustomerMgntControllerBase
+public sealed class SessionController(IHttpClientFactory factory, ILogger<SessionController> logger, IConfiguration configuration) : CustomerMgntControllerBase
 {
     /// <summary>ชื่อ HttpClient ที่ชี้ไป AuthServer:Authority</summary>
     public const string HttpClientName = "customermgnt.session";
 
-    /// <summary>เข้าสู่ระบบด้วยชื่อผู้ใช้/รหัสผ่าน (จำกัดอัตราแบบเข้ม)</summary>
+    /// <summary>OAuth client ของหน้าจอหลักใน AuthServer เมื่อไม่ได้ตั้ง <c>AuthServer:LoginClientId</c></summary>
+    public const string DefaultClientId = "customermgnt-web";
+
+    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+
+    private ProblemDetails Problem401(string title, string code)
+    {
+        var p = new ProblemDetails { Status = StatusCodes.Status401Unauthorized, Title = title, Type = "https://httpstatuses.io/401" };
+        p.Extensions["code"] = code;
+        p.Extensions["traceId"] = HttpContext.TraceIdentifier;
+        return p;
+    }
+
+    /// <summary>
+    /// เข้าสู่ระบบด้วยชื่อผู้ใช้/รหัสผ่าน (จำกัดอัตราแบบเข้ม) ผ่าน AuthServer <c>POST api/v1/auth/login</c>
+    /// ผู้ใช้ที่เปิด MFA: ครั้งแรกได้ 401 <c>code = mfa_required</c> แล้วส่งซ้ำพร้อม <c>otpCode</c>
+    /// </summary>
     /// <param name="request">ข้อมูลรับรอง</param>
     /// <param name="ct">ยกเลิก</param>
     /// <returns>access token และเวลาหมดอายุ</returns>
@@ -35,12 +52,24 @@ public sealed class SessionController(IHttpClientFactory factory, ILogger<Sessio
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
     public async Task<ActionResult<SessionTokenDTO>> Login([FromBody] LoginRequest request, CancellationToken ct)
     {
-        // Step 1: ส่งต่อไป AuthServer (ไม่ log รหัสผ่าน/token)
+        ArgumentNullException.ThrowIfNull(request);
+
+        // Step 1: ส่งต่อไป AuthServer v1 (ไม่ log รหัสผ่าน/OTP/token)
         HttpClient http = factory.CreateClient(HttpClientName);
+        var body = new
+        {
+            userName = request.Login,
+            password = request.Password,
+            otpCode = string.IsNullOrWhiteSpace(request.OtpCode) ? null : request.OtpCode.Trim(),
+            source = configuration["AuthServer:LoginSource"] is { Length: > 0 } src ? src : "Local",
+            clientId = configuration["AuthServer:LoginClientId"] is { Length: > 0 } cid ? cid : DefaultClientId,
+            scope = "openid profile email",
+            platform = "Web",
+        };
         HttpResponseMessage response;
         try
         {
-            response = await http.PostAsJsonAsync("api/auth/login", new { login = request.Login, password = request.Password }, ct);
+            response = await http.PostAsJsonAsync("api/v1/auth/login", body, ct);
         }
         catch (HttpRequestException ex)
         {
@@ -49,16 +78,37 @@ public sealed class SessionController(IHttpClientFactory factory, ILogger<Sessio
 
         using (response)
         {
-            // Step 2: ข้อมูลรับรองผิด → 401 แบบไม่บอกรายละเอียด (กัน user enumeration)
+            if (response.StatusCode == HttpStatusCode.TooManyRequests)
+            {
+                return StatusCode(StatusCodes.Status429TooManyRequests);
+            }
+
+            AuthServerLoginResult? result = null;
+            if (response.Content.Headers.ContentType?.MediaType?.Contains("json", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                try
+                {
+                    result = await response.Content.ReadFromJsonAsync<AuthServerLoginResult>(Json, ct);
+                }
+                catch (JsonException)
+                {
+                    result = null;
+                }
+            }
+
+            // Step 2: ต้องใช้ OTP / OTP ผิด → บอกให้ UI ถาม OTP (ผ่านรหัสผ่านแล้ว จึงไม่ใช่ user enumeration)
+            if (response.StatusCode == HttpStatusCode.Unauthorized && result is not null && (result.MfaRequired || result.Error is "mfa_required" or "invalid_otp"))
+            {
+                string code = result.Error == "invalid_otp" ? "invalid_otp" : "mfa_required";
+                logger.LogInformation("Login needs MFA ({Code}).", code);
+                return Unauthorized(Problem401(code == "invalid_otp" ? "Invalid OTP code." : "OTP code required.", code));
+            }
+
+            // Step 3: ข้อมูลรับรองผิดหรือถูกปฏิเสธด้วยเหตุอื่น → 401 แบบไม่บอกรายละเอียด (กัน user enumeration)
             if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden or HttpStatusCode.BadRequest)
             {
                 logger.LogInformation("Login rejected by AuthServer ({Status}).", (int)response.StatusCode);
                 throw new UnauthenticatedException("Invalid credentials.");
-            }
-
-            if (response.StatusCode == HttpStatusCode.TooManyRequests)
-            {
-                return StatusCode(StatusCodes.Status429TooManyRequests);
             }
 
             if (!response.IsSuccessStatusCode)
@@ -66,14 +116,18 @@ public sealed class SessionController(IHttpClientFactory factory, ILogger<Sessio
                 throw new DependencyUnavailableException($"AuthServer login failed ({(int)response.StatusCode}).");
             }
 
-            // Step 3: ส่งเฉพาะ token และเวลาหมดอายุกลับไป
-            SessionTokenDTO? token = await response.Content.ReadFromJsonAsync<SessionTokenDTO>(new JsonSerializerOptions(JsonSerializerDefaults.Web), ct);
-            if (token is null || string.IsNullOrWhiteSpace(token.AccessToken))
+            // Step 4: ส่งเฉพาะ token และเวลาหมดอายุกลับไป
+            if (result is not { Succeeded: true, Tokens.AccessToken.Length: > 0 })
             {
                 throw new DependencyUnavailableException("AuthServer returned an empty login response.");
             }
 
-            return Ok(token);
+            int expiresIn = result.Tokens.ExpiresIn > 0 ? result.Tokens.ExpiresIn : 600;
+            return Ok(new SessionTokenDTO(result.Tokens.AccessToken, DateTimeOffset.UtcNow.AddSeconds(expiresIn))
+            {
+                PasswordChangeRequired = result.PasswordChangeRequired,
+                MfaEnrollmentRequired = result.MfaEnrollmentRequired,
+            });
         }
     }
 
@@ -91,7 +145,32 @@ public sealed class SessionController(IHttpClientFactory factory, ILogger<Sessio
 /// <summary>token จาก AuthServer</summary>
 /// <param name="AccessToken">JWT</param>
 /// <param name="ExpiresAt">เวลาหมดอายุ</param>
-public sealed record SessionTokenDTO(string AccessToken, DateTimeOffset ExpiresAt);
+public sealed record SessionTokenDTO(string AccessToken, DateTimeOffset ExpiresAt)
+{
+    /// <summary>true = ต้องเปลี่ยนรหัสผ่านที่ AuthServer ก่อนใช้งาน</summary>
+    public bool PasswordChangeRequired { get; init; }
+
+    /// <summary>true = client บังคับ MFA แต่ผู้ใช้ยังไม่ลงทะเบียน</summary>
+    public bool MfaEnrollmentRequired { get; init; }
+}
+
+/// <summary>LoginResultDTO ของ AuthServer (อ่านเฉพาะ field ที่ใช้)</summary>
+internal sealed class AuthServerLoginResult
+{
+    public bool Succeeded { get; set; }
+    public bool MfaRequired { get; set; }
+    public bool PasswordChangeRequired { get; set; }
+    public bool MfaEnrollmentRequired { get; set; }
+    public string? Error { get; set; }
+    public AuthServerTokens? Tokens { get; set; }
+}
+
+/// <summary>TokenResponseDTO ของ AuthServer</summary>
+internal sealed class AuthServerTokens
+{
+    public string AccessToken { get; set; } = string.Empty;
+    public int ExpiresIn { get; set; }
+}
 
 /// <summary>ผู้ใช้ปัจจุบัน</summary>
 /// <param name="Subject">subject</param>

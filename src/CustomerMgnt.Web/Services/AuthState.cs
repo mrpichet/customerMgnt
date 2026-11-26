@@ -56,27 +56,47 @@ public sealed class AuthState(IJSRuntime js, HttpClient http)
         }
     }
 
-    /// <summary>เข้าสู่ระบบ</summary>
+    /// <summary>เข้าสู่ระบบ (ผู้ใช้ที่เปิด MFA: ครั้งแรกได้ <see cref="LoginResult.MfaRequired"/> แล้วเรียกซ้ำพร้อม OTP)</summary>
     /// <param name="login">ชื่อผู้ใช้</param>
     /// <param name="password">รหัสผ่าน</param>
-    /// <returns>null = สำเร็จ, ไม่เช่นนั้นข้อความผิดพลาด</returns>
-    public async Task<string?> LoginAsync(string login, string password)
+    /// <param name="otpCode">รหัส OTP 6 หลัก (ถ้ามี)</param>
+    /// <returns>ผลการเข้าสู่ระบบ (Error = null คือสำเร็จ)</returns>
+    public async Task<LoginResult> LoginAsync(string login, string password, string? otpCode = null)
     {
-        using HttpResponseMessage r = await http.PostAsJsonAsync("api/session/login", new { login, password });
+        using HttpResponseMessage r = await http.PostAsJsonAsync("api/session/login", new { login, password, otpCode });
         if (!r.IsSuccessStatusCode)
         {
-            return (int)r.StatusCode switch
+            string? code = null;
+            if ((int)r.StatusCode == 401)
             {
-                401 => "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง",
-                429 => "พยายามเข้าสู่ระบบบ่อยเกินไป กรุณารอสักครู่",
-                _ => "ไม่สามารถเชื่อมต่อระบบยืนยันตัวตนได้",
+                try
+                {
+                    using JsonDocument doc = JsonDocument.Parse(await r.Content.ReadAsStringAsync());
+                    code = doc.RootElement.TryGetProperty("code", out JsonElement c) ? c.GetString() : null;
+                }
+                catch (JsonException)
+                {
+                    code = null;
+                }
+            }
+
+            return code switch
+            {
+                "mfa_required" => new LoginResult("กรุณากรอกรหัส OTP จากแอป Authenticator", true),
+                "invalid_otp" => new LoginResult("รหัส OTP ไม่ถูกต้องหรือหมดอายุ", true),
+                _ => new LoginResult((int)r.StatusCode switch
+                {
+                    401 => "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง",
+                    429 => "พยายามเข้าสู่ระบบบ่อยเกินไป กรุณารอสักครู่",
+                    _ => "ไม่สามารถเชื่อมต่อระบบยืนยันตัวตนได้",
+                }, false),
             };
         }
 
         TokenResponse? t = await r.Content.ReadFromJsonAsync<TokenResponse>(ApiClient.Json);
         if (t is null)
         {
-            return "คำตอบจากระบบไม่ถูกต้อง";
+            return new LoginResult("คำตอบจากระบบไม่ถูกต้อง", false);
         }
 
         Token = t.AccessToken;
@@ -85,7 +105,7 @@ public sealed class AuthState(IJSRuntime js, HttpClient http)
         await js.InvokeVoidAsync("sessionStorage.setItem", ExpiresKey, ExpiresAt.ToString("O"));
         await LoadUserAsync();
         Changed?.Invoke();
-        return null;
+        return new LoginResult(null, false);
     }
 
     /// <summary>ออกจากระบบ (ลบ token ออกจาก sessionStorage)</summary>
@@ -116,6 +136,11 @@ public sealed class AuthState(IJSRuntime js, HttpClient http)
 
     private sealed record TokenResponse(string AccessToken, DateTimeOffset ExpiresAt);
 }
+
+/// <summary>ผลการเข้าสู่ระบบ</summary>
+/// <param name="Error">ข้อความผิดพลาด (null = สำเร็จ)</param>
+/// <param name="MfaRequired">true = ต้องกรอก OTP</param>
+public sealed record LoginResult(string? Error, bool MfaRequired);
 
 /// <summary>ผู้ใช้ปัจจุบัน</summary>
 /// <param name="Subject">subject</param>

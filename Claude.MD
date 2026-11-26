@@ -73,11 +73,11 @@ service-to-service (เช่น IssueTracking) ใช้บัญชีบร�
 
 | Method | Route | สิทธิ์ | ขาเข้า | คืนค่า |
 |---|---|---|---|---|
-| POST | `/api/session/login` | anonymous, rate limit `strict` | `LoginRequest { login, password }` | `SessionTokenDTO { accessToken, expiresAt }` / 401 |
+| POST | `/api/session/login` | anonymous, rate limit `strict` | `LoginRequest { login, password, otpCode? }` | `SessionTokenDTO { accessToken, expiresAt, passwordChangeRequired, mfaEnrollmentRequired }` / 401 (`code` = `mfa_required` · `invalid_otp` เมื่อรหัสผ่านถูกแต่ต้องใช้ OTP — ส่งซ้ำพร้อม `otpCode`) |
 | GET | `/api/session/me` | login | – | `SessionUserDTO { subject, userName, roles[], permissions[] }` |
 
-> ⚠️ ปัจจุบัน `login` ส่งต่อไป AuthServer ที่ path `api/auth/login` แบบเดิม ซึ่ง AuthServer ย้ายเป็น `api/v1/auth/login` แล้ว
-> ระบบอื่น **ควร login กับ AuthServer โดยตรง** แล้วส่ง token มาที่ CustomerMgnt แทนการใช้ endpoint นี้
+> `login` ส่งต่อไป AuthServer `POST api/v1/auth/login` ด้วย client `AuthServer:LoginClientId` (ค่าเริ่มต้น `customermgnt-web`) และ identity source `AuthServer:LoginSource` (ค่าเริ่มต้น `Local`)
+> endpoint นี้มีไว้ให้หน้าจอหลักของ CustomerMgnt — ระบบอื่น **ควร login กับ AuthServer โดยตรง** แล้วส่ง token มาที่ CustomerMgnt
 
 ---
 
