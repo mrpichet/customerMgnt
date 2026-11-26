@@ -1,0 +1,48 @@
+@page "/analytics/points"
+@attribute [Authorize]
+@inherits AnaPage
+@* AN-10 คะแนน (ANA-PROMO-005) — ได้รับ/ใช้/หมดอายุ/ปรับ, คงเหลือ, ภาระคะแนน, รายการปรับมาก *@
+<PageTitle>วิเคราะห์คะแนน</PageTitle>
+
+<RequirePermission Permission="@A.DashboardRead">
+    <PageHeader Title="คะแนนสะสม" Description="การเคลื่อนไหวของคะแนนในช่วงที่เลือก คะแนนคงเหลือและภาระคะแนนเป็นค่าปัจจุบัน" Breadcrumbs="_crumbs">
+        <Actions><ExportButton Source="ExportSource.Dashboard" Page="AN-10" Filter="Filter" /></Actions>
+    </PageHeader>
+    <AnaFilterBar PageCode="AN-10" Value="Filter" OnApply="f => Apply(f)" ShowProduct="false" />
+    @if (LoadError is not null) { <ErrorView Title="โหลดข้อมูลไม่สำเร็จ" Message="@LoadError" OnRetry="LoadAsync" /> }
+    else if (_r is null) { <LoadingState /> }
+    else
+    {
+        PointsAnalyticsDTO d = _r.Data;
+        <AnaBanner Meta="Meta(_r)" />
+        <KpiGrid Kpis="d.Kpis" OnDrill="Drill" />
+        <Card Title="การเคลื่อนไหวของคะแนน"><SeriesChart Series="d.FlowTrend" Bar /></Card>
+        <div class="ana-two">
+            <Card Title="คะแนนที่จะหมดอายุ">
+                @if (d.ExpiringNext.Count == 0) { <EmptyState Title="ไม่มีคะแนนใกล้หมดอายุ" /> }
+                else { <KeyValueChart Items="d.ExpiringNext" Name="คะแนน" /> }
+            </Card>
+            <Card Title="รายการปรับคะแนนจำนวนมาก">
+                <table class="simple-table">
+                    <thead><tr><th>เวลา</th><th>สมาชิก</th><th class="num">คะแนน</th><th>ผู้ปรับ</th></tr></thead>
+                    <tbody>
+                        @foreach (LargeAdjustmentDTO a in d.LargeAdjustments)
+                        {
+                            <tr><td>@Text.DateTime(a.At)</td><td>@a.MemberNoMasked</td><td class="num @(a.Points < 0 ? "ana-down" : "ana-up")">@a.Points.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)</td><td>@a.By</td></tr>
+                        }
+                        @if (d.LargeAdjustments.Count == 0) { <tr><td colspan="4" class="muted">ไม่มีรายการ</td></tr> }
+                    </tbody>
+                </table>
+            </Card>
+        </div>
+    }
+</RequirePermission>
+
+@code {
+    private readonly IReadOnlyList<Breadcrumb> _crumbs = [new("หน้าแรก", ""), new("วิเคราะห์ข้อมูล", "analytics"), new("คะแนน")];
+    private AnalyticsResultDTO<PointsAnalyticsDTO>? _r;
+
+    protected override string PageCode => "AN-10";
+
+    protected override Task LoadAsync() => LoadSafeAsync(async () => _r = await Api.GetAsync<AnalyticsResultDTO<PointsAnalyticsDTO>>($"api/v1/analytics/points?{Q()}"));
+}

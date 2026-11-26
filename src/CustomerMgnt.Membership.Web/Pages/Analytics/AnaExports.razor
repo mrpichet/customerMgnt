@@ -1,0 +1,78 @@
+@page "/analytics/exports"
+@attribute [Authorize]
+@inherits MembershipPage
+@inject ExportService Export
+@* AN-22 ไฟล์ส่งออกของระบบวิเคราะห์ (ANA-REPORT-003) — ข้อมูลส่วนบุคคลถูกปิดบางส่วน, ไฟล์เก็บตามระยะที่ตั้งค่า (เริ่มต้น 24 ชม.) *@
+<PageTitle>ไฟล์ส่งออก (วิเคราะห์)</PageTitle>
+
+<RequirePermission Permission="@A.Export">
+    <ListTemplate TItem="AnaExportJobDTO" Title="ไฟล์ส่งออก" Description="ไฟล์จากหน้าวิเคราะห์ รายงาน และการตั้งเวลา ระบบสร้างเบื้องหลังแล้วลบอัตโนมัติเมื่อหมดอายุ ข้อมูลส่วนบุคคลถูกปิดบางส่วน ทุกการดาวน์โหลดถูกบันทึก audit"
+                  Breadcrumbs="_crumbs" Permissions="_perms" Items="_items" Loading="_loading" ErrorMessage="@LoadError" OnRetry="LoadAsync" PageSize="20">
+        <HeaderActions>
+            <PermissionView Permission="@P.AuditRead">
+                <label class="check-list"><input type="checkbox" checked="@(!_mine)" @onchange="ToggleAsync" /> แสดงของทุกคน</label>
+            </PermissionView>
+            <AppButton Text="รีเฟรช" Variant="ButtonVariant.Secondary" OnClick="LoadAsync" />
+        </HeaderActions>
+        <Columns>
+            <TableColumn TItem="AnaExportJobDTO" Title="ขอเมื่อ" Field="j => Text.DateTime(j.RequestedAt)" SortBy="j => j.RequestedAt" Sortable />
+            <TableColumn TItem="AnaExportJobDTO" Title="ที่มา" Field="SourceText" IsPrimary />
+            <TableColumn TItem="AnaExportJobDTO" Title="รูปแบบ" Field="j => j.Format" />
+            <TableColumn TItem="AnaExportJobDTO" Title="จำนวนแถว" Field="j => j.RowCount" Format="N0" Align="ColumnAlign.End" />
+            <TableColumn TItem="AnaExportJobDTO" Title="ผู้ขอ" Field="j => j.RequestedBy" HideOnMobile />
+            <TableColumn TItem="AnaExportJobDTO" Title="หมดอายุ" Field="j => Text.DateTime(j.ExpiresAt)" HideOnMobile />
+            <TableColumn TItem="AnaExportJobDTO" Title="สถานะ" SortBy="j => j.Status">
+                <Template>
+                    <Badge Text="@Text.Job(context.Status)" Level="@Text.Level(context.Status)" />
+                    @if (context.Status == JobStatus.Done)
+                    {
+                        <AppButton Text="ดาวน์โหลด" Size="ButtonSize.Small" Variant="ButtonVariant.Secondary" OnClick="@(() => DownloadAsync(context))" />
+                    }
+                    @if (context.Error is not null) { <span class="muted">@context.Error</span> }
+                </Template>
+            </TableColumn>
+        </Columns>
+    </ListTemplate>
+</RequirePermission>
+
+@code {
+    private readonly IReadOnlyList<Breadcrumb> _crumbs = [new("หน้าแรก", ""), new("วิเคราะห์ข้อมูล", "analytics"), new("ไฟล์ส่งออก")];
+    private readonly ListPermissions _perms = new();
+    private IReadOnlyList<AnaExportJobDTO>? _items;
+    private bool _loading, _mine = true;
+
+    private static string SourceText(AnaExportJobDTO j) => j.Source switch
+    {
+        ExportSource.Report => j.ScheduleId is null ? "รายงาน" : "รายงาน (ตั้งเวลา)",
+        ExportSource.Drilldown => $"รายละเอียด: {AnaText.Label(j.Request.Metric ?? "")}",
+        _ => AnaRoutes.Name(j.Request.Page ?? "หน้าวิเคราะห์"),
+    };
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        await LoadSafeAsync(async () => _items = await Api.GetAsync<List<AnaExportJobDTO>>($"api/v1/analytics/exports?mine={(_mine ? "true" : "false")}"));
+        _loading = false;
+    }
+
+    private Task ToggleAsync(ChangeEventArgs e)
+    {
+        _mine = e.Value is not true;
+        return LoadAsync();
+    }
+
+    private async Task DownloadAsync(AnaExportJobDTO j)
+    {
+        try
+        {
+            (byte[] content, string name, string type) = await Api.DownloadAsync($"api/v1/analytics/exports/{j.Id}/file");
+            await Export.DownloadAsync(new ExportFile(name, type, content));
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Toasts.Error(Text.Error(ex));
+        }
+    }
+}

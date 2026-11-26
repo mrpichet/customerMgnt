@@ -1,0 +1,81 @@
+@page "/analytics/data-scopes"
+@attribute [Authorize]
+@inherits MembershipPage
+@* AN-27 ขอบเขตข้อมูล (ANA-ADMIN-004) — กฎต่อผู้ใช้/บทบาท รวมแบบ union, ผู้ที่ไม่มีกฎและไม่มี ana.scope.all จะไม่เห็นข้อมูล *@
+<PageTitle>ขอบเขตข้อมูล</PageTitle>
+
+<RequirePermission Permission="@A.SettingsManage">
+    <ListTemplate TItem="DataScopeRuleDTO" Title="ขอบเขตข้อมูล" Description="กำหนดว่าผู้ใช้หรือบทบาทใดเห็นข้อมูลสาขา ช่องทาง และแบรนด์ใด ผู้ใช้ที่มีหลายกฎจะเห็นข้อมูลรวมทุกกฎ ผู้ที่ไม่มีกฎและไม่มีสิทธิ์ ana.scope.all จะไม่เห็นตัวเลข"
+                  Breadcrumbs="_crumbs" Permissions="_perms" Items="_items" Loading="_loading" ErrorMessage="@LoadError" OnRetry="LoadAsync"
+                  NewText="เพิ่มกฎ" OnNew="@(() => Nav.NavigateTo("analytics/data-scopes/new"))" OnEdit="@(r => Nav.NavigateTo($"analytics/data-scopes/{r.Id}/edit"))" OnDelete="DeleteAsync"
+                  ItemName="@(r => r.Subject)">
+        <Columns>
+            <TableColumn TItem="DataScopeRuleDTO" Title="ประเภท" Field="SubjectText" />
+            <TableColumn TItem="DataScopeRuleDTO" Title="ผู้ใช้ / บทบาท" Field="r => r.Subject" IsPrimary Sortable />
+            <TableColumn TItem="DataScopeRuleDTO" Title="สาขา" Field="r => All(r.Branches)" />
+            <TableColumn TItem="DataScopeRuleDTO" Title="ช่องทาง" Field="r => All(r.Channels)" />
+            <TableColumn TItem="DataScopeRuleDTO" Title="แบรนด์" Field="r => All(r.Brands)" HideOnMobile />
+            <TableColumn TItem="DataScopeRuleDTO" Title="แก้ไขล่าสุด" Field="r => Text.DateTime(r.UpdatedAt)" SortBy="r => r.UpdatedAt" HideOnMobile />
+        </Columns>
+    </ListTemplate>
+    <Card Title="ตรวจขอบเขตที่มีผลของผู้ใช้">
+        <FieldGrid Columns="3">
+            <Field Label="รหัสผู้ใช้ (sub)" InputId="es"><input id="es" @bind="_sub" maxlength="200" /></Field>
+            <Field Label="บทบาทของผู้ใช้ (คั่นด้วยจุลภาค)" InputId="er"><input id="er" @bind="_roles" maxlength="500" /></Field>
+            <Field Label="&nbsp;" InputId="eg"><AppButton Text="ตรวจ" Variant="ButtonVariant.Secondary" Disabled="@string.IsNullOrWhiteSpace(_sub)" OnClick="EffectiveAsync" /></Field>
+        </FieldGrid>
+        <p class="small muted">บทบาทกำหนดใน AuthServer จึงต้องระบุเองเพื่อจำลอง (ไม่รวมสิทธิ์ ana.scope.all)</p>
+        @if (_eff is not null)
+        {
+            <dl class="kv">
+                <dt>สาขา</dt><dd>@All(_eff.Branches)</dd>
+                <dt>ช่องทาง</dt><dd>@All(_eff.Channels)</dd>
+                <dt>แบรนด์</dt><dd>@All(_eff.Brands)</dd>
+                <dt>มาจากกฎ</dt><dd>@(_eff.Sources.Count == 0 ? "ไม่มีกฎ (ไม่เห็นข้อมูล)" : string.Join(", ", _eff.Sources.Select(s => $"{(s.SubjectType == ScopeSubjectType.User ? "ผู้ใช้" : "บทบาท")} {s.Subject}")))</dd>
+            </dl>
+        }
+    </Card>
+</RequirePermission>
+
+@code {
+    private readonly IReadOnlyList<Breadcrumb> _crumbs = [new("หน้าแรก", ""), new("วิเคราะห์ข้อมูล", "analytics"), new("ขอบเขตข้อมูล")];
+    private readonly ListPermissions _perms = new() { Create = A.SettingsManage, Edit = A.SettingsManage, Delete = A.SettingsManage };
+    private IReadOnlyList<DataScopeRuleDTO>? _items;
+    private EffectiveScopeDTO? _eff;
+    private string? _sub, _roles;
+    private bool _loading;
+
+    private static string SubjectText(DataScopeRuleDTO r) => r.SubjectType == ScopeSubjectType.User ? "ผู้ใช้" : "บทบาท";
+
+    private static string All(List<string> v) => v.Count == 0 ? "ทั้งหมด" : string.Join(", ", v);
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        await LoadSafeAsync(async () => _items = [.. (await Api.GetAsync<List<DataScopeRuleDTO>>("api/v1/analytics/admin/data-scopes")).OrderBy(r => r.SubjectType).ThenBy(r => r.Subject)]);
+        _loading = false;
+    }
+
+    private async Task DeleteAsync(DataScopeRuleDTO r)
+    {
+        if (await SaveSafeAsync(() => Api.DeleteAsync($"api/v1/analytics/admin/data-scopes/{r.Id}"), "ลบกฎแล้ว"))
+        {
+            await LoadAsync();
+        }
+    }
+
+    private async Task EffectiveAsync()
+    {
+        try
+        {
+            string q = AnaQuery.Of(new AnalyticsFilterDTO(), ("sub", _sub!.Trim()), ("roles", Text.SplitList(_roles)));
+            _eff = await Api.GetAsync<EffectiveScopeDTO>($"api/v1/analytics/admin/data-scopes/effective?{q}");
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Toasts.Error(Text.Error(ex));
+        }
+    }
+}

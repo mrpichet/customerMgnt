@@ -1,0 +1,78 @@
+@page "/analytics/data-scopes/new"
+@page "/analytics/data-scopes/{Id:guid}/edit"
+@attribute [Authorize]
+@inherits MembershipPage
+@* AN-28 เพิ่ม/แก้ไขกฎขอบเขตข้อมูล — เว้นว่าง = ทุกค่าในมิตินั้น *@
+<PageTitle>@Title</PageTitle>
+
+<RequirePermission Permission="@A.SettingsManage">
+    @if (LoadError is not null) { <ErrorView Title="โหลดข้อมูลไม่สำเร็จ" Message="@LoadError" OnRetry="LoadAsync" /> }
+    else if (_m is null) { <LoadingState /> }
+    else
+    {
+        <FormTemplate Title="@Title" Description="กำหนดข้อมูลที่ผู้ใช้หรือบทบาทนี้เห็นได้ มิติที่เว้นว่างหมายถึงเห็นทุกค่าในมิตินั้น มีผลกับหน้าวิเคราะห์ การส่งออก และแจ้งเตือน"
+                      Breadcrumbs="Crumbs" Mode="@(Id is null ? FormMode.New : FormMode.Edit)" Model="_m" SavePermission="@A.SettingsManage" OnSave="SaveAsync" OnCancel="Back">
+            <ChildContent>
+                <FormSection Title="ใช้กับ">
+                    <FieldGrid Columns="2">
+                        <Field Label="ประเภท" InputId="st">
+                            <select id="st" @bind="_m.SubjectType" disabled="@(Id is not null)"><option value="@ScopeSubjectType.User">ผู้ใช้</option><option value="@ScopeSubjectType.Role">บทบาท (Role ใน AuthServer)</option></select>
+                        </Field>
+                        <FormField Label="@(_m.SubjectType == ScopeSubjectType.User ? "รหัสผู้ใช้ (sub)" : "ชื่อบทบาท")" InputId="sj" For="() => _m.Subject" Required>
+                            <InputText id="sj" @bind-Value="_m.Subject" maxlength="200" disabled="@(Id is not null)" />
+                        </FormField>
+                    </FieldGrid>
+                </FormSection>
+                <FormSection Title="ข้อมูลที่เห็นได้">
+                    <FieldGrid Columns="2">
+                        <Field Label="สาขา (คั่นด้วยจุลภาค เว้นว่าง = ทุกสาขา)" InputId="br"><input id="br" @bind="_branches" /></Field>
+                        <Field Label="แบรนด์ (คั่นด้วยจุลภาค เว้นว่าง = ทุกแบรนด์)" InputId="bd"><input id="bd" @bind="_brands" /></Field>
+                    </FieldGrid>
+                    <Field Label="ช่องทาง (ไม่เลือก = ทุกช่องทาง)" InputId="ch">
+                        <div class="check-list">
+                            @foreach (SalesChannel c in Enum.GetValues<SalesChannel>())
+                            {
+                                string v = c.ToString();
+                                <label><input type="checkbox" checked="@_m.Channels.Contains(v)" @onchange="e => { if (e.Value is true) { if (!_m.Channels.Contains(v)) _m.Channels.Add(v); } else _m.Channels.Remove(v); }" /> @AnaText.Channel(c)</label>
+                            }
+                        </div>
+                    </Field>
+                    <Field Label="หมายเหตุ" InputId="nt"><textarea id="nt" @bind="_m.Note" rows="2" maxlength="500"></textarea></Field>
+                </FormSection>
+            </ChildContent>
+        </FormTemplate>
+    }
+</RequirePermission>
+
+@code {
+    [Parameter] public Guid? Id { get; set; }
+
+    private DataScopeRuleDTO? _m;
+    private string? _branches, _brands;
+
+    private string Title => Id is null ? "เพิ่มกฎขอบเขตข้อมูล" : $"แก้ไขกฎ {_m?.Subject}";
+    private IReadOnlyList<Breadcrumb> Crumbs => [new("หน้าแรก", ""), new("วิเคราะห์ข้อมูล", "analytics"), new("ขอบเขตข้อมูล", "analytics/data-scopes"), new(Title)];
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private Task LoadAsync() => LoadSafeAsync(async () =>
+    {
+        _m = Id is null ? new DataScopeRuleDTO() : await Api.GetAsync<DataScopeRuleDTO>($"api/v1/analytics/admin/data-scopes/{Id}");
+        _branches = string.Join(", ", _m.Branches);
+        _brands = string.Join(", ", _m.Brands);
+    });
+
+    private Task<bool> SaveAsync()
+    {
+        _m!.Branches = [.. Text.SplitList(_branches).Select(b => b.ToUpperInvariant()).Distinct()];
+        _m.Brands = Text.SplitList(_brands);
+        _m.Subject = _m.Subject.Trim();
+        return SaveSafeAsync(async () =>
+        {
+            if (Id is null) await Api.PostAsync<DataScopeRuleDTO>("api/v1/analytics/admin/data-scopes", _m);
+            else await Api.PutAsync<DataScopeRuleDTO>($"api/v1/analytics/admin/data-scopes/{Id}", _m);
+        }, "บันทึกกฎแล้ว", "analytics/data-scopes");
+    }
+
+    private void Back() => Nav.NavigateTo("analytics/data-scopes");
+}

@@ -1,0 +1,73 @@
+@page "/analytics/saved-filters"
+@attribute [Authorize]
+@inherits MembershipPage
+@* AN-17 ตัวกรองที่บันทึก (ANA-FILTER-003) — ของฉันเท่านั้น, ตั้งค่าเริ่มต้นได้หน้าละ 1 รายการ *@
+<PageTitle>ตัวกรองที่บันทึก</PageTitle>
+
+<RequirePermission Permission="@A.DashboardRead">
+    <ListTemplate TItem="SavedFilterDTO" Title="ตัวกรองที่บันทึก" Description="ตัวกรองที่คุณบันทึกไว้จากหน้าวิเคราะห์ต่าง ๆ ตัวกรองเริ่มต้นจะถูกใช้เมื่อเปิดหน้านั้นโดยไม่ระบุตัวกรอง บันทึกใหม่ได้จากแถบตัวกรองของแต่ละหน้า"
+                  Breadcrumbs="_crumbs" Permissions="_perms" Items="_items" Loading="_loading" ErrorMessage="@LoadError" OnRetry="LoadAsync"
+                  OnView="Open" OnDelete="DeleteAsync" ItemName="@(f => f.Name)">
+        <Columns>
+            <TableColumn TItem="SavedFilterDTO" Title="ชื่อ" Field="f => f.Name" IsPrimary Sortable />
+            <TableColumn TItem="SavedFilterDTO" Title="หน้า" Field="f => AnaRoutes.Name(f.Page)" SortBy="f => f.Page" Sortable />
+            <TableColumn TItem="SavedFilterDTO" Title="ช่วงวันที่" Field="Range" HideOnMobile />
+            <TableColumn TItem="SavedFilterDTO" Title="ค่าเริ่มต้น" SortBy="f => f.IsDefault">
+                <Template>
+                    @if (context.IsDefault) { <Badge Text="ค่าเริ่มต้น" Level="AlertLevel.Success" /> }
+                    else { <AppButton Text="ตั้งเป็นค่าเริ่มต้น" Size="ButtonSize.Small" Variant="ButtonVariant.Secondary" OnClick="() => SetDefaultAsync(context)" /> }
+                </Template>
+            </TableColumn>
+        </Columns>
+    </ListTemplate>
+</RequirePermission>
+
+@code {
+    private readonly IReadOnlyList<Breadcrumb> _crumbs = [new("หน้าแรก", ""), new("วิเคราะห์ข้อมูล", "analytics"), new("ตัวกรองที่บันทึก")];
+    private readonly ListPermissions _perms = new() { View = A.DashboardRead, Delete = A.DashboardRead };
+    private IReadOnlyList<SavedFilterDTO>? _items;
+    private bool _loading;
+
+    private static string Range(SavedFilterDTO f) =>
+        f.Filter.From is null && f.Filter.To is null ? "ค่าเริ่มต้น (30 วันล่าสุด)" : $"{(f.Filter.From is DateOnly a ? AnaText.Date(a) : "-")} – {(f.Filter.To is DateOnly b ? AnaText.Date(b) : "-")}";
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        await LoadSafeAsync(async () => _items = [.. (await Api.GetAsync<List<SavedFilterDTO>>("api/v1/analytics/saved-filters")).OrderBy(f => f.Page).ThenBy(f => f.Name)]);
+        _loading = false;
+    }
+
+    private void Open(SavedFilterDTO f)
+    {
+        string? path = AnaRoutes.Path(f.Page);
+        if (path is null)
+        {
+            Toasts.Info("เปิดตัวกรองนี้ได้จากหน้าที่บันทึกไว้");
+            return;
+        }
+
+        f.Filter.SavedFilterId = f.Id;
+        string q = AnaQuery.Of(f.Filter);
+        Nav.NavigateTo(q.Length == 0 ? path : $"{path}?{q}");
+    }
+
+    private async Task SetDefaultAsync(SavedFilterDTO f)
+    {
+        f.IsDefault = true;
+        if (await SaveSafeAsync(() => Api.PutAsync<SavedFilterDTO>($"api/v1/analytics/saved-filters/{f.Id}", f), "ตั้งเป็นค่าเริ่มต้นแล้ว"))
+        {
+            await LoadAsync();
+        }
+    }
+
+    private async Task DeleteAsync(SavedFilterDTO f)
+    {
+        if (await SaveSafeAsync(() => Api.DeleteAsync($"api/v1/analytics/saved-filters/{f.Id}"), "ลบตัวกรองแล้ว"))
+        {
+            await LoadAsync();
+        }
+    }
+}

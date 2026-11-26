@@ -85,6 +85,9 @@ public static class AnaQuery
     /// <summary>ค่าพารามิเตอร์อื่นใน URL (ไม่ใช่ตัวกรอง)</summary>
     public static string? Param(string uri, string key) => Pairs(uri)[key].FirstOrDefault();
 
+    /// <summary>ค่าทั้งหมดของพารามิเตอร์ที่ซ้ำได้</summary>
+    public static IReadOnlyList<string> Params(string uri, string key) => [.. Pairs(uri)[key].Where(v => v.Length > 0)];
+
     /// <summary>คู่ key=value ของ query string (key ไม่สนตัวพิมพ์)</summary>
     private static ILookup<string, string> Pairs(string uri)
     {

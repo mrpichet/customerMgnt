@@ -1,0 +1,104 @@
+@page "/analytics/funnels/new"
+@page "/analytics/funnels/{Id:guid}/edit"
+@attribute [Authorize]
+@inherits MembershipPage
+@* AN-16F สร้าง/แก้ไข Funnel — 2–6 ขั้น ไม่ซ้ำ, ระยะห่างสูงสุด 1–2,160 ชม. *@
+<PageTitle>@Title</PageTitle>
+
+<RequirePermission Permission="@A.SettingsManage">
+    @if (LoadError is not null) { <ErrorView Title="โหลดข้อมูลไม่สำเร็จ" Message="@LoadError" OnRetry="LoadAsync" /> }
+    else if (_m is null) { <LoadingState /> }
+    else
+    {
+        <FormTemplate Title="@Title" Description="เลือกขั้นตอนตามลำดับ 2–6 ขั้น (ไม่ซ้ำกัน) สมาชิกต้องทำขั้นถัดไปภายในระยะห่างสูงสุดจึงนับว่าผ่าน"
+                      Breadcrumbs="Crumbs" Mode="@(Id is null ? FormMode.New : FormMode.Edit)" Model="_m" SavePermission="@A.SettingsManage" OnSave="SaveAsync" OnCancel="Back">
+            <ChildContent>
+                <FormSection Title="ข้อมูล Funnel">
+                    <FieldGrid Columns="2">
+                        <FormField Label="ชื่อ" InputId="nm" For="() => _m.Name" Required><InputText id="nm" @bind-Value="_m.Name" maxlength="200" /></FormField>
+                        <FormField Label="ระยะห่างสูงสุดระหว่างขั้น (ชั่วโมง)" InputId="gap" For="() => _m.MaxGapHours" Required Hint="1–2,160 (90 วัน)"><InputNumber id="gap" @bind-Value="_m.MaxGapHours" min="1" max="2160" /></FormField>
+                    </FieldGrid>
+                </FormSection>
+                <FormSection Title="ขั้นตอน (ตามลำดับ)">
+                    <table class="simple-table">
+                        <thead><tr><th>ลำดับ</th><th>ขั้นตอน</th><th></th></tr></thead>
+                        <tbody>
+                            @for (int i = 0; i < _m.Steps.Count; i++)
+                            {
+                                int idx = i;
+                                <tr>
+                                    <td>@(idx + 1)</td>
+                                    <td>@AnaText.Step(_m.Steps[idx])</td>
+                                    <td class="row-actions">
+                                        <AppButton Text="ขึ้น" Size="ButtonSize.Small" Variant="ButtonVariant.Secondary" Disabled="@(idx == 0)" OnClick="() => Move(idx, -1)" />
+                                        <AppButton Text="ลง" Size="ButtonSize.Small" Variant="ButtonVariant.Secondary" Disabled="@(idx == _m.Steps.Count - 1)" OnClick="() => Move(idx, 1)" />
+                                        <AppButton Text="ลบ" Size="ButtonSize.Small" Variant="ButtonVariant.Secondary" OnClick="() => _m.Steps.RemoveAt(idx)" />
+                                    </td>
+                                </tr>
+                            }
+                            @if (_m.Steps.Count == 0) { <tr><td colspan="3" class="muted">ยังไม่มีขั้นตอน</td></tr> }
+                        </tbody>
+                    </table>
+                    @if (_m.Steps.Count < 6)
+                    {
+                        <FieldGrid Columns="2">
+                            <Field Label="เพิ่มขั้นตอน" InputId="add">
+                                <select id="add" @bind="_add">
+                                    <option value="">-- เลือก --</option>
+                                    @foreach (FunnelStep s in Enum.GetValues<FunnelStep>().Where(s => !_m.Steps.Contains(s))) { <option value="@s">@AnaText.Step(s)</option> }
+                                </select>
+                            </Field>
+                            <Field Label="&nbsp;" InputId="addb"><AppButton Text="เพิ่ม" Variant="ButtonVariant.Secondary" Disabled="@string.IsNullOrEmpty(_add)" OnClick="Add" /></Field>
+                        </FieldGrid>
+                    }
+                    @if (_m.Steps.Count < 2) { <p class="small muted">ต้องมีอย่างน้อย 2 ขั้น</p> }
+                </FormSection>
+            </ChildContent>
+        </FormTemplate>
+    }
+</RequirePermission>
+
+@code {
+    [Parameter] public Guid? Id { get; set; }
+
+    private FunnelDTO? _m;
+    private string? _add;
+
+    private string Title => Id is null ? "สร้าง Funnel" : $"แก้ไข Funnel {_m?.Name}";
+    private IReadOnlyList<Breadcrumb> Crumbs => [new("หน้าแรก", ""), new("วิเคราะห์ข้อมูล", "analytics"), new("Funnel", "analytics/funnels"), new(Title)];
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private Task LoadAsync() => LoadSafeAsync(async () =>
+        _m = Id is null ? new FunnelDTO() : await Api.GetAsync<FunnelDTO>($"api/v1/analytics/funnels/{Id}"));
+
+    private void Add()
+    {
+        if (Enum.TryParse(_add, out FunnelStep s) && !_m!.Steps.Contains(s)) _m.Steps.Add(s);
+        _add = null;
+    }
+
+    private void Move(int i, int d)
+    {
+        (_m!.Steps[i], _m.Steps[i + d]) = (_m.Steps[i + d], _m.Steps[i]);
+    }
+
+    private Task<bool> SaveAsync()
+    {
+        if (_m!.Steps.Count is < 2 or > 6)
+        {
+            Toasts.Warning("Funnel ต้องมี 2–6 ขั้น");
+            return Task.FromResult(false);
+        }
+
+        return SaveSafeAsync(async () =>
+        {
+            FunnelDTO saved = Id is null
+                ? await Api.PostAsync<FunnelDTO>("api/v1/analytics/funnels", _m)
+                : await Api.PutAsync<FunnelDTO>($"api/v1/analytics/funnels/{Id}", _m);
+            _m.Id = saved.Id;
+        }, "บันทึก Funnel แล้ว", "analytics/funnels");
+    }
+
+    private void Back() => Nav.NavigateTo("analytics/funnels");
+}

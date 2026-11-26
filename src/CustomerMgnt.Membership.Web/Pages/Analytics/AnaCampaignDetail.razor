@@ -1,0 +1,191 @@
+@page "/analytics/campaigns/{Code}"
+@attribute [Authorize]
+@inherits AnaPage
+@* AN-13 ผลแคมเปญรายตัว (ANA-PROMO-002/003/006) — ภาพรวม, แยกมิติ, กลุ่มควบคุม, ต้นทุน/ROI; แท็บ/มิติ/วิธีนับอยู่ใน URL *@
+<PageTitle>ผลแคมเปญ @Code</PageTitle>
+
+<RequirePermission Permission="@A.PromotionRead">
+    <PageHeader Title="@($"ผลแคมเปญ {Code}{(_r is null ? "" : " — " + _r.Data.Campaign.Name)}")" Description="@Description" Breadcrumbs="Crumbs">
+        <Actions><ExportButton Source="ExportSource.Dashboard" Page="AN-13" Filter="ExportFilter" /></Actions>
+    </PageHeader>
+    <AnaFilterBar PageCode="AN-13" Value="Filter" OnApply="f => Apply(f, Extra(_tab))" ShowProduct="false" />
+    <Card>
+        <FieldGrid Columns="2">
+            <Field Label="วิธีนับยอดขายของแคมเปญ" InputId="at">
+                <select id="at" value="@_attribution" @onchange="e => Apply(Filter, Extra(_tab, attribution: e.Value?.ToString()))">
+                    @foreach (Attribution a in Enum.GetValues<Attribution>()) { <option value="@a">@AnaText.Attribution(a)</option> }
+                </select>
+            </Field>
+            @if (_r is not null)
+            {
+                <Field Label="ช่วงแคมเปญ" InputId="pd"><span id="pd">@Text.DateTime(_r.Data.Campaign.StartAt) – @Text.DateTime(_r.Data.Campaign.EndAt)</span></Field>
+            }
+        </FieldGrid>
+    </Card>
+    @if (LoadError is not null) { <ErrorView Title="โหลดข้อมูลไม่สำเร็จ" Message="@LoadError" OnRetry="LoadAsync" /> }
+    else if (_r is null) { <LoadingState /> }
+    else
+    {
+        CampaignReportDTO d = _r.Data;
+        <AnaBanner Meta="Meta(_r)" />
+        <Tabs Items="_tabs" SelectedKey="@_tab" SelectedKeyChanged="t => Apply(Filter, Extra(t))" AriaLabel="มุมมองผลแคมเปญ">
+            @switch (_tab)
+            {
+                case "breakdown":
+                    <Card>
+                        <Field Label="แยกตาม" InputId="dm">
+                            <select id="dm" value="@_dimension" @onchange="e => Apply(Filter, Extra(_tab, dimension: e.Value?.ToString()))">
+                                @foreach ((CampaignDimension k, string t) in Dimensions) { <option value="@k">@t</option> }
+                            </select>
+                        </Field>
+                    </Card>
+                    @if (_breakdown is null) { <LoadingState /> }
+                    else
+                    {
+                        <Card Title="ยอดขายแคมเปญตามมิติ"><KeyValueChart Items="BreakdownChart" Horizontal="@(_dimension != CampaignDimension.Day)" Name="ยอดขาย" /></Card>
+                        <Card>
+                            <table class="simple-table">
+                                <thead><tr><th>@Dimensions.First(x => x.Key == _dimension).Text</th><th class="num">ผู้เข้าร่วม</th><th class="num">จำนวนบิล</th><th class="num">ยอดขาย</th><th class="num">ส่วนลด</th><th class="num">ยอดเฉลี่ยต่อบิล</th></tr></thead>
+                                <tbody>
+                                    @foreach (BreakdownRowDTO b in _breakdown.Data)
+                                    {
+                                        <tr><td>@b.Label</td><td class="num">@AnaText.Int(b.Participants)</td><td class="num">@AnaText.Int(b.Transactions)</td><td class="num">@AnaText.Num(b.Sales)</td><td class="num">@AnaText.Num(b.Discount)</td><td class="num">@AnaText.Num(b.AvgTicket)</td></tr>
+                                    }
+                                    @if (_breakdown.Data.Count == 0) { <tr><td colspan="6" class="muted">ไม่มีข้อมูล</td></tr> }
+                                </tbody>
+                            </table>
+                        </Card>
+                    }
+                    break;
+                case "lift":
+                    @if (_lift is null) { <LoadingState /> }
+                    else if (!_lift.Data.HasControl)
+                    {
+                        <Alert Level="AlertLevel.Info" Title="แคมเปญนี้ไม่มีกลุ่มควบคุม">ตั้งค่ากลุ่มควบคุม (holdout) ในแคมเปญก่อนเริ่มเพื่อวัดผลเพิ่มที่เกิดจากแคมเปญจริง</Alert>
+                    }
+                    else
+                    {
+                        CampaignLiftDTO l = _lift.Data;
+                        <Card Title="@($"กลุ่มควบคุม {l.HoldoutPct}% — ได้รับสิทธิ์ {AnaText.Int(l.Treated)} คน / กลุ่มควบคุม {AnaText.Int(l.Control)} คน")">
+                            <div class="kpi-grid">
+                                <MetricCard Metric="l.PurchaseRateTreated" Label="อัตราซื้อ (กลุ่มได้รับสิทธิ์)" />
+                                <MetricCard Metric="l.PurchaseRateControl" Label="อัตราซื้อ (กลุ่มควบคุม)" />
+                                <MetricCard Metric="l.SalesPerMemberTreated" Label="ยอดขายต่อคน (กลุ่มได้รับสิทธิ์)" />
+                                <MetricCard Metric="l.SalesPerMemberControl" Label="ยอดขายต่อคน (กลุ่มควบคุม)" />
+                                <MetricCard Metric="l.Lift" Label="ผลเพิ่ม (Lift)" />
+                                <MetricCard Metric="l.UpliftSales" Label="ยอดขายที่เพิ่มขึ้นจากแคมเปญ (ประมาณ)" />
+                            </div>
+                            @if (l.Lift.Significant is bool sig)
+                            {
+                                <p class="small">@(sig ? "ผลต่างมีนัยสำคัญทางสถิติ (ช่วงเชื่อมั่น 95% ไม่คร่อมศูนย์)" : "ผลต่างยังไม่มีนัยสำคัญทางสถิติ ควรรอข้อมูลเพิ่มก่อนสรุป")</p>
+                            }
+                        </Card>
+                    }
+                    break;
+                case "roi":
+                    @if (_roi is null) { <LoadingState /> }
+                    else
+                    {
+                        CampaignRoiDTO o = _roi.Data;
+                        @if (!o.CostIncluded)
+                        {
+                            <Alert Level="AlertLevel.Warning" Title="ข้อมูลต้นทุนสินค้ายังไม่ครบ">
+                                ครอบคลุม @AnaText.Pct(o.CostCoveragePct) ของยอดขาย จึงไม่คำนวณกำไรขั้นต้นและ ROI
+                            </Alert>
+                        }
+                        <Card Title="ต้นทุนและผลตอบแทน">
+                            <div class="kpi-grid">
+                                <MetricCard Metric="o.Discount" Label="ส่วนลด" />
+                                <MetricCard Metric="o.PointsCost" Label="ต้นทุนคะแนน" />
+                                <MetricCard Metric="o.CampaignCost" Label="ค่าใช้จ่ายแคมเปญ" />
+                                <MetricCard Metric="o.GrossProfit" Label="กำไรขั้นต้น" />
+                                <MetricCard Metric="o.GrossMarginPct" Label="อัตรากำไรขั้นต้น" />
+                                <MetricCard Metric="o.Roi" Label="ROI" />
+                                <MetricCard Metric="o.BreakEvenSales" Label="ยอดขายจุดคุ้มทุน" />
+                            </div>
+                        </Card>
+                    }
+                    break;
+                default:
+                    <KpiGrid Kpis="d.Kpis" OnDrill="Drill" />
+                    <Card Title="แนวโน้ม"><SeriesChart Series="d.Trend" /></Card>
+                    <Card Title="ข้อมูลแคมเปญ">
+                        <dl class="kv">
+                            <dt>สถานะ</dt><dd><Badge Text="@Text.Campaign(d.Campaign.Status)" Level="@Text.Level(d.Campaign.Status)" /></dd>
+                            <dt>ประเภทสิทธิ์</dt><dd>@Text.Reward(d.Campaign.RewardType)</dd>
+                            <dt>กลุ่มเป้าหมาย</dt><dd>@(d.TargetSegments.Count == 0 ? "สมาชิกทุกคน" : string.Join(", ", d.TargetSegments.Select(s => s.Name)))</dd>
+                            <dt>สมาชิกเป้าหมาย</dt><dd>@AnaText.Int(d.Campaign.EligibleMembers)</dd>
+                            <dt>กลุ่มควบคุม</dt><dd>@(d.Campaign.HoldoutPct > 0 ? $"{d.Campaign.HoldoutPct}%" : "ไม่มี")</dd>
+                            @if (d.Attribution == Attribution.Influenced) { <dt>ช่วงนับผลหลังได้รับข้อความ</dt><dd>@d.InfluenceWindowDays วัน</dd> }
+                        </dl>
+                    </Card>
+                    break;
+            }
+        </Tabs>
+    }
+</RequirePermission>
+
+@code {
+    [Parameter] public string Code { get; set; } = string.Empty;
+
+    private static readonly (CampaignDimension Key, string Text)[] Dimensions =
+        [(CampaignDimension.Branch, "สาขา"), (CampaignDimension.Channel, "ช่องทาง"), (CampaignDimension.Tier, "ระดับสมาชิก"), (CampaignDimension.Category, "หมวดสินค้า"), (CampaignDimension.Brand, "แบรนด์"), (CampaignDimension.Day, "วัน")];
+
+    private readonly IReadOnlyList<TabItem> _tabs = [new("overview", "ภาพรวม"), new("breakdown", "แยกมิติ"), new("lift", "กลุ่มควบคุม"), new("roi", "ต้นทุน / ROI")];
+    private AnalyticsResultDTO<CampaignReportDTO>? _r;
+    private AnalyticsResultDTO<List<BreakdownRowDTO>>? _breakdown;
+    private AnalyticsResultDTO<CampaignLiftDTO>? _lift;
+    private AnalyticsResultDTO<CampaignRoiDTO>? _roi;
+    private string _tab = "overview";
+    private Attribution _attribution = Attribution.BenefitUsed;
+    private CampaignDimension _dimension = CampaignDimension.Branch;
+
+    protected override string PageCode => "AN-13";
+
+    private string Description => $"วิธีนับ: {AnaText.Attribution(_attribution)} — ตัวเลขเป็นของแคมเปญนี้เท่านั้นในช่วงที่เลือก";
+
+    private IReadOnlyList<Breadcrumb> Crumbs => [new("หน้าแรก", ""), new("วิเคราะห์ข้อมูล", "analytics"), new("ผลแคมเปญ", $"analytics/campaigns?{Q()}"), new(Code)];
+
+    private AnalyticsFilterDTO ExportFilter
+    {
+        get
+        {
+            AnalyticsFilterDTO f = AnaQuery.Parse(Nav.Uri);
+            f.Campaign = [Code];
+            return f;
+        }
+    }
+
+    private List<KeyValueDTO> BreakdownChart => [.. (_breakdown?.Data ?? []).Select(b => new KeyValueDTO { Key = b.Key, Label = b.Label, Value = b.Sales })];
+
+    private (string, object?)[] Extra(string tab, string? attribution = null, string? dimension = null) =>
+        [("tab", tab == "overview" ? null : tab), ("attribution", attribution ?? _attribution.ToString()), ("dimension", tab == "breakdown" ? dimension ?? _dimension.ToString() : null)];
+
+    protected override Task LoadAsync()
+    {
+        _tab = Param("tab") is string t && _tabs.Any(x => x.Key == t) ? t : "overview";
+        _attribution = Enum.TryParse(Param("attribution"), out Attribution a) ? a : Attribution.BenefitUsed;
+        _dimension = Enum.TryParse(Param("dimension"), out CampaignDimension dm) ? dm : CampaignDimension.Branch;
+        _breakdown = null;
+        _lift = null;
+        _roi = null;
+        string code = Uri.EscapeDataString(Code);
+        string q = Q(("attribution", _attribution));
+        return LoadSafeAsync(async () =>
+        {
+            _r = await Api.GetAsync<AnalyticsResultDTO<CampaignReportDTO>>($"api/v1/analytics/campaigns/{code}?{q}");
+            switch (_tab)
+            {
+                case "breakdown":
+                    _breakdown = await Api.GetAsync<AnalyticsResultDTO<List<BreakdownRowDTO>>>($"api/v1/analytics/campaigns/{code}/breakdown?{Q(("attribution", _attribution), ("dimension", _dimension))}");
+                    break;
+                case "lift":
+                    _lift = await Api.GetAsync<AnalyticsResultDTO<CampaignLiftDTO>>($"api/v1/analytics/campaigns/{code}/lift?{Q()}");
+                    break;
+                case "roi":
+                    _roi = await Api.GetAsync<AnalyticsResultDTO<CampaignRoiDTO>>($"api/v1/analytics/campaigns/{code}/roi?{Q()}");
+                    break;
+            }
+        });
+    }
+}

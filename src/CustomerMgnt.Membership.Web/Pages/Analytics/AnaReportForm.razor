@@ -1,0 +1,188 @@
+@page "/analytics/reports/new"
+@page "/analytics/reports/{Id:guid}/edit"
+@attribute [Authorize]
+@inherits MembershipPage
+@* AN-20 สร้าง/แก้ไข/คัดลอกรายงาน (ANA-REPORT-001) — มิติ ≤ 3 (เวลาได้ 1), ตัวชี้วัด 1–10 จาก catalog ตามสิทธิ์; ?copy={id} = คัดลอก *@
+<PageTitle>@Title</PageTitle>
+
+<RequirePermission Permission="@A.ReportBuild">
+    @if (LoadError is not null) { <ErrorView Title="โหลดข้อมูลไม่สำเร็จ" Message="@LoadError" OnRetry="LoadAsync" /> }
+    else if (_m is null || _catalog is null) { <LoadingState /> }
+    else
+    {
+        <FormTemplate Title="@Title" Description="เลือกมิติ (แถว) ได้สูงสุด 3 มิติ โดยมิติเวลาได้ 1 มิติ และตัวชี้วัด (คอลัมน์) 1–10 ตัว ช่วงวันที่เลือกตอนเรียกดู"
+                      Breadcrumbs="Crumbs" Mode="@(Id is null ? FormMode.New : FormMode.Edit)" Model="_m" SavePermission="@A.ReportBuild" OnSave="SaveAsync" OnCancel="Back">
+            <ChildContent>
+                <FormSection Title="ข้อมูลรายงาน">
+                    <FieldGrid Columns="2">
+                        <FormField Label="ชื่อ" InputId="nm" For="() => _m.Name" Required><InputText id="nm" @bind-Value="_m.Name" maxlength="200" /></FormField>
+                        <Field Label="รูปแบบแสดงผล" InputId="dp">
+                            <select id="dp" @bind="_m.Display">@foreach (ReportDisplay d in Enum.GetValues<ReportDisplay>()) { <option value="@d">@AnaText.Display(d)</option> }</select>
+                        </Field>
+                    </FieldGrid>
+                    <Field Label="คำอธิบาย" InputId="ds"><textarea id="ds" @bind="_m.Description" rows="2" maxlength="1000"></textarea></Field>
+                </FormSection>
+                <FormSection Title="@($"มิติ ({_m.Dimensions.Count}/3)")">
+                    <div class="check-list">
+                        @foreach (CatalogDimensionDTO d in _catalog.Dimensions)
+                        {
+                            bool on = _m.Dimensions.Contains(d.Code);
+                            <label><input type="checkbox" checked="@on" disabled="@(!on && !CanAddDimension(d.Code))" @onchange="e => Toggle(_m.Dimensions, d.Code, e)" /> @d.Label</label>
+                        }
+                    </div>
+                </FormSection>
+                <FormSection Title="@($"ตัวชี้วัด ({_m.Metrics.Count}/10)")">
+                    <table class="simple-table">
+                        <thead><tr><th></th><th>ตัวชี้วัด</th><th>คำนิยาม</th><th>ใช้กับมิติ</th></tr></thead>
+                        <tbody>
+                            @foreach (CatalogMetricDTO c in _catalog.Metrics)
+                            {
+                                bool on = _m.Metrics.Contains(c.Code);
+                                bool fits = _m.Dimensions.All(c.Dimensions.Contains);
+                                <tr class="@(fits ? null : "muted")">
+                                    <td><input type="checkbox" aria-label="@c.Label" checked="@on" disabled="@(!on && (_m.Metrics.Count >= 10 || !fits))" @onchange="e => Toggle(_m.Metrics, c.Code, e)" /></td>
+                                    <td>@c.Label @if (c.Kind == MetricKind.Estimate) { <Badge Text="ประมาณการ" Level="AlertLevel.Info" /> }</td>
+                                    <td class="small">@c.Definition</td>
+                                    <td class="small">@(c.Dimensions.Count == _catalog.Dimensions.Count ? "ทุกมิติ" : string.Join(", ", c.Dimensions.Select(DimLabel)))</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </FormSection>
+                <FormSection Title="การเรียงลำดับ">
+                    <FieldGrid Columns="2">
+                        <Field Label="เรียงตาม" InputId="sk">
+                            <select id="sk" @bind="_sortKey">
+                                <option value="">ค่าเริ่มต้น</option>
+                                @foreach (string k in _m.Dimensions.Concat(_m.Metrics)) { <option value="@k">@(DimLabel(k) is var l && l != k ? l : MetricLabel(k))</option> }
+                            </select>
+                        </Field>
+                        <Field Label="ทิศทาง" InputId="sd"><select id="sd" @bind="_sortDesc"><option value="@false">น้อย → มาก</option><option value="@true">มาก → น้อย</option></select></Field>
+                    </FieldGrid>
+                </FormSection>
+                <FormSection Title="ตัวกรองที่บันทึกกับรายงาน (เว้นว่าง = ทั้งหมด, คั่นด้วยจุลภาค)">
+                    <FieldGrid Columns="3">
+                        <Field Label="สาขา" InputId="fb"><input id="fb" @bind="_branch" /></Field>
+                        <Field Label="แบรนด์" InputId="fbr"><input id="fbr" @bind="_brand" /></Field>
+                        <Field Label="หมวดสินค้า" InputId="fc"><input id="fc" @bind="_category" /></Field>
+                        <Field Label="Tier" InputId="ft"><input id="ft" @bind="_tier" /></Field>
+                        <Field Label="แคมเปญ" InputId="fcp"><input id="fcp" @bind="_campaign" /></Field>
+                    </FieldGrid>
+                    <Field Label="ช่องทางขาย" InputId="fch">
+                        <div class="check-list">
+                            @foreach (SalesChannel c in Enum.GetValues<SalesChannel>())
+                            {
+                                <label><input type="checkbox" checked="@_m.Filter.Channel.Contains(c)" @onchange="e => Toggle(_m.Filter.Channel, c, e)" /> @AnaText.Channel(c)</label>
+                            }
+                        </div>
+                    </Field>
+                </FormSection>
+                @if (_canShare)
+                {
+                    <FormSection Title="แชร์ให้ (บรรทัดละ 1 รายการ)">
+                        <FieldGrid Columns="2">
+                            <Field Label="ผู้ใช้ (รหัสผู้ใช้ sub)" InputId="su"><textarea id="su" @bind="_shareUsers" rows="3"></textarea></Field>
+                            <Field Label="บทบาท (Role)" InputId="sr"><textarea id="sr" @bind="_shareRoles" rows="3"></textarea></Field>
+                        </FieldGrid>
+                    </FormSection>
+                }
+            </ChildContent>
+        </FormTemplate>
+    }
+</RequirePermission>
+
+@code {
+    [Parameter] public Guid? Id { get; set; }
+
+    private ReportDefinitionDTO? _m;
+    private MetricCatalogDTO? _catalog;
+    private Guid? _copy;
+    private string? _sortKey, _branch, _brand, _category, _tier, _campaign, _shareUsers, _shareRoles;
+    private bool _sortDesc, _canShare;
+
+    private string Title => Id is not null ? $"แก้ไขรายงาน {_m?.Name}" : _copy is not null ? "คัดลอกรายงาน" : "สร้างรายงาน";
+    private IReadOnlyList<Breadcrumb> Crumbs => [new("หน้าแรก", ""), new("วิเคราะห์ข้อมูล", "analytics"), new("รายงาน", "analytics/reports"), new(Title)];
+
+    private static bool IsTime(string d) => d is "day" or "week" or "month";
+
+    private bool CanAddDimension(string d) => _m!.Dimensions.Count < 3 && !(IsTime(d) && _m.Dimensions.Any(IsTime));
+
+    private string DimLabel(string code) => _catalog?.Dimensions.FirstOrDefault(d => d.Code == code)?.Label ?? code;
+
+    private string MetricLabel(string code) => _catalog?.Metrics.FirstOrDefault(m => m.Code == code)?.Label ?? code;
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private Task LoadAsync() => LoadSafeAsync(async () =>
+    {
+        _copy = Guid.TryParse(AnaQuery.Param(Nav.Uri, "copy"), out Guid c) ? c : null;
+        _canShare = await Perms.HasPermissionAsync(A.ReportShare);
+        _catalog = await Api.GetAsync<MetricCatalogDTO>("api/v1/analytics/catalog");
+        Guid? src = Id ?? _copy;
+        _m = src is null ? new ReportDefinitionDTO() : await Api.GetAsync<ReportDefinitionDTO>($"api/v1/analytics/reports/{src}");
+        if (_copy is not null)
+        {
+            _m.Name = $"{_m.Name} (สำเนา)";
+        }
+
+        _sortKey = _m.Sort.FirstOrDefault()?.Key;
+        _sortDesc = _m.Sort.FirstOrDefault()?.Desc ?? false;
+        _branch = string.Join(", ", _m.Filter.Branch);
+        _brand = string.Join(", ", _m.Filter.Brand);
+        _category = string.Join(", ", _m.Filter.Category);
+        _tier = string.Join(", ", _m.Filter.Tier);
+        _campaign = string.Join(", ", _m.Filter.Campaign);
+        _shareUsers = string.Join('\n', _m.Shares.Where(s => s.SubjectType == ScopeSubjectType.User).Select(s => s.Subject));
+        _shareRoles = string.Join('\n', _m.Shares.Where(s => s.SubjectType == ScopeSubjectType.Role).Select(s => s.Subject));
+    });
+
+    private static void Toggle<T>(List<T> list, T v, ChangeEventArgs e)
+    {
+        if (e.Value is true) { if (!list.Contains(v)) list.Add(v); }
+        else list.Remove(v);
+    }
+
+    private static List<string> Lines(string? s) => [.. (s ?? string.Empty).Split('\n').Select(x => x.Trim()).Where(x => x.Length > 0).Distinct()];
+
+    private Task<bool> SaveAsync()
+    {
+        ReportDefinitionDTO m = _m!;
+        if (m.Metrics.Count == 0)
+        {
+            Toasts.Warning("เลือกตัวชี้วัดอย่างน้อย 1 ตัว");
+            return Task.FromResult(false);
+        }
+
+        m.Sort = string.IsNullOrEmpty(_sortKey) || !m.Dimensions.Concat(m.Metrics).Contains(_sortKey) ? [] : [new ReportSortDTO { Key = _sortKey, Desc = _sortDesc }];
+        m.Filter.Branch = Text.SplitList(_branch);
+        m.Filter.Brand = Text.SplitList(_brand);
+        m.Filter.Category = Text.SplitList(_category);
+        m.Filter.Tier = Text.SplitList(_tier);
+        m.Filter.Campaign = Text.SplitList(_campaign);
+        List<ReportShareDTO> shares = [.. Lines(_shareUsers).Select(s => new ReportShareDTO { SubjectType = ScopeSubjectType.User, Subject = s }),
+            .. Lines(_shareRoles).Select(s => new ReportShareDTO { SubjectType = ScopeSubjectType.Role, Subject = s })];
+        m.Shares = _canShare ? shares : [];
+        return SaveSafeAsync(async () =>
+        {
+            ReportDefinitionDTO saved;
+            if (Id is not null)
+            {
+                saved = await Api.PutAsync<ReportDefinitionDTO>($"api/v1/analytics/reports/{Id}", m);
+                if (_canShare)
+                {
+                    await Api.PutAsync<List<ReportShareDTO>>($"api/v1/analytics/reports/{Id}/shares", shares);
+                }
+            }
+            else
+            {
+                m.Id = Guid.Empty;
+                m.Standard = false;
+                saved = await Api.PostAsync<ReportDefinitionDTO>("api/v1/analytics/reports", m);
+            }
+
+            Nav.NavigateTo($"analytics/reports/{saved.Id}");
+        }, "บันทึกรายงานแล้ว");
+    }
+
+    private void Back() => Nav.NavigateTo(Id is not null ? $"analytics/reports/{Id}" : "analytics/reports");
+}

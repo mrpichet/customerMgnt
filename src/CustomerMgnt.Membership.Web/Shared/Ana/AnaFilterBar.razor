@@ -1,3 +1,4 @@
+@inject NavigationManager Nav
 @* ตัวกรองร่วม (§28.1) — แก้แล้วกด "ใช้ตัวกรอง" (ค่าไปอยู่ใน URL); เลือก/บันทึกตัวกรองที่บันทึกไว้ของหน้านี้ได้ (AN-17) *@
 @inject MembershipApiClient Api
 @inject ToastService Toasts
@@ -99,6 +100,13 @@
         {
             _loadedSaved = true;
             await LoadSavedAsync();
+            // เปิดหน้าโดยไม่ระบุตัวกรอง = ใช้ตัวกรองเริ่มต้นที่บันทึกไว้ของหน้านี้ (ถ้ามี)
+            if (!Nav.Uri.Contains('?', StringComparison.Ordinal) && _saved.FirstOrDefault(s => s.IsDefault) is SavedFilterDTO def)
+            {
+                AnalyticsFilterDTO f = def.Filter.Clone();
+                f.SavedFilterId = def.Id;
+                await OnApply.InvokeAsync(f);
+            }
         }
     }
 

@@ -1,0 +1,97 @@
+@page "/analytics/settings"
+@attribute [Authorize]
+@inherits MembershipPage
+@* AN-25 ตั้งค่าการวิเคราะห์ (ANA-ADMIN-001) — ค่าที่ใช้ในสูตร, รอบปรับปรุงข้อมูล, การส่งออก; เปลี่ยนแล้วมีผลกับการคำนวณครั้งถัดไป *@
+<PageTitle>ตั้งค่าการวิเคราะห์</PageTitle>
+
+<RequirePermission Permission="@A.SettingsManage">
+    @if (LoadError is not null) { <ErrorView Title="โหลดข้อมูลไม่สำเร็จ" Message="@LoadError" OnRetry="LoadAsync" /> }
+    else if (_m is null) { <LoadingState /> }
+    else
+    {
+        <FormTemplate Title="ตั้งค่าการวิเคราะห์" Description="ค่าที่ใช้ในสูตรคำนวณและการปรับปรุงข้อมูล เปลี่ยนแล้วมีผลกับการคำนวณครั้งถัดไป ทุกการเปลี่ยนแปลงถูกบันทึก audit"
+                      Breadcrumbs="_crumbs" Mode="FormMode.Edit" Model="_m" SavePermission="@A.SettingsManage" OnSave="SaveAsync" OnCancel="@(() => Nav.NavigateTo("analytics"))">
+            <ChildContent>
+                <FormSection Title="กลุ่มการใช้งานของสมาชิก">
+                    <FieldGrid Columns="3">
+                        <FormField Label="ใช้งาน: ซื้อภายใน (วัน)" InputId="ad" For="() => _m.ActiveDays"><InputNumber id="ad" @bind-Value="_m.ActiveDays" min="1" max="3650" /></FormField>
+                        <FormField Label="เสี่ยงหาย: ไม่ซื้อเกิน (วัน)" InputId="ar" For="() => _m.AtRiskDays"><InputNumber id="ar" @bind-Value="_m.AtRiskDays" min="1" max="3650" /></FormField>
+                        <FormField Label="ซื้อครั้งแรกภายใน (วันหลังสมัคร)" InputId="fp" For="() => _m.FirstPurchaseDays"><InputNumber id="fp" @bind-Value="_m.FirstPurchaseDays" min="1" max="365" /></FormField>
+                        <FormField Label="ลูกค้าประจำ: ซื้ออย่างน้อย (ครั้ง)" InputId="rm" For="() => _m.RegularMinPurchases"><InputNumber id="rm" @bind-Value="_m.RegularMinPurchases" min="1" max="100" /></FormField>
+                        <FormField Label="ลูกค้าประจำ: ภายใน (วัน)" InputId="rw" For="() => _m.RegularWindowDays"><InputNumber id="rw" @bind-Value="_m.RegularWindowDays" min="1" max="3650" /></FormField>
+                        <FormField Label="ลูกค้าประจำ: ซื้อในอย่างน้อย (เดือน)" InputId="rmo" For="() => _m.RegularMinMonths"><InputNumber id="rmo" @bind-Value="_m.RegularMinMonths" min="1" max="12" /></FormField>
+                    </FieldGrid>
+                </FormSection>
+                <FormSection Title="คะแนนและระดับสมาชิก">
+                    <FieldGrid Columns="3">
+                        <FormField Label="คะแนนใกล้หมดอายุภายใน (วัน)" InputId="ex" For="() => _m.ExpiringDays"><InputNumber id="ex" @bind-Value="_m.ExpiringDays" min="1" max="365" /></FormField>
+                        <FormField Label="ใกล้ทบทวนระดับภายใน (วัน)" InputId="trd" For="() => _m.TierReviewDays"><InputNumber id="trd" @bind-Value="_m.TierReviewDays" min="1" max="365" /></FormField>
+                        <FormField Label="เสี่ยงลดระดับภายใน (วัน)" InputId="trk" For="() => _m.TierRiskDays"><InputNumber id="trk" @bind-Value="_m.TierRiskDays" min="1" max="365" /></FormField>
+                        <FormField Label="ใกล้เลื่อนระดับ (% ของยอดเลื่อนขั้น)" InputId="nu" For="() => _m.NearUpgradePct"><InputNumber id="nu" @bind-Value="_m.NearUpgradePct" min="1" max="100" /></FormField>
+                        <FormField Label="ปรับคะแนนจำนวนมาก (คะแนนขึ้นไป)" InputId="la" For="() => _m.LargeAdjustmentPoints"><InputNumber id="la" @bind-Value="_m.LargeAdjustmentPoints" min="1" /></FormField>
+                        <FormField Label="มูลค่าคะแนน (บาท/คะแนน)" InputId="pc" For="() => _m.PointCostBaht"><InputNumber id="pc" @bind-Value="_m.PointCostBaht" step="0.01" min="0" max="1000" /></FormField>
+                    </FieldGrid>
+                </FormSection>
+                <FormSection Title="แคมเปญและความน่าเชื่อถือของตัวเลข">
+                    <FieldGrid Columns="3">
+                        <FormField Label="นับผลหลังได้รับข้อความ (วัน)" InputId="iw" For="() => _m.InfluenceWindowDays"><InputNumber id="iw" @bind-Value="_m.InfluenceWindowDays" min="1" max="90" /></FormField>
+                        <FormField Label="กลุ่มเล็กสุดที่แสดงผล (คน)" InputId="mg" For="() => _m.MinGroupSize"><InputNumber id="mg" @bind-Value="_m.MinGroupSize" min="1" /></FormField>
+                        <FormField Label="ข้อมูลต้นทุนครบอย่างน้อย (%)" InputId="cc" For="() => _m.CostCoverageMinPct"><InputNumber id="cc" @bind-Value="_m.CostCoverageMinPct" min="1" max="100" /></FormField>
+                    </FieldGrid>
+                    <Field Label="ช่วงมูลค่าการซื้อ (บาท คั่นด้วยจุลภาค เรียงจากน้อยไปมาก)" InputId="bd"><input id="bd" @bind="_bands" /></Field>
+                </FormSection>
+                <FormSection Title="การปรับปรุงข้อมูล">
+                    <FieldGrid Columns="3">
+                        <FormField Label="คูปอง: ทุก (นาที)" InputId="rc" For="() => _m.RefreshMinutes.Coupon"><InputNumber id="rc" @bind-Value="_m.RefreshMinutes.Coupon" min="1" max="1440" /></FormField>
+                        <FormField Label="แคมเปญ: ทุก (นาที)" InputId="rca" For="() => _m.RefreshMinutes.Campaign"><InputNumber id="rca" @bind-Value="_m.RefreshMinutes.Campaign" min="1" max="1440" /></FormField>
+                        <FormField Label="ยอดขาย: ทุก (นาที)" InputId="rs" For="() => _m.RefreshMinutes.Sales"><InputNumber id="rs" @bind-Value="_m.RefreshMinutes.Sales" min="1" max="1440" /></FormField>
+                        <FormField Label="สมาชิก: ทุก (นาที)" InputId="rmb" For="() => _m.RefreshMinutes.Member"><InputNumber id="rmb" @bind-Value="_m.RefreshMinutes.Member" min="1" max="1440" /></FormField>
+                        <FormField Label="แจ้งว่าข้อมูลล่าช้าเมื่อเกิน (นาที)" InputId="sa" For="() => _m.StaleAfterMinutes"><InputNumber id="sa" @bind-Value="_m.StaleAfterMinutes" min="1" max="10080" /></FormField>
+                        <FormField Label="คำนวณย้อนหลังทุกคืน (วัน)" InputId="rd" For="() => _m.RecomputeDays"><InputNumber id="rd" @bind-Value="_m.RecomputeDays" min="1" max="731" /></FormField>
+                    </FieldGrid>
+                </FormSection>
+                <FormSection Title="การส่งออกและผู้รับ">
+                    <FieldGrid Columns="3">
+                        <FormField Label="เก็บไฟล์ส่งออก (ชั่วโมง)" InputId="er" For="() => _m.ExportRetentionHours"><InputNumber id="er" @bind-Value="_m.ExportRetentionHours" min="1" max="720" /></FormField>
+                        <FormField Label="จำนวนแถวสูงสุดต่อไฟล์" InputId="em" For="() => _m.ExportMaxRows"><InputNumber id="em" @bind-Value="_m.ExportMaxRows" min="1" max="1000000" /></FormField>
+                    </FieldGrid>
+                    <Field Label="โดเมนอีเมลผู้รับที่อนุญาต (บรรทัดละ 1 โดเมน เว้นว่าง = ไม่จำกัด)" InputId="dm"><textarea id="dm" @bind="_domains" rows="3"></textarea></Field>
+                </FormSection>
+            </ChildContent>
+        </FormTemplate>
+    }
+</RequirePermission>
+
+@code {
+    private readonly IReadOnlyList<Breadcrumb> _crumbs = [new("หน้าแรก", ""), new("วิเคราะห์ข้อมูล", "analytics"), new("ตั้งค่าการวิเคราะห์")];
+    private AnalyticsSettingsDTO? _m;
+    private string? _bands, _domains;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private Task LoadAsync() => LoadSafeAsync(async () =>
+    {
+        _m = await Api.GetAsync<AnalyticsSettingsDTO>("api/v1/analytics/admin/settings");
+        _bands = string.Join(", ", _m.PurchaseValueBands.Select(b => b.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        _domains = string.Join('\n', _m.AllowRecipientDomains);
+    });
+
+    private Task<bool> SaveAsync()
+    {
+        List<decimal> bands = [];
+        foreach (string s in Text.SplitList(_bands))
+        {
+            if (!decimal.TryParse(s, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out decimal d) || d <= 0)
+            {
+                Toasts.Warning($"ช่วงมูลค่าการซื้อไม่ถูกต้อง: {s}");
+                return Task.FromResult(false);
+            }
+
+            bands.Add(d);
+        }
+
+        _m!.PurchaseValueBands = [.. bands.Distinct().Order()];
+        _m.AllowRecipientDomains = [.. (_domains ?? string.Empty).Split('\n', ',').Select(x => x.Trim().TrimStart('@').ToLowerInvariant()).Where(x => x.Length > 0).Distinct()];
+        return SaveSafeAsync(async () => _m = await Api.PutAsync<AnalyticsSettingsDTO>("api/v1/analytics/admin/settings", _m), "บันทึกการตั้งค่าแล้ว");
+    }
+}

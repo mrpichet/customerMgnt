@@ -1,0 +1,19 @@
+@* ผลทดสอบกฎแจ้งเตือน (ไม่บันทึก ไม่ส่งจริง) *@
+<table class="simple-table">
+    <thead><tr><th>ขอบเขต</th><th class="num">ค่า</th><th class="num">เกณฑ์</th><th>ผล</th></tr></thead>
+    <tbody>
+        @foreach (AlertEvaluationDTO e in Result.Results)
+        {
+            <tr>
+                <td>@if (AnaAlertText.Link(e.Drilldown) is string href) { <a href="@href">@AnaAlertText.Scope(e.ScopeKey)</a> } else { @AnaAlertText.Scope(e.ScopeKey) }</td>
+                <td class="num">@AnaText.Num(e.Value)</td><td class="num">@AnaText.Num(e.Threshold)</td>
+                <td><Badge Text="@(e.WouldFire ? "จะแจ้งเตือน" : "ปกติ")" Level="@(e.WouldFire ? AlertLevel.Warning : AlertLevel.Success)" /></td>
+            </tr>
+        }
+        @if (Result.Results.Count == 0) { <tr><td colspan="4" class="muted">ไม่มีข้อมูลให้ตรวจในขณะนี้</td></tr> }
+    </tbody>
+</table>
+
+@code {
+    [Parameter, EditorRequired] public AlertTestResultDTO Result { get; set; } = new();
+}

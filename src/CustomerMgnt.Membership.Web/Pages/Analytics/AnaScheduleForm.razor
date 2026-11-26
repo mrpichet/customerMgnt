@@ -1,0 +1,108 @@
+@page "/analytics/schedules/new"
+@page "/analytics/schedules/{Id:guid}/edit"
+@attribute [Authorize]
+@inherits MembershipPage
+@* AN-21 ตั้งเวลาส่งรายงาน — รอบเวลาแบบ cron 5 ช่อง, ผู้รับต้องอยู่ในโดเมนที่อนุญาต; ?report={id} = เลือกรายงานไว้ก่อน *@
+<PageTitle>@Title</PageTitle>
+
+<RequirePermission Permission="@A.ReportBuild">
+    @if (LoadError is not null) { <ErrorView Title="โหลดข้อมูลไม่สำเร็จ" Message="@LoadError" OnRetry="LoadAsync" /> }
+    else if (_m is null || _reports is null) { <LoadingState /> }
+    else
+    {
+        <FormTemplate Title="@Title" Description="ระบบสร้างไฟล์รายงานตามรอบเวลาแล้วส่งอีเมลถึงผู้รับ ข้อมูลส่วนบุคคลในไฟล์ถูกปิดบางส่วน"
+                      Breadcrumbs="Crumbs" Mode="@(Id is null ? FormMode.New : FormMode.Edit)" Model="_m" SavePermission="@A.ReportBuild" OnSave="SaveAsync" OnCancel="Back">
+            <ChildContent>
+                <FormSection Title="รายงานและรอบเวลา">
+                    <FieldGrid Columns="2">
+                        <Field Label="รายงาน" InputId="rp">
+                            <select id="rp" @bind="_m.ReportId">
+                                <option value="@Guid.Empty">-- เลือกรายงาน --</option>
+                                @foreach (ReportSummaryDTO r in _reports) { <option value="@r.Id">@r.Name</option> }
+                            </select>
+                        </Field>
+                        <Field Label="รอบเวลาที่ใช้บ่อย" InputId="pr">
+                            <select id="pr" value="" @onchange="e => { if (e.Value is string v && v.Length > 0) _m.Cron = v; }">
+                                <option value="">-- เลือกเพื่อเติมอัตโนมัติ --</option>
+                                @foreach ((string cron, string text) in AnaSchedule.Presets) { <option value="@cron">@text</option> }
+                            </select>
+                        </Field>
+                        <FormField Label="รอบเวลา (cron: นาที ชั่วโมง วันที่ เดือน วันในสัปดาห์)" InputId="cr" For="() => _m.Cron" Required Hint="@AnaSchedule.Describe(_m.Cron)">
+                            <InputText id="cr" @bind-Value="_m.Cron" maxlength="100" />
+                        </FormField>
+                        <FormField Label="เขตเวลา" InputId="tz" For="() => _m.Timezone"><InputText id="tz" @bind-Value="_m.Timezone" maxlength="64" /></FormField>
+                        <Field Label="ช่วงข้อมูล" InputId="rg">
+                            <select id="rg" @bind="_m.Range">@foreach (ScheduleRange r in Enum.GetValues<ScheduleRange>()) { <option value="@r">@AnaText.Range(r)</option> }</select>
+                        </Field>
+                        <Field Label="รูปแบบไฟล์" InputId="fm"><select id="fm" @bind="_m.Format"><option value="Xlsx">Excel (.xlsx)</option><option value="Csv">CSV</option></select></Field>
+                    </FieldGrid>
+                    <label class="check-list"><InputCheckbox @bind-Value="_m.Enabled" /> ใช้งาน</label>
+                </FormSection>
+                <FormSection Title="ผู้รับ (อีเมล บรรทัดละ 1 รายการ)">
+                    <FieldGrid Columns="2">
+                        <Field Label="ผู้รับรายงาน" InputId="rc"><textarea id="rc" @bind="_recipients" rows="4"></textarea></Field>
+                        <Field Label="ผู้รับแจ้งเมื่อส่งไม่สำเร็จ" InputId="fr"><textarea id="fr" @bind="_failure" rows="4"></textarea></Field>
+                    </FieldGrid>
+                </FormSection>
+            </ChildContent>
+        </FormTemplate>
+    }
+</RequirePermission>
+
+@code {
+    [Parameter] public Guid? Id { get; set; }
+
+    private ReportScheduleDTO? _m;
+    private List<ReportSummaryDTO>? _reports;
+    private string? _recipients, _failure;
+
+    private string Title => Id is null ? "ตั้งเวลาส่งรายงาน" : "แก้ไขการตั้งเวลา";
+    private IReadOnlyList<Breadcrumb> Crumbs => [new("หน้าแรก", ""), new("วิเคราะห์ข้อมูล", "analytics"), new("ตั้งเวลาส่งรายงาน", "analytics/schedules"), new(Title)];
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private Task LoadAsync() => LoadSafeAsync(async () =>
+    {
+        _reports = [.. (await Api.GetAsync<List<ReportSummaryDTO>>("api/v1/analytics/reports")).OrderBy(r => r.Name)];
+        if (Id is null)
+        {
+            _m = new ReportScheduleDTO { Cron = "0 8 * * 1" };
+            if (Guid.TryParse(AnaQuery.Param(Nav.Uri, "report"), out Guid rid)) _m.ReportId = rid;
+        }
+        else
+        {
+            _m = (await Api.GetAsync<List<ReportScheduleDTO>>("api/v1/analytics/schedules")).FirstOrDefault(s => s.Id == Id)
+                ?? throw new InvalidOperationException("ไม่พบการตั้งเวลานี้");
+        }
+
+        _recipients = string.Join('\n', _m.Recipients);
+        _failure = string.Join('\n', _m.FailureRecipients);
+    });
+
+    private static List<string> Lines(string? s) => [.. (s ?? string.Empty).Split('\n', ',', ';').Select(x => x.Trim()).Where(x => x.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase)];
+
+    private Task<bool> SaveAsync()
+    {
+        if (_m!.ReportId == Guid.Empty)
+        {
+            Toasts.Warning("เลือกรายงาน");
+            return Task.FromResult(false);
+        }
+
+        _m.Recipients = Lines(_recipients);
+        _m.FailureRecipients = Lines(_failure);
+        if (_m.Recipients.Count == 0)
+        {
+            Toasts.Warning("ระบุผู้รับอย่างน้อย 1 คน");
+            return Task.FromResult(false);
+        }
+
+        return SaveSafeAsync(async () =>
+        {
+            if (Id is null) await Api.PostAsync<ReportScheduleDTO>("api/v1/analytics/schedules", _m);
+            else await Api.PutAsync<ReportScheduleDTO>($"api/v1/analytics/schedules/{Id}", _m);
+        }, "บันทึกการตั้งเวลาแล้ว", "analytics/schedules");
+    }
+
+    private void Back() => Nav.NavigateTo("analytics/schedules");
+}

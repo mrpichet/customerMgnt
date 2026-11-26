@@ -64,6 +64,9 @@ public static class AnaText
     public static string Cell(object? v, string type) => v switch
     {
         null => "-",
+        decimal d when type is "Baht" or "Decimal" => d.ToString("N2", CultureInfo.InvariantCulture),
+        decimal d when type is "Percent" => d.ToString("N1", CultureInfo.InvariantCulture) + "%",
+        decimal d => d.ToString("#,0.##", CultureInfo.InvariantCulture),
         System.Text.Json.JsonElement { ValueKind: System.Text.Json.JsonValueKind.Number } n when type is "Baht" or "Decimal" => n.GetDecimal().ToString("N2", CultureInfo.InvariantCulture),
         System.Text.Json.JsonElement { ValueKind: System.Text.Json.JsonValueKind.Number } n when type is "Percent" => n.GetDecimal().ToString("N1", CultureInfo.InvariantCulture) + "%",
         System.Text.Json.JsonElement { ValueKind: System.Text.Json.JsonValueKind.Number } n => n.GetDecimal().ToString("#,0.##", CultureInfo.InvariantCulture),
@@ -162,4 +165,99 @@ public static class AnaTablesText
     public const string Coupons = "ana_coupon_daily";
 
     public static IReadOnlyList<string> All { get; } = [Sales, Members, Points, Coupons];
+}
+
+/// <summary>เส้นทางของหน้าวิเคราะห์ตามรหัสหน้าจอ (ใช้เปิดตัวกรองที่บันทึก)</summary>
+public static class AnaRoutes
+{
+    private static readonly Dictionary<string, (string Path, string Name)> Pages = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["AN-01"] = ("analytics", "ภาพรวมผู้บริหาร"), ["AN-02"] = ("analytics/members", "ภาพรวมสมาชิก"), ["AN-03"] = ("analytics/promotions", "ภาพรวมโปรโมชัน"),
+        ["AN-04"] = ("analytics/members/activity", "กลุ่มการใช้งาน"), ["AN-05"] = ("analytics/members/rfm", "RFM"), ["AN-06"] = ("analytics/members/cohorts", "Cohort"),
+        ["AN-07"] = ("analytics/members/repeat", "การกลับมาซื้อ"), ["AN-08"] = ("analytics/members/value", "มูลค่าการซื้อ"), ["AN-10"] = ("analytics/points", "คะแนน"),
+        ["AN-11"] = ("analytics/coupons", "คูปอง"), ["AN-12"] = ("analytics/campaigns", "ผลแคมเปญ"), ["AN-14"] = ("analytics/campaigns/compare", "เปรียบเทียบแคมเปญ"),
+        ["AN-15"] = ("analytics/members/sources", "แหล่งที่มา"),
+    };
+
+    /// <summary>path ของหน้า (ไม่รู้จัก = null)</summary>
+    public static string? Path(string page) => Pages.TryGetValue(page, out var v) ? v.Path : null;
+
+    /// <summary>ชื่อหน้า</summary>
+    public static string Name(string page) => Pages.TryGetValue(page, out var v) ? $"{page} {v.Name}" : page;
+}
+
+/// <summary>คำอธิบายรอบเวลา cron 5 ช่องแบบอ่านง่าย (รูปแบบที่ใช้บ่อย)</summary>
+public static class AnaSchedule
+{
+    private static readonly string[] Days = ["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์"];
+
+    /// <summary>รอบเวลาที่ใช้บ่อย</summary>
+    public static IReadOnlyList<(string Cron, string Text)> Presets { get; } =
+    [
+        ("0 8 * * *", "ทุกวัน 08:00"), ("0 8 * * 1", "ทุกวันจันทร์ 08:00"), ("0 8 * * 1-5", "วันจันทร์–ศุกร์ 08:00"), ("0 8 1 * *", "วันที่ 1 ของทุกเดือน 08:00"),
+    ];
+
+    /// <summary>คำอธิบาย (รูปแบบซับซ้อน = แสดง cron เดิม)</summary>
+    public static string Describe(string? cron)
+    {
+        string[] p = (cron ?? string.Empty).Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (p.Length != 5 || !int.TryParse(p[0], out int mi) || !int.TryParse(p[1], out int h) || p[3] != "*")
+        {
+            return cron ?? string.Empty;
+        }
+
+        string time = $"{h:00}:{mi:00}";
+        return (p[2], p[4]) switch
+        {
+            ("*", "*") => $"ทุกวัน {time}",
+            ("*", "1-5") => $"วันจันทร์–ศุกร์ {time}",
+            ("*", var d) when int.TryParse(d, out int w) && w is >= 0 and <= 7 => $"ทุกวัน{Days[w % 7]} {time}",
+            (var dm, "*") when int.TryParse(dm, out int day) => $"วันที่ {day} ของทุกเดือน {time}",
+            _ => cron!,
+        };
+    }
+}
+
+/// <summary>ข้อความของกฎ/เหตุการณ์แจ้งเตือน</summary>
+public static class AnaAlertText
+{
+    /// <summary>ชื่อพารามิเตอร์</summary>
+    public static string ParamLabel(string key) => key switch
+    {
+        "windowDays" => "ช่วงที่ดู (วัน)",
+        "threshold" => "เกณฑ์อัตราการใช้ (%)",
+        "campaign" => "รหัสแคมเปญ (ว่าง = ทุกแคมเปญ)",
+        "pct" => "เกณฑ์ (%)",
+        "minCount" => "จำนวนรายการขั้นต่ำ",
+        "minutes" => "ไม่มีข้อมูลนานเกิน (นาที)",
+        "multiplier" => "มากกว่าค่าเฉลี่ย 7 วัน (เท่า)",
+        _ => key,
+    };
+
+    /// <summary>สรุปเงื่อนไขของกฎ</summary>
+    public static string Params(AlertRuleDTO r) =>
+        string.Join(", ", r.Params.Where(p => !string.IsNullOrEmpty(p.Value)).Select(p => $"{ParamLabel(p.Key)} {p.Value}"));
+
+    /// <summary>ขอบเขตของเหตุการณ์</summary>
+    public static string Scope(string key)
+    {
+        int i = key.IndexOf(':', StringComparison.Ordinal);
+        if (i < 0) return key == "all" ? "ทั้งหมด" : key;
+        string v = key[(i + 1)..];
+        return key[..i] switch
+        {
+            "campaign" => $"แคมเปญ {v}",
+            "branch" => $"สาขา {v}",
+            "day" => $"วันที่ {v}",
+            _ => key,
+        };
+    }
+
+    /// <summary>ลิงก์ดูรายละเอียด (ไม่มี = null)</summary>
+    public static string? Link(string? drilldown) => drilldown switch
+    {
+        null or "" => null,
+        _ when drilldown.StartsWith("campaign.", StringComparison.Ordinal) => $"analytics/campaigns/{Uri.EscapeDataString(drilldown["campaign.".Length..])}",
+        _ => $"analytics/drilldown?metric={Uri.EscapeDataString(drilldown)}&back=analytics/alerts",
+    };
 }

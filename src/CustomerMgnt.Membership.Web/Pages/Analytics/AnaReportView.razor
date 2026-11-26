@@ -1,0 +1,132 @@
+@page "/analytics/reports/{Id:guid}"
+@attribute [Authorize]
+@inherits AnaPage
+@* AN-19 เรียกดูรายงาน — ตัวกรองใน URL ทับตัวกรองที่บันทึกในรายงาน *@
+<PageTitle>@(_def?.Name ?? "รายงาน")</PageTitle>
+
+<RequirePermission Permission="@A.DashboardRead">
+    <PageHeader Title="@(_def?.Name ?? "รายงาน")" Description="@_def?.Description" Breadcrumbs="Crumbs">
+        <Actions>
+            @if (_def is not null)
+            {
+                <ExportButton Source="ExportSource.Report" ReportId="Id" Filter="Filter" />
+                <AppButton Text="ตั้งเวลาส่ง" Variant="ButtonVariant.Secondary" Permission="@A.ReportBuild" OnClick="@(() => Nav.NavigateTo($"analytics/schedules/new?report={Id}"))" />
+                <AppButton Text="คัดลอก" Variant="ButtonVariant.Secondary" Permission="@A.ReportBuild" OnClick="@(() => Nav.NavigateTo($"analytics/reports/new?copy={Id}"))" />
+                @if (!_def.Standard && _mine)
+                {
+                    <AppButton Text="แก้ไข" Variant="ButtonVariant.Secondary" Permission="@A.ReportBuild" OnClick="@(() => Nav.NavigateTo($"analytics/reports/{Id}/edit"))" />
+                }
+            }
+        </Actions>
+    </PageHeader>
+    <AnaFilterBar PageCode="AN-19" Value="Filter" OnApply="f => Apply(f)" ShowCompare="false" ShowMember ShowCampaign />
+    @if (LoadError is not null) { <ErrorView Title="โหลดข้อมูลไม่สำเร็จ" Message="@LoadError" OnRetry="LoadAsync" /> }
+    else if (_r is null || _def is null) { <LoadingState /> }
+    else
+    {
+        ReportResultDTO d = _r.Data;
+        <AnaBanner Meta="Meta(_r)" />
+        @foreach ((string k, string? reason) in d.Insufficient.Where(x => x.Value is not null))
+        {
+            <Alert Level="AlertLevel.Warning">@AnaText.Label(k): ข้อมูลไม่เพียงพอ (@AnaText.Reason(reason))</Alert>
+        }
+        @if (_def.Display != ReportDisplay.Table && d.Rows.Count > 0)
+        {
+            <Card Title="@AnaText.Display(_def.Display)">
+                @if (_def.Display == ReportDisplay.Pie) { <KeyValueChart Items="PieItems" Pie Name="@(MetricCols.FirstOrDefault()?.Label ?? "")" /> }
+                else { <SeriesChart Series="ChartSeries" Bar="@(_def.Display == ReportDisplay.Bar)" /> }
+            </Card>
+        }
+        <Card Title="@($"ผลลัพธ์ {AnaText.Int(d.Total)} แถว")">
+            <div style="overflow-x:auto">
+                <table class="simple-table">
+                    <thead><tr>@foreach (ColumnDTO c in d.Columns) { <th class="@(IsMetric(c) ? "num" : null)">@c.Label</th> }</tr></thead>
+                    <tbody>
+                        @foreach (Dictionary<string, object?> row in d.Rows)
+                        {
+                            <tr>@foreach (ColumnDTO c in d.Columns) { <td class="@(IsMetric(c) ? "num" : null)">@AnaText.Cell(row.GetValueOrDefault(c.Key), c.Type)</td> }</tr>
+                        }
+                        @if (d.Rows.Count == 0) { <tr><td colspan="@Math.Max(1, d.Columns.Count)" class="muted">ไม่มีข้อมูล</td></tr> }
+                    </tbody>
+                    @if (d.Totals.Count > 0 && d.Rows.Count > 0)
+                    {
+                        <tfoot>
+                            <tr>
+                                @for (int i = 0; i < d.Columns.Count; i++)
+                                {
+                                    ColumnDTO c = d.Columns[i];
+                                    <th class="@(IsMetric(c) ? "num" : null)">@(i == 0 && !IsMetric(c) ? "รวม" : d.Totals.TryGetValue(c.Key, out decimal? t) ? AnaText.Cell(t, c.Type) : "")</th>
+                                }
+                            </tr>
+                        </tfoot>
+                    }
+                </table>
+            </div>
+            <div class="row-actions">
+                <AppButton Text="ก่อนหน้า" Disabled="@(d.Page <= 1)" OnClick="() => Page(d.Page - 1)" />
+                <span class="muted">หน้า @d.Page / @Math.Max(1, (d.Total + d.PageSize - 1) / d.PageSize)</span>
+                <AppButton Text="ถัดไป" Disabled="@((long)d.Page * d.PageSize >= d.Total)" OnClick="() => Page(d.Page + 1)" />
+            </div>
+        </Card>
+    }
+</RequirePermission>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private ReportDefinitionDTO? _def;
+    private AnalyticsResultDTO<ReportResultDTO>? _r;
+    private bool _mine;
+
+    protected override string PageCode => "AN-19";
+
+    private IReadOnlyList<Breadcrumb> Crumbs => [new("หน้าแรก", ""), new("วิเคราะห์ข้อมูล", "analytics"), new("รายงาน", "analytics/reports"), new(_def?.Name ?? "รายงาน")];
+
+    private bool IsMetric(ColumnDTO c) => _def?.Metrics.Contains(c.Key) ?? false;
+
+    private IEnumerable<ColumnDTO> MetricCols => _r?.Data.Columns.Where(IsMetric) ?? [];
+
+    private string RowLabel(Dictionary<string, object?> row) =>
+        string.Join(" / ", (_r?.Data.Columns ?? []).Where(c => !IsMetric(c)).Select(c => AnaText.Cell(row.GetValueOrDefault(c.Key), c.Type)));
+
+    private static decimal? Dec(object? v) => v switch
+    {
+        System.Text.Json.JsonElement { ValueKind: System.Text.Json.JsonValueKind.Number } n => n.GetDecimal(),
+        decimal d => d,
+        IConvertible c => Convert.ToDecimal(c, System.Globalization.CultureInfo.InvariantCulture),
+        _ => null,
+    };
+
+    private List<SeriesDTO> ChartSeries => [.. MetricCols.Select(c => new SeriesDTO
+    {
+        Metric = c.Key, Label = c.Label,
+        Points = [.. _r!.Data.Rows.Select(r => new SeriesPointDTO { Key = RowLabel(r), Label = RowLabel(r), Value = Dec(r.GetValueOrDefault(c.Key)) })],
+    })];
+
+    private List<KeyValueDTO> PieItems
+    {
+        get
+        {
+            ColumnDTO? m = MetricCols.FirstOrDefault();
+            return m is null ? [] : [.. _r!.Data.Rows.Select(r => new KeyValueDTO { Key = RowLabel(r), Label = RowLabel(r), Value = Dec(r.GetValueOrDefault(m.Key)) ?? 0 })];
+        }
+    }
+
+    private void Page(int page) => Apply(Filter, ("page", page));
+
+    protected override Task LoadAsync()
+    {
+        int page = int.TryParse(Param("page"), out int p) ? Math.Max(1, p) : 1;
+        return LoadSafeAsync(async () =>
+        {
+            if (_def is null)
+            {
+                _def = await Api.GetAsync<ReportDefinitionDTO>($"api/v1/analytics/reports/{Id}");
+                ReportSummaryDTO? s = (await Api.GetAsync<List<ReportSummaryDTO>>("api/v1/analytics/reports")).FirstOrDefault(x => x.Id == Id);
+                _mine = s?.Mine ?? false;
+            }
+
+            _r = await Api.GetAsync<AnalyticsResultDTO<ReportResultDTO>>($"api/v1/analytics/reports/{Id}/run?{Q(("page", page), ("pageSize", 100))}");
+        });
+    }
+}
