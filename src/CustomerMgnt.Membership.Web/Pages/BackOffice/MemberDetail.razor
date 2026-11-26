@@ -1,0 +1,313 @@
+@page "/members/{Id:long}"
+@attribute [Authorize]
+@*
+    A5 รายละเอียดสมาชิก แบบ Tabs: ข้อมูลส่วนตัว, คะแนนและ lot, คูปอง, ประวัติซื้อ, Tier, Consent, Audit, Customer ที่ผูก
+*@
+<PageTitle>สมาชิก @_m?.MemberNo</PageTitle>
+
+<RequirePermission Permission="@P.MemberRead">
+    @if (_error is not null)
+    {
+        <ErrorView Title="โหลดข้อมูลไม่สำเร็จ" Message="@_error" OnRetry="LoadAsync" />
+    }
+    else if (_m is null)
+    {
+        <LoadingState />
+    }
+    else
+    {
+        <PageHeader Title="@($"{_m.MemberNo} {_m.DisplayName}")" Description="รายละเอียดสมาชิก" Breadcrumbs="Crumbs">
+            <Badge><Badge Text="@Text.Member(_m.Status)" Level="@Text.Level(_m.Status)" /></Badge>
+            <Actions>
+                <AppButton Text="แก้ไข" Icon="edit" Variant="ButtonVariant.Secondary" Permission="@P.MemberWrite" Href="@($"members/{Id}/edit")" />
+                <AppButton Text="เปลี่ยนสถานะ" Icon="refresh" Variant="ButtonVariant.Secondary" Permission="@P.MemberStatus" Href="@($"members/{Id}/status")" />
+                <AppButton Text="ผูกลูกค้า" Icon="user" Variant="ButtonVariant.Secondary" Permission="@P.MemberWrite" Href="@($"members/{Id}/customer")" />
+                <AppButton Text="ปรับคะแนน" Icon="plus" Variant="ButtonVariant.Secondary" Permission="@P.PointsAdjust" Href="@($"points/adjustments/new?memberId={Id}")" />
+            </Actions>
+        </PageHeader>
+
+        @if (_m.Status == MemberStatus.PendingVerification)
+        {
+            <Card Title="ยืนยันตัวตนสมาชิก" Description="กรอก OTP ที่ส่งไปยังเบอร์ของสมาชิก หรือยืนยันแทนเมื่อตรวจบัตรต่อหน้า">
+                <div class="row-actions" style="align-items:flex-end">
+                    <Field Label="รหัส OTP" InputId="otp"><input id="otp" @bind="_otp" maxlength="8" inputmode="numeric" autocomplete="one-time-code" /></Field>
+                    <AppButton Text="ยืนยัน OTP" Variant="ButtonVariant.Primary" Disabled="@(string.IsNullOrEmpty(_challenge) || string.IsNullOrWhiteSpace(_otp))" Busy="_busy" OnClick="VerifyAsync" Permission="@P.MemberWrite" />
+                    <AppButton Text="ส่ง OTP ใหม่" Variant="ButtonVariant.Secondary" Busy="_busy" OnClick="ResendAsync" Permission="@P.MemberWrite" />
+                </div>
+                <PermissionView Permission="@P.MemberVerifyOverride">
+                    <div class="row-actions" style="align-items:flex-end;margin-top:12px">
+                        <Field Label="เหตุผลยืนยันแทน" InputId="ovr"><input id="ovr" @bind="_overrideReason" maxlength="500" /></Field>
+                        <Field Label="เลขอ้างอิงเอกสาร" InputId="doc"><input id="doc" @bind="_overrideDoc" maxlength="100" /></Field>
+                        <AppButton Text="ยืนยันแทน OTP" Variant="ButtonVariant.Secondary" Disabled="@(string.IsNullOrWhiteSpace(_overrideReason))" Busy="_busy" OnClick="OverrideAsync" />
+                    </div>
+                </PermissionView>
+            </Card>
+        }
+        else if (!string.IsNullOrEmpty(_challenge))
+        {
+            <Card Title="ยืนยันเบอร์โทรใหม่" Description="กรอก OTP ที่ส่งไปยังเบอร์ใหม่ เบอร์จะเปลี่ยนเมื่อยืนยันสำเร็จ">
+                <div class="row-actions" style="align-items:flex-end">
+                    <Field Label="รหัส OTP" InputId="otp2"><input id="otp2" @bind="_otp" maxlength="8" inputmode="numeric" autocomplete="one-time-code" /></Field>
+                    <AppButton Text="ยืนยัน" Variant="ButtonVariant.Primary" Busy="_busy" OnClick="VerifyAsync" Permission="@P.MemberWrite" />
+                </div>
+            </Card>
+        }
+
+        <Tabs Items="_tabs" @bind-SelectedKey="_tab" AriaLabel="ข้อมูลสมาชิก">
+            @switch (_tab)
+            {
+                case "profile":
+                    <Card>
+                        <dl class="kv">
+                            <dt>ชื่อ-นามสกุล</dt><dd>@_m.FirstName @_m.LastName</dd>
+                            <dt>เบอร์โทร</dt><dd>@(_pii?.Phone ?? _m.PhoneMasked ?? "-")</dd>
+                            <dt>อีเมล</dt><dd>@(_pii?.Email ?? _m.EmailMasked ?? "-")</dd>
+                            <dt>วันเกิด</dt><dd>@(_pii?.BirthDate?.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture) ?? _m.BirthDateMasked ?? "-")</dd>
+                            <dt>เพศ</dt><dd>@Text.Gender(_m.Gender)</dd>
+                            <dt>จังหวัด</dt><dd>@(_m.Province ?? "-")</dd>
+                            <dt>ช่องทางสมัคร</dt><dd>@_m.RegisteredChannel</dd>
+                            <dt>บัญชี Portal</dt><dd>@(_m.HasPortalAccount ? "ผูกแล้ว" : "ยังไม่ผูก")</dd>
+                            <dt>รับข่าวสาร</dt><dd>@(_m.MarketingConsent ? "ยินยอม" : "ไม่ยินยอม")</dd>
+                            <dt>เหตุผลสถานะ</dt><dd>@(_m.StatusReason ?? "-")</dd>
+                            <dt>สมัครเมื่อ</dt><dd>@Text.DateTime(_m.CreatedAt)</dd>
+                            <dt>แก้ไขล่าสุด</dt><dd>@Text.DateTime(_m.UpdatedAt)</dd>
+                        </dl>
+                        <PermissionView Permission="@P.MemberPii">
+                            @if (_pii is null)
+                            {
+                                <div class="row-actions" style="align-items:flex-end;margin-top:16px">
+                                    <Field Label="เหตุผลที่ขอดูข้อมูลเต็ม (บันทึก audit)" InputId="why"><input id="why" @bind="_revealReason" maxlength="500" /></Field>
+                                    <AppButton Text="แสดงข้อมูลเต็ม" Icon="eye" Variant="ButtonVariant.Secondary" Disabled="@(string.IsNullOrWhiteSpace(_revealReason))" OnClick="RevealAsync" />
+                                </div>
+                            }
+                        </PermissionView>
+                    </Card>
+                    break;
+                case "points":
+                    <div class="stack">
+                        @if (_m.Points is { } b)
+                        {
+                            <div class="kpi-grid">
+                                <div class="kpi"><div class="kpi__label">คะแนนใช้ได้</div><div class="kpi__value">@Text.Int(b.Available)</div></div>
+                                <div class="kpi"><div class="kpi__label">ถูกจอง</div><div class="kpi__value">@Text.Int(b.Reserved)</div></div>
+                                <div class="kpi"><div class="kpi__label">ติดลบ (หนี้คะแนน)</div><div class="kpi__value">@Text.Int(b.Debt)</div></div>
+                                <div class="kpi"><div class="kpi__label">สะสมทั้งหมด</div><div class="kpi__value">@Text.Int(b.LifetimeEarned)</div></div>
+                            </div>
+                        }
+                        <Card Title="Lot คะแนนที่ยังใช้ได้ (ตัดตามวันหมดอายุก่อน)">
+                            <DataTable TItem="PointLotDTO" Items="_lots" Caption="lot คะแนน" PageSize="10">
+                                <Columns>
+                                    <TableColumn TItem="PointLotDTO" Title="ได้รับเมื่อ" Field="l => Text.Date(l.EarnedAt)" />
+                                    <TableColumn TItem="PointLotDTO" Title="หมดอายุ" Field="l => Text.Date(l.ExpiresAt)" />
+                                    <TableColumn TItem="PointLotDTO" Title="คะแนนเดิม" Field="l => l.Points" Format="N0" Align="ColumnAlign.End" />
+                                    <TableColumn TItem="PointLotDTO" Title="คงเหลือ" Field="l => l.Remaining" Format="N0" Align="ColumnAlign.End" />
+                                    <TableColumn TItem="PointLotDTO" Title="ที่มา" Field="l => l.SourceKey" HideOnMobile />
+                                </Columns>
+                            </DataTable>
+                        </Card>
+                        <p><a href="points/ledger?memberId=@Id">ดูรายการเคลื่อนไหวคะแนนทั้งหมด</a></p>
+                    </div>
+                    break;
+                case "coupons":
+                    <DataTable TItem="CouponDTO" Items="_coupons" Caption="คูปองของสมาชิก" PageSize="10">
+                        <Columns>
+                            <TableColumn TItem="CouponDTO" Title="รหัส" Field="c => c.Code" />
+                            <TableColumn TItem="CouponDTO" Title="แคมเปญ" Field="c => c.CampaignName ?? c.CampaignId.ToString(CultureInfo.InvariantCulture)" />
+                            <TableColumn TItem="CouponDTO" Title="สถานะ"><Template><Badge Text="@Text.Coupon(context.Status)" Level="@Text.Level(context.Status)" /></Template></TableColumn>
+                            <TableColumn TItem="CouponDTO" Title="หมดอายุ" Field="c => Text.Date(c.ExpiresAt)" />
+                        </Columns>
+                        <RowActions><AppButton Text="ดู" Size="ButtonSize.Small" Variant="ButtonVariant.Secondary" Href="@($"coupons/codes/{Uri.EscapeDataString(context.Code)}")" /></RowActions>
+                    </DataTable>
+                    break;
+                case "purchases":
+                    <DataTable TItem="TransactionSummaryDTO" Items="_txns" Caption="ประวัติการซื้อ" PageSize="10">
+                        <Columns>
+                            <TableColumn TItem="TransactionSummaryDTO" Title="วันที่" Field="t => Text.DateTime(t.OccurredAt)" />
+                            <TableColumn TItem="TransactionSummaryDTO" Title="เลขรายการ" Field="t => t.TransactionId" />
+                            <TableColumn TItem="TransactionSummaryDTO" Title="สาขา" Field="t => t.BranchCode" HideOnMobile />
+                            <TableColumn TItem="TransactionSummaryDTO" Title="ยอดชำระ" Field="t => t.NetPaid" Format="N2" Align="ColumnAlign.End" />
+                            <TableColumn TItem="TransactionSummaryDTO" Title="คะแนนที่ได้" Field="t => t.PointsEarned" Format="N0" Align="ColumnAlign.End" />
+                            <TableColumn TItem="TransactionSummaryDTO" Title="สถานะ" Field="t => Text.Txn(t.Status)" />
+                        </Columns>
+                        <RowActions><AppButton Text="ดู" Size="ButtonSize.Small" Variant="ButtonVariant.Secondary" Href="@($"transactions/{context.Id}")" /></RowActions>
+                    </DataTable>
+                    break;
+                case "tier":
+                    <Card>
+                        <dl class="kv">
+                            <dt>Tier ปัจจุบัน</dt><dd>@(_m.Tier?.Name ?? "-") (@_m.Tier?.Code)</dd>
+                            <dt>ตั้งแต่</dt><dd>@Text.Date(_m.Tier?.Since)</dd>
+                            <dt>ทบทวนครั้งถัดไป</dt><dd>@Text.Date(_m.Tier?.ReviewAt)</dd>
+                        </dl>
+                    </Card>
+                    <DataTable TItem="TierHistoryDTO" Items="_tierHistory" Caption="ประวัติ Tier" PageSize="10">
+                        <Columns>
+                            <TableColumn TItem="TierHistoryDTO" Title="วันที่" Field="h => Text.DateTime(h.ChangedAt)" />
+                            <TableColumn TItem="TierHistoryDTO" Title="จาก" Field="h => h.FromTier" />
+                            <TableColumn TItem="TierHistoryDTO" Title="เป็น" Field="h => h.ToTier" />
+                            <TableColumn TItem="TierHistoryDTO" Title="ยอดซื้อที่นับ" Field="h => h.QualifyingSpend" Format="N2" Align="ColumnAlign.End" />
+                            <TableColumn TItem="TierHistoryDTO" Title="เหตุผล" Field="h => h.Reason" />
+                        </Columns>
+                    </DataTable>
+                    break;
+                case "consents":
+                    <DataTable TItem="MemberConsentDTO" Items="_consents" Caption="ประวัติความยินยอม" PageSize="10">
+                        <Columns>
+                            <TableColumn TItem="MemberConsentDTO" Title="วันที่" Field="c => Text.DateTime(c.At)" />
+                            <TableColumn TItem="MemberConsentDTO" Title="ฉบับ" Field="c => c.ConsentVersionId" />
+                            <TableColumn TItem="MemberConsentDTO" Title="ยอมรับ" Field="c => AcceptedText(c)" />
+                            <TableColumn TItem="MemberConsentDTO" Title="การตลาด" Field="c => MarketingText(c)" />
+                            <TableColumn TItem="MemberConsentDTO" Title="ช่องทาง" Field="c => c.Channel" />
+                        </Columns>
+                    </DataTable>
+                    break;
+                case "audit":
+                    <PermissionView Permission="@P.AuditRead">
+                        <ChildContent>
+                            <DataTable TItem="MembershipAuditDTO" Items="_audit" Caption="audit ของสมาชิก" PageSize="20">
+                                <Columns>
+                                    <TableColumn TItem="MembershipAuditDTO" Title="เวลา" Field="a => Text.DateTime(a.At)" />
+                                    <TableColumn TItem="MembershipAuditDTO" Title="ผู้ทำ" Field="a => a.Actor" />
+                                    <TableColumn TItem="MembershipAuditDTO" Title="การกระทำ" Field="a => a.Action" />
+                                    <TableColumn TItem="MembershipAuditDTO" Title="ค่าหลังเปลี่ยน (mask)" Field="a => a.AfterMasked" HideOnMobile />
+                                </Columns>
+                            </DataTable>
+                        </ChildContent>
+                        <NotAuthorized><Alert Level="AlertLevel.Info">ต้องมีสิทธิ์ audit.read</Alert></NotAuthorized>
+                    </PermissionView>
+                    break;
+                case "customer":
+                    <Card>
+                        <dl class="kv">
+                            <dt>รหัสลูกค้า CustomerMgnt</dt><dd>@(_m.CustomerCode ?? "ยังไม่ผูก (ระบบจะสร้างให้อัตโนมัติ)")</dd>
+                        </dl>
+                        <div class="row-actions" style="margin-top:12px">
+                            <AppButton Text="ผูก/เปลี่ยนลูกค้า" Variant="ButtonVariant.Secondary" Permission="@P.MemberWrite" Href="@($"members/{Id}/customer")" />
+                        </div>
+                    </Card>
+                    break;
+            }
+        </Tabs>
+    }
+</RequirePermission>
+
+@code {
+    private static string AcceptedText(MemberConsentDTO c) => c.Accepted ? "ยอมรับ" : "ถอน";
+    private static string MarketingText(MemberConsentDTO c) => c.MarketingConsent ? string.Join(", ", c.MarketingChannels.Select(Text.Channel)) : "ไม่รับ";
+    [Parameter] public long Id { get; set; }
+    [SupplyParameterFromQuery(Name = "challenge")] public string? ChallengeFromQuery { get; set; }
+    [Inject] private MembershipApiClient Api { get; set; } = default!;
+    [Inject] private ToastService Toasts { get; set; } = default!;
+    [Inject] private PermissionService Perms { get; set; } = default!;
+
+    private readonly IReadOnlyList<TabItem> _tabs =
+    [
+        new("profile", "ข้อมูลส่วนตัว"), new("points", "คะแนนและ lot"), new("coupons", "คูปอง"), new("purchases", "ประวัติซื้อ"),
+        new("tier", "Tier"), new("consents", "Consent"), new("audit", "Audit"), new("customer", "Customer"),
+    ];
+
+    private string _tab = "profile";
+    private MemberDTO? _m;
+    private MemberPiiDTO? _pii;
+    private IReadOnlyList<PointLotDTO> _lots = [];
+    private IReadOnlyList<CouponDTO> _coupons = [];
+    private IReadOnlyList<TransactionSummaryDTO> _txns = [];
+    private IReadOnlyList<TierHistoryDTO> _tierHistory = [];
+    private IReadOnlyList<MemberConsentDTO> _consents = [];
+    private IReadOnlyList<MembershipAuditDTO> _audit = [];
+    private string? _error;
+    private string? _challenge;
+    private string? _otp;
+    private string? _revealReason;
+    private string? _overrideReason;
+    private string? _overrideDoc;
+    private bool _busy;
+
+    private IReadOnlyList<Breadcrumb> Crumbs => [new("หน้าแรก", ""), new("รายการสมาชิก", "members"), new(_m?.MemberNo ?? "สมาชิก")];
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _challenge = ChallengeFromQuery;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        try
+        {
+            _m = await Api.GetAsync<MemberDTO>($"api/v1/members/{Id}");
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _error = Text.Error(ex);
+            return;
+        }
+
+        // ส่วนย่อยโหลดตามสิทธิ์ — ไม่มีสิทธิ์ก็แสดงตารางว่าง
+        _lots = await TryAsync(P.PointsRead, () => Api.GetAsync<List<PointLotDTO>>($"api/v1/points/lots/{Id}?activeOnly=true"), _lots);
+        _coupons = await TryAsync(P.CouponRead, async () => (await Api.GetAsync<PagedResultDTO<CouponDTO>>("api/v1/coupons", new { memberId = Id, pageSize = 200 })).Items, _coupons);
+        _txns = await TryAsync(P.TxnRead, async () => (await Api.GetAsync<PagedResultDTO<TransactionSummaryDTO>>("api/v1/transactions", new { memberId = Id, pageSize = 200 })).Items, _txns);
+        _tierHistory = await TryAsync(P.MemberRead, () => Api.GetAsync<List<TierHistoryDTO>>($"api/v1/members/{Id}/tier-history"), _tierHistory);
+        _consents = await TryAsync(P.MemberRead, () => Api.GetAsync<List<MemberConsentDTO>>($"api/v1/members/{Id}/consents"), _consents);
+        _audit = await TryAsync(P.AuditRead, async () => (await Api.GetAsync<PagedResultDTO<MembershipAuditDTO>>($"api/v1/members/{Id}/audit?pageSize=200")).Items, _audit);
+    }
+
+    private async Task<IReadOnlyList<T>> TryAsync<T>(string permission, Func<Task<IReadOnlyList<T>>> load, IReadOnlyList<T> fallback)
+    {
+        if (!await Perms.HasPermissionAsync(permission)) return [];
+        try { return await load(); }
+        catch (ApiException) { return fallback; }
+    }
+
+    private async Task<IReadOnlyList<T>> TryAsync<T>(string permission, Func<Task<List<T>>> load, IReadOnlyList<T> fallback) =>
+        await TryAsync<T>(permission, async () => (IReadOnlyList<T>)await load(), fallback);
+
+    private async Task RunAsync(Func<Task> action, string success)
+    {
+        _busy = true;
+        try
+        {
+            await action();
+            Toasts.Success(success);
+            await LoadAsync();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Toasts.Error(Text.Error(ex));
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private Task VerifyAsync() => RunAsync(async () =>
+    {
+        _m = await Api.PostAsync<MemberDTO>($"api/v1/members/{Id}/verify", new VerifyOtpRequest { ChallengeId = _challenge ?? string.Empty, Code = _otp?.Trim() ?? string.Empty });
+        _challenge = null;
+        _otp = null;
+    }, "ยืนยันสำเร็จ");
+
+    private Task ResendAsync() => RunAsync(async () =>
+    {
+        OtpChallengeDTO c = await Api.PostAsync<OtpChallengeDTO>($"api/v1/members/{Id}/otp", null);
+        _challenge = c.ChallengeId;
+    }, "ส่ง OTP ใหม่แล้ว");
+
+    private Task OverrideAsync() => RunAsync(
+        () => Api.PostAsync<MemberDTO>($"api/v1/members/{Id}/verify-override", new VerifyOverrideRequest { Reason = _overrideReason!.Trim(), DocumentRef = string.IsNullOrWhiteSpace(_overrideDoc) ? null : _overrideDoc.Trim() }),
+        "ยืนยันสมาชิกแทน OTP แล้ว");
+
+    private async Task RevealAsync()
+    {
+        try
+        {
+            _pii = await Api.PostAsync<MemberPiiDTO>($"api/v1/members/{Id}/reveal", new RevealPiiRequest { Fields = ["phone", "email", "birthDate"], Reason = _revealReason!.Trim() });
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Toasts.Error(Text.Error(ex));
+        }
+    }
+}

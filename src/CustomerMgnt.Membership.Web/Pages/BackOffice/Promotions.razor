@@ -1,0 +1,77 @@
+@page "/promotions"
+@attribute [Authorize]
+@inherits MembershipPage
+@* A17 รายการแคมเปญโปรโมชัน *@
+<PageTitle>แคมเปญโปรโมชัน</PageTitle>
+
+<RequirePermission Permission="@P.PromotionRead">
+    <ListTemplate TItem="CampaignSummaryDTO" Title="แคมเปญโปรโมชัน" Description="แคมเปญต้องได้รับอนุมัติก่อนเริ่มใช้ แก้ไขได้เฉพาะสถานะร่างหรือถูกปฏิเสธ"
+                  Breadcrumbs="_crumbs" Permissions="_perms" Items="_items" Loading="_loading" ErrorMessage="@LoadError" OnRetry="LoadAsync"
+                  CriteriaActiveCount="ActiveCount" OnSearch="LoadAsync" OnClear="ClearAsync" PageSize="20"
+                  NewText="สร้างแคมเปญ" OnNew="@(() => Nav.NavigateTo("promotions/new"))"
+                  OnView="@(c => Nav.NavigateTo($"promotions/{c.Id}"))" OnEdit="@(c => Nav.NavigateTo($"promotions/{c.Id}/edit"))"
+                  CanEdit="@(c => c.Status is CampaignStatus.Draft or CampaignStatus.Rejected)" ItemName="@(c => c.Name)"
+                  ExportColumns="_export" ExportTitle="แคมเปญโปรโมชัน">
+        <Criteria>
+            <Field Label="ข้อความ" InputId="c-text"><input id="c-text" @bind="_c.Text" maxlength="100" /></Field>
+            <Field Label="สถานะ" InputId="c-st">
+                <select id="c-st" @bind="_c.Status">
+                    <option value="">ทั้งหมด</option>
+                    @foreach (CampaignStatus s in Enum.GetValues<CampaignStatus>()) { <option value="@s">@Text.Campaign(s)</option> }
+                </select>
+            </Field>
+            <Field Label="ประเภทรางวัล" InputId="c-rt">
+                <select id="c-rt" @bind="_c.RewardType">
+                    <option value="">ทั้งหมด</option>
+                    @foreach (RewardType r in Enum.GetValues<RewardType>()) { <option value="@r">@Text.Reward(r)</option> }
+                </select>
+            </Field>
+        </Criteria>
+        <Columns>
+            <TableColumn TItem="CampaignSummaryDTO" Title="รหัส" Field="c => c.Code" Sortable />
+            <TableColumn TItem="CampaignSummaryDTO" Title="ชื่อ" Field="c => c.Name" IsPrimary Sortable />
+            <TableColumn TItem="CampaignSummaryDTO" Title="ประเภท" Field="c => Text.Reward(c.RewardType)" HideOnMobile />
+            <TableColumn TItem="CampaignSummaryDTO" Title="ช่วงเวลา" Field="c => Period(c)" SortBy="c => c.StartAt" Sortable HideOnMobile />
+            <TableColumn TItem="CampaignSummaryDTO" Title="ใช้แล้ว" Field="c => c.Uses" Format="N0" Align="ColumnAlign.End" />
+            <TableColumn TItem="CampaignSummaryDTO" Title="งบที่ใช้" Field="c => Budget(c)" Align="ColumnAlign.End" HideOnMobile />
+            <TableColumn TItem="CampaignSummaryDTO" Title="สถานะ" SortBy="c => c.Status">
+                <Template><Badge Text="@Text.Campaign(context.Status)" Level="@Text.Level(context.Status)" /></Template>
+            </TableColumn>
+        </Columns>
+    </ListTemplate>
+</RequirePermission>
+
+@code {
+    private readonly IReadOnlyList<Breadcrumb> _crumbs = [new("หน้าแรก", ""), new("แคมเปญโปรโมชัน")];
+    private readonly ListPermissions _perms = new() { Create = P.PromotionWrite, View = P.PromotionRead, Edit = P.PromotionWrite, Export = P.ReportExport };
+    private readonly IReadOnlyList<ExportColumn<CampaignSummaryDTO>> _export =
+    [
+        new("รหัส", c => c.Code), new("ชื่อ", c => c.Name), new("ประเภท", c => Text.Reward(c.RewardType)), new("เริ่ม", c => c.StartAt), new("สิ้นสุด", c => c.EndAt),
+        new("ใช้แล้ว", c => c.Uses), new("งบ", c => c.Budget), new("งบที่ใช้", c => c.BudgetUsed), new("สถานะ", c => Text.Campaign(c.Status)),
+    ];
+
+    private CampaignSearchCriteria _c = new();
+    private IReadOnlyList<CampaignSummaryDTO>? _items;
+    private bool _loading;
+
+    private int ActiveCount => new object?[] { _c.Text, _c.Status, _c.RewardType }.Count(x => x is not null && x is not "");
+
+    private static string Period(CampaignSummaryDTO c) => $"{Text.Date(c.StartAt)} – {Text.Date(c.EndAt)}";
+
+    private static string Budget(CampaignSummaryDTO c) => c.Budget is null ? Text.Num(c.BudgetUsed) : $"{Text.Num(c.BudgetUsed)} / {Text.Num(c.Budget.Value)}";
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        await LoadSafeAsync(async () => _items = (await Api.GetAsync<PagedResultDTO<CampaignSummaryDTO>>("api/v1/promotions", new { _c.Text, _c.Status, _c.RewardType, pageSize = 200 })).Items);
+        _loading = false;
+    }
+
+    private Task ClearAsync()
+    {
+        _c = new CampaignSearchCriteria();
+        return LoadAsync();
+    }
+}

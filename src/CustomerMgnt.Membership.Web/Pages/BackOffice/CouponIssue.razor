@@ -1,0 +1,72 @@
+@page "/coupons/issue"
+@attribute [Authorize]
+@inherits MembershipPage
+@* A22 (ต่อ) แจกคูปองให้สมาชิกที่ระบุหรือทั้ง Segment *@
+<PageTitle>แจกคูปอง</PageTitle>
+
+<RequirePermission Permission="@P.CouponWrite">
+    <FormTemplate Title="แจกคูปอง" Description="แจกรหัสที่ยังว่างในชุดให้สมาชิก 1 รหัสต่อคน ถ้ารหัสในชุดไม่พอระบบจะแจ้งในผลงาน"
+                  Breadcrumbs="_crumbs" Mode="FormMode.New" Model="_req" SavePermission="@P.CouponWrite" SaveText="แจก" OnSave="SaveAsync" OnCancel="Back">
+        <ChildContent>
+            <FormSection Title="ผู้รับ">
+                <FieldGrid Columns="2">
+                    <Field Label="ชุดคูปอง" InputId="bt">
+                        <select id="bt" @bind="_req.BatchId">
+                            <option value="0">-- เลือก --</option>
+                            @foreach (CouponBatchDTO b in _batches) { <option value="@b.Id">@b.Name (@b.CodePrefix, @Text.Int(b.Generated))</option> }
+                        </select>
+                    </Field>
+                    <Field Label="Segment" InputId="sg">
+                        <select id="sg" @bind="_req.SegmentId">
+                            <option value="">-- ไม่ใช้ Segment --</option>
+                            @foreach (SegmentDTO s in _segments) { <option value="@s.Id">@s.Name (@Text.Int(s.MemberCount))</option> }
+                        </select>
+                    </Field>
+                </FieldGrid>
+                <Field Label="หรือเลขสมาชิก (คั่นด้วย , หรือขึ้นบรรทัดใหม่)" InputId="mn"><textarea id="mn" @bind="_memberNos" rows="4" maxlength="20000"></textarea></Field>
+            </FormSection>
+        </ChildContent>
+    </FormTemplate>
+</RequirePermission>
+
+@code {
+    private readonly IReadOnlyList<Breadcrumb> _crumbs = [new("หน้าแรก", ""), new("ชุดคูปอง", "coupons"), new("แจกคูปอง")];
+    private readonly IssueCouponsRequest _req = new();
+    private IReadOnlyList<CouponBatchDTO> _batches = [];
+    private IReadOnlyList<SegmentDTO> _segments = [];
+    private string? _memberNos;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _batches = await OptionalAsync(() => Api.GetAsync<List<CouponBatchDTO>>("api/v1/coupons/batches"));
+        _segments = await OptionalAsync(() => Api.GetAsync<List<SegmentDTO>>("api/v1/segments"));
+    }
+
+    private async Task<bool> SaveAsync()
+    {
+        List<string> nos = Text.SplitList(_memberNos?.Replace('\n', ','));
+        if (_req.BatchId == 0 || (_req.SegmentId is null && nos.Count == 0))
+        {
+            Toasts.Error("กรุณาเลือกชุดคูปอง และ Segment หรือเลขสมาชิก");
+            return false;
+        }
+
+        return await SaveSafeAsync(async () =>
+        {
+            if (nos.Count > 0)
+            {
+                List<long> ids = [];
+                foreach (string no in nos)
+                {
+                    ids.Add((await Api.GetAsync<MemberDTO>($"api/v1/members/by-no/{Uri.EscapeDataString(no)}")).Id);
+                }
+
+                _req.MemberIds = ids;
+            }
+
+            await Api.PostAsync<JobDTO>("api/v1/coupons/issue", _req);
+        }, "เริ่มแจกคูปองแล้ว (ทำงานเบื้องหลัง)", "coupons");
+    }
+
+    private void Back() => Nav.NavigateTo("coupons");
+}

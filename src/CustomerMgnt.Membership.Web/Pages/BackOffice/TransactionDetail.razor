@@ -1,0 +1,90 @@
+@page "/transactions/{Id:long}"
+@attribute [Authorize]
+@inherits MembershipPage
+@* A29 รายละเอียดรายการขาย: รายการสินค้า สิทธิ์ที่ได้ คืนสินค้า และ ledger ที่เกี่ยวข้อง *@
+<PageTitle>รายการขาย @_d?.Summary.TransactionId</PageTitle>
+
+<RequirePermission Permission="@P.TxnRead">
+    @if (LoadError is not null)
+    {
+        <ErrorView Title="โหลดข้อมูลไม่สำเร็จ" Message="@LoadError" OnRetry="LoadAsync" />
+    }
+    else if (_d is null)
+    {
+        <LoadingState />
+    }
+    else
+    {
+        TransactionSummaryDTO s = _d.Summary;
+        <PageHeader Title="@($"รายการขาย {s.TransactionId}")" Description="@($"{s.SourceSystem} · ใบเสร็จ {s.ReceiptNo ?? "-"}")" Breadcrumbs="Crumbs">
+            <Badge><Badge Text="@Text.Txn(s.Status)" Level="@(s.Status == TransactionStatus.Completed ? AlertLevel.Success : AlertLevel.Warning)" /></Badge>
+        </PageHeader>
+        <Card>
+            <dl class="kv">
+                <dt>สมาชิก</dt><dd><a href="members/@s.MemberId">@s.MemberNo</a></dd>
+                <dt>วันเวลา</dt><dd>@Text.DateTime(s.OccurredAt) @(s.Offline ? "(ส่งย้อนหลังแบบออฟไลน์ — ได้คะแนนฐานเท่านั้น)" : "")</dd>
+                <dt>สาขา / ช่องทาง</dt><dd>@(s.BranchCode ?? "-") / @s.Channel</dd>
+                <dt>ยอดรวม</dt><dd>@Text.Num(_d.Subtotal)</dd>
+                <dt>ส่วนลดรวม</dt><dd>@Text.Num(s.DiscountTotal)</dd>
+                <dt>ชำระด้วยคะแนน</dt><dd>@Text.Int(s.PointsRedeemed) คะแนน = @Text.Num(_d.PointsTender) บาท</dd>
+                <dt>ยอดชำระ</dt><dd>@Text.Num(s.NetPaid)</dd>
+                <dt>ยอดที่นับคะแนน</dt><dd>@Text.Num(_d.Eligible)</dd>
+                <dt>คะแนนที่ได้</dt><dd>@Text.Int(s.PointsEarned) (ถูกหักคืน @Text.Int(_d.PointsReversed), คืนคะแนนที่ใช้ @Text.Int(_d.PointsRestored))</dd>
+                <dt>คูปอง</dt><dd>@(_d.Coupons.Count == 0 ? "-" : string.Join(", ", _d.Coupons))</dd>
+            </dl>
+        </Card>
+        <DataTable TItem="TransactionLineDTO" Items="_d.Lines" Caption="รายการสินค้า" PageSize="50">
+            <Columns>
+                <TableColumn TItem="TransactionLineDTO" Title="#" Field="l => l.LineNo" />
+                <TableColumn TItem="TransactionLineDTO" Title="สินค้า" Field="l => l.ItemCode" />
+                <TableColumn TItem="TransactionLineDTO" Title="หมวด" Field="l => l.Category" HideOnMobile />
+                <TableColumn TItem="TransactionLineDTO" Title="จำนวน" Field="l => l.Qty" Format="N3" Align="ColumnAlign.End" />
+                <TableColumn TItem="TransactionLineDTO" Title="คืนแล้ว" Field="l => l.ReturnedQty" Format="N3" Align="ColumnAlign.End" />
+                <TableColumn TItem="TransactionLineDTO" Title="จ่ายจริง" Field="l => l.LinePaid" Format="N2" Align="ColumnAlign.End" />
+                <TableColumn TItem="TransactionLineDTO" Title="นับคะแนน" Field="l => YesNo(l.Eligible)" />
+            </Columns>
+        </DataTable>
+        <DataTable TItem="BenefitDTO" Items="_d.Benefits" Caption="สิทธิ์ที่ได้รับ" PageSize="20">
+            <Columns>
+                <TableColumn TItem="BenefitDTO" Title="แคมเปญ" Field="b => b.CampaignCode" />
+                <TableColumn TItem="BenefitDTO" Title="ประเภท" Field="b => Text.Reward(b.Kind)" />
+                <TableColumn TItem="BenefitDTO" Title="ส่วนลด" Field="b => b.Amount" Format="N2" Align="ColumnAlign.End" />
+                <TableColumn TItem="BenefitDTO" Title="คะแนนพิเศษ" Field="b => b.BonusPoints" Format="N0" Align="ColumnAlign.End" />
+                <TableColumn TItem="BenefitDTO" Title="คูปอง" Field="b => b.CouponCode" />
+            </Columns>
+        </DataTable>
+        <DataTable TItem="SalesReturnDTO" Items="_d.Returns" Caption="การคืนสินค้า" PageSize="20">
+            <Columns>
+                <TableColumn TItem="SalesReturnDTO" Title="วันที่" Field="r => Text.DateTime(r.OccurredAt)" />
+                <TableColumn TItem="SalesReturnDTO" Title="เลขคืน" Field="r => r.ReturnId" />
+                <TableColumn TItem="SalesReturnDTO" Title="ยอดคืน" Field="r => r.ReturnedPaid" Format="N2" Align="ColumnAlign.End" />
+                <TableColumn TItem="SalesReturnDTO" Title="หักคะแนน" Field="r => r.PointsReversed" Format="N0" Align="ColumnAlign.End" />
+                <TableColumn TItem="SalesReturnDTO" Title="คืนคะแนน" Field="r => r.PointsRestored" Format="N0" Align="ColumnAlign.End" />
+                <TableColumn TItem="SalesReturnDTO" Title="เหตุผล" Field="r => r.Reason" />
+            </Columns>
+        </DataTable>
+        <DataTable TItem="PointLedgerDTO" Items="_d.Ledger" Caption="คะแนนที่เกี่ยวข้อง" PageSize="20">
+            <Columns>
+                <TableColumn TItem="PointLedgerDTO" Title="เวลา" Field="l => Text.DateTime(l.CreatedAt)" />
+                <TableColumn TItem="PointLedgerDTO" Title="ประเภท" Field="l => Text.Ledger(l.Type)" />
+                <TableColumn TItem="PointLedgerDTO" Title="คะแนน" Field="l => l.Points" Format="N0" Align="ColumnAlign.End" />
+                <TableColumn TItem="PointLedgerDTO" Title="คงเหลือ" Field="l => l.BalanceAfter" Format="N0" Align="ColumnAlign.End" />
+                <TableColumn TItem="PointLedgerDTO" Title="อ้างอิง" Field="l => l.Reference" />
+            </Columns>
+        </DataTable>
+    }
+</RequirePermission>
+
+@code {
+    [Parameter] public long Id { get; set; }
+
+    private TransactionDetailDTO? _d;
+
+    private IReadOnlyList<Breadcrumb> Crumbs => [new("หน้าแรก", ""), new("รายการขาย", "transactions"), new(_d?.Summary.TransactionId ?? "รายการ")];
+
+    private static string YesNo(bool v) => v ? "ใช่" : "ไม่";
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private Task LoadAsync() => LoadSafeAsync(async () => _d = await Api.GetAsync<TransactionDetailDTO>($"api/v1/transactions/{Id}"));
+}

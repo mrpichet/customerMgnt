@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="th" data-theme="light">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <title>ระบบสมาชิกและโปรโมชัน</title>
+    <base href="/membership/" />
+    <script src="_content/WebCommon.UI/js/theme-init.js"></script>
+    <link rel="icon" type="image/svg+xml" href="img/favicon.svg" />
+    <link rel="stylesheet" href="_content/WebCommon.UI/css/tokens.css" />
+    <link rel="stylesheet" href="_content/WebCommon.UI/css/base.css" />
+    <link rel="stylesheet" href="css/membership.css" />
+    <link rel="stylesheet" href="CustomerMgnt.Membership.Web.styles.css" />
+</head>
+<body>
+    <div id="app">
+        <div class="boot-screen" role="status" aria-live="polite">
+            <div class="boot-screen__inner">
+                <span class="boot-screen__title">ระบบสมาชิกและโปรโมชัน</span>
+                <progress aria-label="กำลังโหลดแอปพลิเคชัน"></progress>
+                <span>กำลังโหลดแอปพลิเคชัน...</span>
+            </div>
+        </div>
+    </div>
+    <div id="blazor-error-ui" role="alert">
+        เกิดข้อผิดพลาดที่ไม่คาดคิด
+        <a href="." class="reload">โหลดหน้าใหม่</a>
+        <button type="button" class="dismiss" aria-label="ปิดข้อความ">✕</button>
+    </div>
+    <script src="js/external-login.js"></script>
+    <script src="_framework/blazor.webassembly.js"></script>
+</body>
+</html>

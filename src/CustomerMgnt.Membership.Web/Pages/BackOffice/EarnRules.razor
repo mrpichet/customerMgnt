@@ -1,0 +1,41 @@
+@page "/points/rules"
+@attribute [Authorize]
+@inherits MembershipPage
+@* A12 กติกาการสะสมคะแนน *@
+<PageTitle>กติกาสะสมคะแนน</PageTitle>
+
+<RequirePermission Permission="@P.PointsRead">
+    <ListTemplate TItem="EarnRuleDTO" Title="กติกาสะสมคะแนน" Description="ถ้ามีหลายกติกาที่ตรงเงื่อนไข ระบบใช้กติกาที่ให้คะแนนมากที่สุด กติกาใหม่/ที่แก้ไขต้องได้รับอนุมัติก่อนใช้"
+                  Breadcrumbs="_crumbs" Permissions="_perms" Items="_items" Loading="_loading" ErrorMessage="@LoadError" OnRetry="LoadAsync"
+                  NewText="เพิ่มกติกา" OnNew="@(() => Nav.NavigateTo("points/rules/new"))" OnEdit="@(r => Nav.NavigateTo($"points/rules/{r.Id}/edit"))"
+                  CanEdit="@(r => r.Status != EarnRuleStatus.PendingApproval)" ItemName="@(r => r.Name)">
+        <Columns>
+            <TableColumn TItem="EarnRuleDTO" Title="รหัส" Field="r => r.Code" Sortable />
+            <TableColumn TItem="EarnRuleDTO" Title="ชื่อ" Field="r => r.Name" IsPrimary />
+            <TableColumn TItem="EarnRuleDTO" Title="บาทต่อ 1 คะแนน" Field="r => r.SpendPerPoint" Format="N2" Align="ColumnAlign.End" />
+            <TableColumn TItem="EarnRuleDTO" Title="ยอดขั้นต่ำ" Field="r => r.MinSpend" Format="N2" Align="ColumnAlign.End" HideOnMobile />
+            <TableColumn TItem="EarnRuleDTO" Title="ช่วงเวลา" Field="r => Period(r)" HideOnMobile />
+            <TableColumn TItem="EarnRuleDTO" Title="สถานะ" SortBy="r => r.Status">
+                <Template><Badge Text="@Text.Rule(context.Status)" Level="@(context.Status == EarnRuleStatus.Active ? AlertLevel.Success : context.Status == EarnRuleStatus.PendingApproval ? AlertLevel.Warning : AlertLevel.Info)" /></Template>
+            </TableColumn>
+        </Columns>
+    </ListTemplate>
+</RequirePermission>
+
+@code {
+    private readonly IReadOnlyList<Breadcrumb> _crumbs = [new("หน้าแรก", ""), new("กติกาสะสมคะแนน")];
+    private readonly ListPermissions _perms = new() { Create = P.PointsRuleManage, Edit = P.PointsRuleManage };
+    private IReadOnlyList<EarnRuleDTO>? _items;
+    private bool _loading;
+
+    private static string Period(EarnRuleDTO r) => $"{Text.Date(r.StartAt)} – {(r.EndAt is null ? "ไม่กำหนด" : Text.Date(r.EndAt))}";
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        await LoadSafeAsync(async () => _items = await Api.GetAsync<List<EarnRuleDTO>>("api/v1/points/rules"));
+        _loading = false;
+    }
+}

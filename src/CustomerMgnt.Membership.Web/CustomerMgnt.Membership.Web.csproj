@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk.BlazorWebAssembly">
+  <!--
+    CustomerMgnt.Membership.Web: หน้าจอระบบสมาชิกและโปรโมชัน (Blazor WebAssembly + mrpichet/webcommon)
+    - Back Office (เจ้าหน้าที่) และ Member Portal (สมาชิก, path portal/...) อยู่ในแอปเดียว เผยแพร่ใต้ /membership/
+    - โฮสต์โดย CustomerMgnt.Api (same origin) เรียก REST API api/v1/* ด้วย token ของ AuthServer
+    - ใช้ DTO/enum จาก CustomerMgnt.Core โดยตรง
+  -->
+  <PropertyGroup>
+    <RootNamespace>CustomerMgnt.Membership.Web</RootNamespace>
+    <StaticWebAssetBasePath>membership</StaticWebAssetBasePath>
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <BlazorWebAssemblyLoadAllGlobalizationData>true</BlazorWebAssemblyLoadAllGlobalizationData>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591;CA1515;CA2007;CA1031;CA1812;CA1305;CA1307;CA1310;CA1311;CA1304;CA1862;CA2234;CA1056;CA1054</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\CustomerMgnt.Core\CustomerMgnt.Core.csproj" />
+    <ProjectReference Include="..\..\external\webcommon\src\WebCommon.UI\WebCommon.UI.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" />
+    <PackageReference Include="QRCoder" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" PrivateAssets="all" />
+  </ItemGroup>
+</Project>

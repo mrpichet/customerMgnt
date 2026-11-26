@@ -1,0 +1,53 @@
+@page "/members/{Id:long}/customer"
+@attribute [Authorize]
+@inherits MembershipPage
+@* A9 ผูกสมาชิกกับลูกค้าใน CustomerMgnt (1 ลูกค้า : 1 สมาชิก) *@
+<PageTitle>ผูกลูกค้า</PageTitle>
+
+<RequirePermission Permission="@P.MemberWrite">
+    @if (LoadError is not null)
+    {
+        <ErrorView Title="โหลดข้อมูลไม่สำเร็จ" Message="@LoadError" OnRetry="LoadAsync" />
+    }
+    else if (_m is null)
+    {
+        <LoadingState />
+    }
+    else
+    {
+        <FormTemplate Title="@($"ผูกลูกค้าของ {_m.MemberNo} {_m.DisplayName}")" Description="ระบุรหัสลูกค้าใน CustomerMgnt — เว้นว่างเพื่อยกเลิกการผูก ลูกค้า 1 รายผูกได้กับสมาชิก 1 คน"
+                      Breadcrumbs="Crumbs" Mode="FormMode.Edit" Model="_req" SavePermission="@P.MemberWrite" OnSave="SaveAsync" OnCancel="Back">
+            <ChildContent>
+                <FormSection Title="ลูกค้า">
+                    <FieldGrid Columns="2">
+                        <Field Label="รหัสลูกค้าปัจจุบัน" InputId="cur"><input id="cur" value="@(_m.CustomerCode ?? "-")" readonly /></Field>
+                        <FormField Label="รหัสลูกค้าใหม่" InputId="cc" For="() => _req.CustomerCode"><InputText id="cc" @bind-Value="_req.CustomerCode" maxlength="50" /></FormField>
+                    </FieldGrid>
+                </FormSection>
+            </ChildContent>
+        </FormTemplate>
+    }
+</RequirePermission>
+
+@code {
+    [Parameter] public long Id { get; set; }
+
+    private MemberDTO? _m;
+    private LinkCustomerRequest _req = new();
+
+    private IReadOnlyList<Breadcrumb> Crumbs => [new("หน้าแรก", ""), new("รายการสมาชิก", "members"), new(_m?.MemberNo ?? "สมาชิก", $"members/{Id}"), new("ผูกลูกค้า")];
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private Task LoadAsync() => LoadSafeAsync(async () =>
+    {
+        _m = await Api.GetAsync<MemberDTO>($"api/v1/members/{Id}");
+        _req = new LinkCustomerRequest { Version = _m.Version, CustomerCode = _m.CustomerCode };
+    });
+
+    private Task<bool> SaveAsync() => SaveSafeAsync(
+        () => Api.PutAsync<MemberDTO>($"api/v1/members/{Id}/customer", new LinkCustomerRequest { Version = _req.Version, CustomerCode = Clean(_req.CustomerCode) }),
+        "บันทึกการผูกลูกค้าแล้ว", $"members/{Id}");
+
+    private void Back() => Nav.NavigateTo($"members/{Id}");
+}

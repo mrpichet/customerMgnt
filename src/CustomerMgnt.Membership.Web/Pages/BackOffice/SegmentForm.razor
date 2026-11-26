@@ -1,0 +1,116 @@
+@page "/segments/new"
+@page "/segments/{Id:long}/edit"
+@attribute [Authorize]
+@inherits MembershipPage
+@* A25 สร้าง/แก้ไข Segment: ตัวสร้างเงื่อนไข + ดูตัวอย่างจำนวนสมาชิก *@
+<PageTitle>@Title</PageTitle>
+
+<RequirePermission Permission="@P.SegmentRead">
+    @if (LoadError is not null)
+    {
+        <ErrorView Title="โหลดข้อมูลไม่สำเร็จ" Message="@LoadError" OnRetry="LoadAsync" />
+    }
+    else if (_req is null || _rule is null)
+    {
+        <LoadingState />
+    }
+    else
+    {
+        <FormTemplate Title="@Title" Description="สร้างเงื่อนไข แล้วกดดูตัวอย่างเพื่อตรวจจำนวนสมาชิกก่อนบันทึก (ตัวอย่างแสดงข้อมูลแบบปิดบางส่วน)"
+                      Breadcrumbs="Crumbs" Mode="@(Id is null ? FormMode.New : FormMode.Edit)" Model="_req" SavePermission="@P.SegmentWrite" OnSave="SaveAsync" OnCancel="Back">
+            <HeaderActions>
+                @if (Id is not null)
+                {
+                    <AppButton Text="คำนวณสมาชิกใหม่ตอนนี้" Variant="ButtonVariant.Secondary" Permission="@P.SegmentWrite" Busy="Busy" OnClick="RefreshAsync" />
+                }
+            </HeaderActions>
+            <ChildContent>
+                <FormSection Title="ข้อมูล Segment">
+                    <FieldGrid Columns="2">
+                        <FormField Label="ชื่อ" InputId="nm" For="() => _req.Name" Required><InputText id="nm" @bind-Value="_req.Name" maxlength="200" /></FormField>
+                        <Field Label="คำอธิบาย" InputId="ds"><input id="ds" @bind="_req.Description" maxlength="1000" /></Field>
+                    </FieldGrid>
+                    <label class="check-list"><InputCheckbox @bind-Value="_req.RefreshDaily" /> คำนวณสมาชิกใหม่ทุกคืน</label>
+                </FormSection>
+                <FormSection Title="เงื่อนไข">
+                    <SegmentRuleEditor Node="_rule" OnChanged="@(() => _preview = null)" />
+                    <div class="row-actions" style="margin-top:8px">
+                        <AppButton Text="ดูตัวอย่าง" Variant="ButtonVariant.Secondary" Busy="_previewing" OnClick="PreviewAsync" />
+                    </div>
+                    @if (_preview is not null)
+                    {
+                        <Alert Level="AlertLevel.Info">ตรงเงื่อนไข @Text.Int(_preview.Count) คน</Alert>
+                        <DataTable TItem="MemberSummaryDTO" Items="_preview.Sample" Caption="ตัวอย่างสมาชิก" PageSize="10">
+                            <Columns>
+                                <TableColumn TItem="MemberSummaryDTO" Title="เลขสมาชิก" Field="m => m.MemberNo" />
+                                <TableColumn TItem="MemberSummaryDTO" Title="ชื่อ" Field="m => m.DisplayName" />
+                                <TableColumn TItem="MemberSummaryDTO" Title="Tier" Field="m => m.TierCode" />
+                                <TableColumn TItem="MemberSummaryDTO" Title="คะแนน" Field="m => m.PointsAvailable" Format="N0" Align="ColumnAlign.End" />
+                            </Columns>
+                        </DataTable>
+                    }
+                </FormSection>
+            </ChildContent>
+        </FormTemplate>
+    }
+</RequirePermission>
+
+@code {
+    [Parameter] public long? Id { get; set; }
+
+    private SegmentRequest? _req;
+    private SegmentRuleModel? _rule;
+    private SegmentPreviewDTO? _preview;
+    private bool _previewing;
+
+    private string Title => Id is null ? "สร้าง Segment" : $"Segment {_req?.Name}";
+    private IReadOnlyList<Breadcrumb> Crumbs => [new("หน้าแรก", ""), new("Segment", "segments"), new(Title)];
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private Task LoadAsync() => LoadSafeAsync(async () =>
+    {
+        if (Id is null)
+        {
+            _req = new SegmentRequest();
+            _rule = SegmentRuleModel.NewGroup();
+            return;
+        }
+
+        SegmentDTO s = await Api.GetAsync<SegmentDTO>($"api/v1/segments/{Id}");
+        _req = new SegmentRequest { Name = s.Name, Description = s.Description, Rule = s.Rule, RefreshDaily = s.RefreshDaily, Version = s.Version };
+        _rule = SegmentRuleModel.From(s.Rule);
+    });
+
+    private async Task PreviewAsync()
+    {
+        _previewing = true;
+        try
+        {
+            _preview = await Api.PostAsync<SegmentPreviewDTO>("api/v1/segments/preview", new { rule = _rule!.ToDto() });
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Toasts.Error(Text.Error(ex));
+        }
+        finally
+        {
+            _previewing = false;
+        }
+    }
+
+    private Task<bool> SaveAsync()
+    {
+        _req!.Rule = _rule!.ToDto();
+        _req.Description = Clean(_req.Description);
+        return SaveSafeAsync(async () =>
+        {
+            if (Id is null) await Api.PostAsync<SegmentDTO>("api/v1/segments", _req);
+            else await Api.PutAsync<SegmentDTO>($"api/v1/segments/{Id}", _req);
+        }, "บันทึก Segment แล้ว", "segments");
+    }
+
+    private Task RefreshAsync() => SaveSafeAsync(() => Api.PostAsync<JobDTO>($"api/v1/segments/{Id}/refresh", null), "เริ่มคำนวณสมาชิกใหม่แล้ว");
+
+    private void Back() => Nav.NavigateTo("segments");
+}

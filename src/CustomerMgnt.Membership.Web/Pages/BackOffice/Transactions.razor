@@ -1,0 +1,89 @@
+@page "/transactions"
+@attribute [Authorize]
+@inherits MembershipPage
+@* A28 รายการขายที่เข้าระบบสมาชิก *@
+<PageTitle>รายการขาย</PageTitle>
+
+<RequirePermission Permission="@P.TxnRead">
+    <ListTemplate TItem="TransactionSummaryDTO" Title="รายการขาย" Description="รายการขายจาก POS / ช่องทางอื่นที่มีผลกับคะแนนและสิทธิ์ของสมาชิก"
+                  Breadcrumbs="_crumbs" Permissions="_perms" Items="_items" Loading="_loading" ErrorMessage="@LoadError" OnRetry="LoadAsync"
+                  CriteriaActiveCount="ActiveCount" OnSearch="LoadAsync" OnClear="ClearAsync" PageSize="20"
+                  OnView="@(t => Nav.NavigateTo($"transactions/{t.Id}"))" ExportColumns="_export" ExportTitle="รายการขาย">
+        <Criteria>
+            <Field Label="เลขรายการ" InputId="c-tx"><input id="c-tx" @bind="_c.TransactionId" maxlength="100" /></Field>
+            <Field Label="เลขสมาชิก" InputId="c-mn"><input id="c-mn" @bind="_memberNo" maxlength="30" /></Field>
+            <Field Label="สาขา" InputId="c-br"><input id="c-br" @bind="_c.BranchCode" maxlength="30" /></Field>
+            <Field Label="ระบบต้นทาง" InputId="c-src"><input id="c-src" @bind="_c.SourceSystem" maxlength="100" /></Field>
+            <Field Label="สถานะ" InputId="c-st">
+                <select id="c-st" @bind="_c.Status">
+                    <option value="">ทั้งหมด</option>
+                    @foreach (TransactionStatus s in Enum.GetValues<TransactionStatus>()) { <option value="@s">@Text.Txn(s)</option> }
+                </select>
+            </Field>
+            <Field Label="ตั้งแต่" InputId="c-f"><input id="c-f" type="date" @bind="_from" /></Field>
+            <Field Label="ถึง" InputId="c-t"><input id="c-t" type="date" @bind="_to" /></Field>
+        </Criteria>
+        <Columns>
+            <TableColumn TItem="TransactionSummaryDTO" Title="วันที่" Field="t => Text.DateTime(t.OccurredAt)" SortBy="t => t.OccurredAt" Sortable />
+            <TableColumn TItem="TransactionSummaryDTO" Title="เลขรายการ" Field="t => t.TransactionId" IsPrimary />
+            <TableColumn TItem="TransactionSummaryDTO" Title="สมาชิก" Field="t => t.MemberNo" />
+            <TableColumn TItem="TransactionSummaryDTO" Title="สาขา" Field="t => t.BranchCode" HideOnMobile />
+            <TableColumn TItem="TransactionSummaryDTO" Title="ยอดชำระ" Field="t => t.NetPaid" Format="N2" Align="ColumnAlign.End" Sortable />
+            <TableColumn TItem="TransactionSummaryDTO" Title="ได้คะแนน" Field="t => t.PointsEarned" Format="N0" Align="ColumnAlign.End" />
+            <TableColumn TItem="TransactionSummaryDTO" Title="ใช้คะแนน" Field="t => t.PointsRedeemed" Format="N0" Align="ColumnAlign.End" HideOnMobile />
+            <TableColumn TItem="TransactionSummaryDTO" Title="สถานะ" Field="t => StatusText(t)" />
+        </Columns>
+    </ListTemplate>
+</RequirePermission>
+
+@code {
+    [SupplyParameterFromQuery(Name = "memberId")] public long? MemberIdQuery { get; set; }
+
+    private readonly IReadOnlyList<Breadcrumb> _crumbs = [new("หน้าแรก", ""), new("รายการขาย")];
+    private readonly ListPermissions _perms = new() { View = P.TxnRead, Export = P.ReportExport };
+    private readonly IReadOnlyList<ExportColumn<TransactionSummaryDTO>> _export =
+    [
+        new("วันที่", t => t.OccurredAt), new("เลขรายการ", t => t.TransactionId), new("ใบเสร็จ", t => t.ReceiptNo), new("ระบบต้นทาง", t => t.SourceSystem),
+        new("สมาชิก", t => t.MemberNo), new("สาขา", t => t.BranchCode), new("ยอดชำระ", t => t.NetPaid), new("ส่วนลด", t => t.DiscountTotal),
+        new("ได้คะแนน", t => t.PointsEarned), new("ใช้คะแนน", t => t.PointsRedeemed), new("สถานะ", t => Text.Txn(t.Status)),
+    ];
+
+    private TransactionSearchCriteria _c = new();
+    private string? _memberNo;
+    private DateTime? _from;
+    private DateTime? _to;
+    private IReadOnlyList<TransactionSummaryDTO>? _items;
+    private bool _loading;
+
+    private int ActiveCount => new object?[] { _c.TransactionId, _memberNo, _c.BranchCode, _c.SourceSystem, _c.Status, _from, _to, _c.MemberId }.Count(x => x is not null && x is not "");
+
+    private static string StatusText(TransactionSummaryDTO t) => t.Offline ? $"{Text.Txn(t.Status)} (ออฟไลน์)" : Text.Txn(t.Status);
+
+    protected override Task OnInitializedAsync()
+    {
+        _c.MemberId = MemberIdQuery;
+        return LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        await LoadSafeAsync(async () =>
+        {
+            if (!string.IsNullOrWhiteSpace(_memberNo)) _c.MemberId = (await Api.GetAsync<MemberDTO>($"api/v1/members/by-no/{Uri.EscapeDataString(_memberNo.Trim())}")).Id;
+            _c.From = _from is null ? null : new DateTimeOffset(_from.Value);
+            _c.To = _to is null ? null : new DateTimeOffset(_to.Value.AddDays(1));
+            _items = (await Api.GetAsync<PagedResultDTO<TransactionSummaryDTO>>("api/v1/transactions",
+                new { _c.MemberId, TransactionId = Clean(_c.TransactionId), SourceSystem = Clean(_c.SourceSystem), BranchCode = Clean(_c.BranchCode), _c.From, _c.To, _c.Status, pageSize = 500 })).Items;
+        });
+        _loading = false;
+    }
+
+    private Task ClearAsync()
+    {
+        _c = new TransactionSearchCriteria();
+        _memberNo = null;
+        _from = _to = null;
+        return LoadAsync();
+    }
+}

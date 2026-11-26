@@ -1,0 +1,40 @@
+@page "/portal/promotions"
+@layout PortalLayout
+@attribute [Authorize]
+@inherits PortalPage
+@* P7 โปรโมชันที่สมาชิกได้รับสิทธิ์ *@
+<PageTitle>โปรโมชัน</PageTitle>
+
+<PageHeader Title="โปรโมชันสำหรับคุณ" Description="โปรโมชันที่กำลังใช้ได้ตามระดับสมาชิกและกลุ่มของคุณ" />
+@if (LoadError is not null)
+{
+    <ErrorView Title="โหลดข้อมูลไม่สำเร็จ" Message="@LoadError" OnRetry="LoadAsync" />
+}
+else if (_items is null)
+{
+    <LoadingState />
+}
+else if (_items.Count == 0)
+{
+    <Alert Level="AlertLevel.Info">ยังไม่มีโปรโมชันในขณะนี้</Alert>
+}
+else
+{
+    <div class="card-grid">
+        @foreach (CampaignSummaryDTO c in _items)
+        {
+            <Card Title="@c.Name" Description="@c.Description">
+                <div>@Text.Reward(c.RewardType)</div>
+                <div class="muted">@Text.Date(c.StartAt) – @Text.Date(c.EndAt)</div>
+            </Card>
+        }
+    </div>
+}
+
+@code {
+    private IReadOnlyList<CampaignSummaryDTO>? _items;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private Task LoadAsync() => PortalLoadAsync(async () => _items = await Api.GetAsync<List<CampaignSummaryDTO>>("api/v1/me/promotions"));
+}

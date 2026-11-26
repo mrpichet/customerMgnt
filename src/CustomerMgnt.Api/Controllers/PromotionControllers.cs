@@ -459,6 +459,15 @@ public sealed class PortalController(PortalService portal) : MembershipControlle
     public async Task<ActionResult<PagedResultDTO<TransactionSummaryDTO>>> Purchases([FromQuery] int page = 1, [FromQuery] int pageSize = 20, CancellationToken ct = default) =>
         Ok(await portal.ListPurchasesAsync(Caller, page, Math.Clamp(pageSize, 1, 100), ct));
 
+    /// <summary>ฉบับความยินยอมปัจจุบัน (ใช้ตอนสมัคร ยังไม่ต้องเป็นสมาชิก)</summary>
+    /// <param name="ct">ยกเลิก</param>
+    /// <returns>ฉบับปัจจุบัน / 204 เมื่อยังไม่มีฉบับที่เผยแพร่</returns>
+    [HttpGet("consents/current")]
+    [ProducesResponseType<ConsentVersionDTO>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    public async Task<IActionResult> CurrentConsent(CancellationToken ct) =>
+        await portal.GetCurrentConsentAsync(ct) is ConsentVersionDTO c ? Ok(c) : NoContent();
+
     /// <summary>ความยินยอมของฉันและฉบับปัจจุบัน</summary>
     /// <param name="ct">ยกเลิก</param>
     /// <returns>ความยินยอม</returns>

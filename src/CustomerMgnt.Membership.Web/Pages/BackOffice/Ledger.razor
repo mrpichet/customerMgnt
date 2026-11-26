@@ -1,0 +1,86 @@
+@page "/points/ledger"
+@attribute [Authorize]
+@inherits MembershipPage
+@* A14 สมุดคะแนน (ledger) — ทุกการเคลื่อนไหวของคะแนน แก้ไข/ลบไม่ได้ *@
+<PageTitle>สมุดคะแนน</PageTitle>
+
+<RequirePermission Permission="@P.PointsRead">
+    <ListTemplate TItem="PointLedgerDTO" Title="สมุดคะแนน" Description="บันทึกการได้ ใช้ หมดอายุ ยกเลิก และปรับคะแนนทุกรายการ แก้ไขหรือลบไม่ได้ — การแก้ไขทำด้วยรายการปรับคะแนนเท่านั้น"
+                  Breadcrumbs="_crumbs" Permissions="_perms" Items="_items" Loading="_loading" ErrorMessage="@LoadError" OnRetry="LoadAsync"
+                  CriteriaActiveCount="ActiveCount" OnSearch="LoadAsync" OnClear="ClearAsync" PageSize="20"
+                  ExportColumns="_export" ExportTitle="สมุดคะแนน">
+        <Criteria>
+            <Field Label="เลขสมาชิก" InputId="c-no"><input id="c-no" @bind="_memberNo" maxlength="30" /></Field>
+            <Field Label="ประเภท" InputId="c-type">
+                <select id="c-type" @bind="_c.Type">
+                    <option value="">ทั้งหมด</option>
+                    @foreach (LedgerType t in Enum.GetValues<LedgerType>()) { <option value="@t">@Text.Ledger(t)</option> }
+                </select>
+            </Field>
+            <Field Label="ตั้งแต่" InputId="c-from"><input id="c-from" type="date" @bind="_from" /></Field>
+            <Field Label="ถึง" InputId="c-to"><input id="c-to" type="date" @bind="_to" /></Field>
+        </Criteria>
+        <Columns>
+            <TableColumn TItem="PointLedgerDTO" Title="เวลา" Field="l => Text.DateTime(l.CreatedAt)" SortBy="l => l.CreatedAt" Sortable />
+            <TableColumn TItem="PointLedgerDTO" Title="สมาชิก" Field="l => l.MemberId" HideOnMobile />
+            <TableColumn TItem="PointLedgerDTO" Title="ประเภท" Field="l => Text.Ledger(l.Type)" IsPrimary />
+            <TableColumn TItem="PointLedgerDTO" Title="คะแนน" Field="l => l.Points" Format="N0" Align="ColumnAlign.End" />
+            <TableColumn TItem="PointLedgerDTO" Title="คงเหลือหลังรายการ" Field="l => l.BalanceAfter" Format="N0" Align="ColumnAlign.End" HideOnMobile />
+            <TableColumn TItem="PointLedgerDTO" Title="อ้างอิง" Field="l => l.TransactionId ?? l.Reference" />
+            <TableColumn TItem="PointLedgerDTO" Title="เหตุผล" Field="l => l.Reason" HideOnMobile />
+            <TableColumn TItem="PointLedgerDTO" Title="ผู้ทำ" Field="l => l.Actor" HideOnMobile />
+        </Columns>
+    </ListTemplate>
+</RequirePermission>
+
+@code {
+    [SupplyParameterFromQuery(Name = "memberId")] public long? MemberIdQuery { get; set; }
+
+    private readonly IReadOnlyList<Breadcrumb> _crumbs = [new("หน้าแรก", ""), new("สมุดคะแนน")];
+    private readonly ListPermissions _perms = new() { View = P.PointsRead, Export = P.ReportExport };
+    private readonly IReadOnlyList<ExportColumn<PointLedgerDTO>> _export =
+    [
+        new("เวลา", l => l.CreatedAt), new("สมาชิก", l => l.MemberId), new("ประเภท", l => Text.Ledger(l.Type)), new("คะแนน", l => l.Points),
+        new("คงเหลือ", l => l.BalanceAfter), new("อ้างอิง", l => l.TransactionId ?? l.Reference), new("เหตุผล", l => l.Reason), new("ผู้ทำ", l => l.Actor),
+    ];
+
+    private LedgerCriteria _c = new();
+    private string? _memberNo;
+    private DateTime? _from;
+    private DateTime? _to;
+    private IReadOnlyList<PointLedgerDTO>? _items;
+    private bool _loading;
+
+    private int ActiveCount => new object?[] { _memberNo, _c.Type, _from, _to, _c.MemberId }.Count(x => x is not null && x is not "");
+
+    protected override Task OnInitializedAsync()
+    {
+        _c.MemberId = MemberIdQuery;
+        return LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        await LoadSafeAsync(async () =>
+        {
+            if (!string.IsNullOrWhiteSpace(_memberNo))
+            {
+                _c.MemberId = (await Api.GetAsync<MemberDTO>($"api/v1/members/by-no/{Uri.EscapeDataString(_memberNo.Trim())}")).Id;
+            }
+
+            _c.From = _from is null ? null : new DateTimeOffset(_from.Value);
+            _c.To = _to is null ? null : new DateTimeOffset(_to.Value.AddDays(1));
+            _items = (await Api.GetAsync<PagedResultDTO<PointLedgerDTO>>("api/v1/points/ledger", new { _c.MemberId, _c.Type, _c.From, _c.To, pageSize = 200 })).Items;
+        });
+        _loading = false;
+    }
+
+    private Task ClearAsync()
+    {
+        _c = new LedgerCriteria();
+        _memberNo = null;
+        _from = _to = null;
+        return LoadAsync();
+    }
+}

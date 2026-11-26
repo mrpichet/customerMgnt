@@ -1,0 +1,108 @@
+@page "/settings/rules"
+@attribute [Authorize]
+@inherits MembershipPage
+@* A37 ตั้งค่ากติกาธุรกิจ 10 ข้อ (ค่าใหม่มีผลกับรายการถัดไป ไม่ย้อนหลัง) *@
+<PageTitle>ตั้งค่ากติกา</PageTitle>
+
+<RequirePermission Permission="@P.SettingsManage">
+    @if (LoadError is not null)
+    {
+        <ErrorView Title="โหลดข้อมูลไม่สำเร็จ" Message="@LoadError" OnRetry="LoadAsync" />
+    }
+    else if (_r is null)
+    {
+        <LoadingState />
+    }
+    else
+    {
+        <FormTemplate Title="ตั้งค่ากติกาธุรกิจ" Description="ค่าที่เปลี่ยนมีผลกับรายการถัดไปเท่านั้น ไม่ย้อนหลัง ทุกการเปลี่ยนบันทึก audit พร้อมค่าก่อน/หลัง"
+                      Breadcrumbs="_crumbs" Mode="FormMode.Edit" Model="_r" SavePermission="@P.SettingsManage" OnSave="SaveAsync" OnCancel="LoadAsync">
+            <ChildContent>
+                <FormSection Title="1. ข้อมูลซ้ำ">
+                    <div class="check-list">
+                        <label><InputCheckbox @bind-Value="_r.UniquePhone" /> เบอร์โทรห้ามซ้ำ</label>
+                        <label><InputCheckbox @bind-Value="_r.UniqueEmail" /> อีเมลห้ามซ้ำ</label>
+                    </div>
+                </FormSection>
+                <FormSection Title="2. การยืนยันสมาชิก (OTP)">
+                    <FieldGrid Columns="3">
+                        <FormField Label="อายุ OTP (นาที)" InputId="ottl" For="() => _r.OtpTtlMinutes"><InputNumber id="ottl" @bind-Value="_r.OtpTtlMinutes" min="1" /></FormField>
+                        <FormField Label="กรอกผิดได้ (ครั้ง)" InputId="omax" For="() => _r.OtpMaxAttempts"><InputNumber id="omax" @bind-Value="_r.OtpMaxAttempts" min="1" /></FormField>
+                        <FormField Label="ขอ OTP ต่อเบอร์ใน 10 นาที" InputId="orate" For="() => _r.OtpPerPhonePer10Minutes"><InputNumber id="orate" @bind-Value="_r.OtpPerPhonePer10Minutes" min="1" /></FormField>
+                    </FieldGrid>
+                </FormSection>
+                <FormSection Title="3. ฐานคำนวณคะแนน">
+                    <p class="muted">คิดจากยอดหลังส่วนลด ไม่รวมส่วนที่จ่ายด้วยคะแนน</p>
+                    <Field Label="รหัสสินค้าที่ไม่ได้คะแนน (คั่นด้วย ,)" InputId="ne"><input id="ne" @bind="_nonEarning" maxlength="2000" /></Field>
+                </FormSection>
+                <FormSection Title="4. คะแนนหมดอายุ">
+                    <FieldGrid Columns="2">
+                        <FormField Label="อายุคะแนน (เดือน นับจากเดือนที่ได้ หมดสิ้นเดือน)" InputId="exm" For="() => _r.ExpiryMonths"><InputNumber id="exm" @bind-Value="_r.ExpiryMonths" min="1" /></FormField>
+                        <FormField Label="แจ้งเตือนก่อนหมดอายุ (วัน)" InputId="exn" For="() => _r.ExpiryNotifyDays"><InputNumber id="exn" @bind-Value="_r.ExpiryNotifyDays" min="0" /></FormField>
+                    </FieldGrid>
+                </FormSection>
+                <FormSection Title="5. คืนสินค้า">
+                    <div class="check-list">
+                        <label><InputCheckbox @bind-Value="_r.ReturnAllowNegativeBalance" /> คะแนนติดลบได้ (เก็บเป็นหนี้คะแนน หักจากคะแนนที่ได้ครั้งถัดไป)</label>
+                        <label><InputCheckbox @bind-Value="_r.ReturnRestoreCouponOnFullReturn" /> คืนคูปองเมื่อคืนสินค้าทั้งบิล (ถ้ายังไม่หมดอายุ)</label>
+                    </div>
+                </FormSection>
+                <FormSection Title="6. การใช้ซ้อน">
+                    <FieldGrid Columns="2">
+                        <FormField Label="คูปองสูงสุดต่อบิล" InputId="mcb" For="() => _r.MaxCouponsPerBill"><InputNumber id="mcb" @bind-Value="_r.MaxCouponsPerBill" min="0" /></FormField>
+                    </FieldGrid>
+                    <label class="check-list"><InputCheckbox @bind-Value="_r.CouponWithPoints" /> ใช้คูปองร่วมกับการจ่ายด้วยคะแนนได้</label>
+                </FormSection>
+                <FormSection Title="7. จำกัดสิทธิ์">
+                    <FormField Label="ค่าเริ่มต้น: ใช้โปรต่อสมาชิกต่อวัน (ครั้ง)" InputId="dpd" For="() => _r.DefaultPerMemberPerDay"><InputNumber id="dpd" @bind-Value="_r.DefaultPerMemberPerDay" min="1" /></FormField>
+                </FormSection>
+                <FormSection Title="8. POS">
+                    <FieldGrid Columns="2">
+                        <FormField Label="รับรายการออฟไลน์ย้อนหลังได้ (วัน)" InputId="late" For="() => _r.PosLateSubmitDays"><InputNumber id="late" @bind-Value="_r.PosLateSubmitDays" min="0" /></FormField>
+                        <FormField Label="อายุการจองสิทธิ์ (นาที)" InputId="rttl" For="() => _r.ReserveTtlMinutes"><InputNumber id="rttl" @bind-Value="_r.ReserveTtlMinutes" min="1" /></FormField>
+                    </FieldGrid>
+                </FormSection>
+                <FormSection Title="9. อนุมัติแคมเปญ">
+                    <FieldGrid Columns="2">
+                        <FormField Label="จำนวนขั้นอนุมัติ" InputId="al" For="() => _r.ApprovalLevels"><InputNumber id="al" @bind-Value="_r.ApprovalLevels" min="1" max="2" /></FormField>
+                        <FormField Label="งบที่ต้องอนุมัติ 2 ขั้น (บาท)" InputId="slb" For="() => _r.SecondLevelBudget"><InputNumber id="slb" @bind-Value="_r.SecondLevelBudget" min="0" step="0.01" /></FormField>
+                    </FieldGrid>
+                </FormSection>
+                <FormSection Title="10. ปรับคะแนน">
+                    <FieldGrid Columns="2">
+                        <FormField Label="ไม่ต้องอนุมัติถ้าไม่เกิน (ต่อครั้ง)" InputId="amr" For="() => _r.AdjustMaxPerRequest"><InputNumber id="amr" @bind-Value="_r.AdjustMaxPerRequest" min="0" /></FormField>
+                        <FormField Label="ไม่ต้องอนุมัติถ้าไม่เกิน (ต่อผู้ใช้ต่อวัน)" InputId="amd" For="() => _r.AdjustMaxPerUserPerDay"><InputNumber id="amd" @bind-Value="_r.AdjustMaxPerUserPerDay" min="0" /></FormField>
+                    </FieldGrid>
+                </FormSection>
+                <FormSection Title="การแลกคะแนนและ Tier">
+                    <FieldGrid Columns="2">
+                        <FormField Label="มูลค่า 1 คะแนน (บาท)" InputId="pv" For="() => _r.PointValue"><InputNumber id="pv" @bind-Value="_r.PointValue" min="0" step="0.01" /></FormField>
+                        <FormField Label="จ่ายด้วยคะแนนได้สูงสุด (% ของบิล)" InputId="mpp" For="() => _r.MaxPointsPayPercent"><InputNumber id="mpp" @bind-Value="_r.MaxPointsPayPercent" min="0" max="100" /></FormField>
+                        <FormField Label="รอบนับยอดซื้อของ Tier (เดือน)" InputId="tw" For="() => _r.TierWindowMonths"><InputNumber id="tw" @bind-Value="_r.TierWindowMonths" min="1" /></FormField>
+                        <FormField Label="Time zone" InputId="tz" For="() => _r.TimeZoneId"><InputText id="tz" @bind-Value="_r.TimeZoneId" maxlength="64" /></FormField>
+                    </FieldGrid>
+                </FormSection>
+            </ChildContent>
+        </FormTemplate>
+    }
+</RequirePermission>
+
+@code {
+    private readonly IReadOnlyList<Breadcrumb> _crumbs = [new("หน้าแรก", ""), new("ตั้งค่า"), new("กติกาธุรกิจ")];
+    private MembershipRulesDTO? _r;
+    private string? _nonEarning;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private Task LoadAsync() => LoadSafeAsync(async () =>
+    {
+        _r = await Api.GetAsync<MembershipRulesDTO>("api/v1/settings/rules");
+        _nonEarning = Text.JoinList(_r.NonEarningItemCodes);
+    });
+
+    private Task<bool> SaveAsync()
+    {
+        _r!.NonEarningItemCodes = Text.SplitList(_nonEarning);
+        return SaveSafeAsync(async () => _r = await Api.PutAsync<MembershipRulesDTO>("api/v1/settings/rules", _r), "บันทึกตั้งค่าแล้ว");
+    }
+}

@@ -1,0 +1,41 @@
+@page "/messages"
+@attribute [Authorize]
+@inherits MembershipPage
+@* A26 งานส่งข้อความแคมเปญ *@
+<PageTitle>ส่งข้อความแคมเปญ</PageTitle>
+
+<RequirePermission Permission="@P.CampaignMessageSend">
+    <ListTemplate TItem="MessageJobDTO" Title="ส่งข้อความแคมเปญ" Description="ส่งเฉพาะสมาชิกที่ยินยอมรับข่าวสารผ่านช่องทางนั้น ผู้ที่ไม่ยินยอมหรือไม่มีข้อมูลติดต่อจะถูกข้ามและนับในช่อง ข้าม"
+                  Breadcrumbs="_crumbs" Permissions="_perms" Items="_items" Loading="_loading" ErrorMessage="@LoadError" OnRetry="LoadAsync"
+                  NewText="สร้างงานส่งข้อความ" OnNew="@(() => Nav.NavigateTo("messages/new"))" PageSize="20">
+        <Columns>
+            <TableColumn TItem="MessageJobDTO" Title="สร้างเมื่อ" Field="j => Text.DateTime(j.RequestedAt)" SortBy="j => j.RequestedAt" Sortable />
+            <TableColumn TItem="MessageJobDTO" Title="ช่องทาง" Field="j => Text.Channel(j.Channel)" />
+            <TableColumn TItem="MessageJobDTO" Title="แม่แบบ" Field="j => j.TemplateCode" IsPrimary />
+            <TableColumn TItem="MessageJobDTO" Title="Segment" Field="j => j.SegmentId" HideOnMobile />
+            <TableColumn TItem="MessageJobDTO" Title="ส่ง" Field="j => j.Recipients" Format="N0" Align="ColumnAlign.End" />
+            <TableColumn TItem="MessageJobDTO" Title="ข้าม" Field="j => j.Skipped" Format="N0" Align="ColumnAlign.End" />
+            <TableColumn TItem="MessageJobDTO" Title="กำหนดส่ง" Field="j => Text.DateTime(j.ScheduledAt)" HideOnMobile />
+            <TableColumn TItem="MessageJobDTO" Title="ผู้สร้าง" Field="j => j.RequestedBy" HideOnMobile />
+            <TableColumn TItem="MessageJobDTO" Title="สถานะ" SortBy="j => j.Status">
+                <Template><Badge Text="@Text.Job(context.Status)" Level="@Text.Level(context.Status)" /> @if (context.Error is not null) { <span class="muted">@context.Error</span> }</Template>
+            </TableColumn>
+        </Columns>
+    </ListTemplate>
+</RequirePermission>
+
+@code {
+    private readonly IReadOnlyList<Breadcrumb> _crumbs = [new("หน้าแรก", ""), new("ส่งข้อความแคมเปญ")];
+    private readonly ListPermissions _perms = new() { Create = P.CampaignMessageSend };
+    private IReadOnlyList<MessageJobDTO>? _items;
+    private bool _loading;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        await LoadSafeAsync(async () => _items = await Api.GetAsync<List<MessageJobDTO>>("api/v1/campaign-messages"));
+        _loading = false;
+    }
+}

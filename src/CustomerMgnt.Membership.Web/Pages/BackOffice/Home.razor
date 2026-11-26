@@ -1,0 +1,78 @@
+@page "/"
+@attribute [Authorize]
+@* A2 Dashboard — ตัวเลขตามสิทธิ์ของผู้ใช้ (server คืนค่า 0 ในส่วนที่ไม่มีสิทธิ์) *@
+<PageTitle>Dashboard</PageTitle>
+
+<PageHeader Title="ภาพรวมระบบสมาชิก" Description="ตัวเลข 30 วันล่าสุด แสดงตามสิทธิ์ของคุณ" />
+
+@if (_error is not null)
+{
+    <ErrorView Title="โหลดข้อมูลไม่สำเร็จ" Message="@_error" OnRetry="LoadAsync" Compact />
+}
+else if (_d is null)
+{
+    <LoadingState />
+}
+else
+{
+    <div class="kpi-grid">
+        <div class="kpi"><div class="kpi__label">สมาชิกทั้งหมด</div><div class="kpi__value">@Text.Int(_d.TotalMembers)</div></div>
+        <div class="kpi"><div class="kpi__label">สมาชิกที่ใช้งาน</div><div class="kpi__value">@Text.Int(_d.ActiveMembers)</div></div>
+        <div class="kpi"><div class="kpi__label">สมาชิกใหม่ 30 วัน</div><div class="kpi__value">@Text.Int(_d.NewMembers30d)</div></div>
+        <div class="kpi"><div class="kpi__label">คะแนนคงค้าง</div><div class="kpi__value">@Text.Int(_d.PointsOutstanding)</div></div>
+        <div class="kpi"><div class="kpi__label">คะแนนที่ออก 30 วัน</div><div class="kpi__value">@Text.Int(_d.PointsEarned30d)</div></div>
+        <div class="kpi"><div class="kpi__label">คะแนนที่แลก 30 วัน</div><div class="kpi__value">@Text.Int(_d.PointsRedeemed30d)</div></div>
+        <div class="kpi"><div class="kpi__label">แคมเปญที่กำลังใช้งาน</div><div class="kpi__value">@Text.Int(_d.ActiveCampaigns)</div></div>
+        <div class="kpi"><div class="kpi__label">ยอดขาย 30 วัน (บาท)</div><div class="kpi__value">@Text.Num(_d.Sales30d)</div></div>
+        <div class="kpi"><div class="kpi__label">จำนวนบิล 30 วัน</div><div class="kpi__value">@Text.Int(_d.Transactions30d)</div></div>
+        <div class="kpi"><div class="kpi__label">งานรออนุมัติของฉัน</div><div class="kpi__value"><a href="approvals">@Text.Int(_pending)</a></div></div>
+    </div>
+
+    <div class="stack">
+        @if (_d.MembersByTier.Count > 0)
+        {
+            <Card Title="สมาชิกตาม Tier">
+                <DataTable TItem="KeyValuePair<string, int>" Items="_d.MembersByTier.OrderByDescending(x => x.Value).ToList()" Caption="สมาชิกตาม Tier" ShowPager="false">
+                    <Columns>
+                        <TableColumn TItem="KeyValuePair<string, int>" Title="Tier" Field="x => x.Key" />
+                        <TableColumn TItem="KeyValuePair<string, int>" Title="จำนวนสมาชิก" Field="x => x.Value" Format="N0" Align="ColumnAlign.End" />
+                    </Columns>
+                </DataTable>
+            </Card>
+        }
+        @if (_d.DeadLetters > 0 || _d.OutboxBacklog > 100)
+        {
+            <Alert Level="AlertLevel.Warning" Title="การส่งข้อมูลไประบบอื่นค้าง">
+                ค้างส่ง @Text.Int(_d.OutboxBacklog) รายการ, ส่งไม่สำเร็จถาวร @Text.Int(_d.DeadLetters) รายการ — แจ้งผู้ดูแลระบบตรวจสอบ log
+            </Alert>
+        }
+    </div>
+}
+
+@code {
+    [Inject] private MembershipApiClient Api { get; set; } = default!;
+
+    private DashboardDTO? _d;
+    private int _pending;
+    private string? _error;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        try
+        {
+            _d = await Api.GetAsync<DashboardDTO>("api/v1/dashboard");
+            _pending = await Api.GetAsync<int>("api/v1/approvals/pending-count");
+        }
+        catch (ApiException ex) when (ex.Status == 403)
+        {
+            _d = new DashboardDTO();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _error = Text.Error(ex);
+        }
+    }
+}

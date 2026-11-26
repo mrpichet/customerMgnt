@@ -1,0 +1,72 @@
+@page "/settings/integrations"
+@attribute [Authorize]
+@inherits MembershipPage
+@* A36 ระบบที่เชื่อมต่อ (POS / integration) — client ออก secret ที่ AuthServer ที่นี่กำหนด rate limit และการแจ้งเตือน *@
+<PageTitle>ระบบที่เชื่อมต่อ</PageTitle>
+
+<RequirePermission Permission="@P.SettingsManage">
+    <PageHeader Title="ระบบที่เชื่อมต่อ" Description="POS และระบบอื่นเรียก API ด้วย client_credentials จาก AuthServer — ลงทะเบียน client และ secret ที่ AuthServer ก่อน แล้วกำหนดค่าที่นี่" Breadcrumbs="_crumbs" />
+    @if (LoadError is not null)
+    {
+        <ErrorView Title="โหลดข้อมูลไม่สำเร็จ" Message="@LoadError" OnRetry="LoadAsync" />
+    }
+    <DataTable TItem="IntegrationClientDTO" Items="_items" Caption="client ที่เชื่อมต่อ" PageSize="20">
+        <Columns>
+            <TableColumn TItem="IntegrationClientDTO" Title="Client ID" Field="c => c.ClientId" />
+            <TableColumn TItem="IntegrationClientDTO" Title="ชื่อ" Field="c => c.Name" />
+            <TableColumn TItem="IntegrationClientDTO" Title="คำขอ/วินาที" Field="c => c.RateLimitPerSecond" Format="N0" Align="ColumnAlign.End" />
+            <TableColumn TItem="IntegrationClientDTO" Title="แจ้งเตือนเมื่อ error เกิน (%)" Field="c => c.AlertOnErrorRate" Format="N0" Align="ColumnAlign.End" />
+            <TableColumn TItem="IntegrationClientDTO" Title="ใช้งานล่าสุด" Field="c => Text.DateTime(c.LastSeenAt)" />
+            <TableColumn TItem="IntegrationClientDTO" Title="สถานะ">
+                <Template><Badge Text="@(context.Enabled ? "เปิด" : "ปิด")" Level="@(context.Enabled ? AlertLevel.Success : AlertLevel.Info)" /></Template>
+            </TableColumn>
+        </Columns>
+        <RowActions><AppButton Text="แก้ไข" Size="ButtonSize.Small" Variant="ButtonVariant.Secondary" OnClick="@(() => Edit(context))" /></RowActions>
+    </DataTable>
+
+    <Card Title="@(_editing ? $"แก้ไข {_c.ClientId}" : "เพิ่ม client")">
+        <FieldGrid Columns="2">
+            <Field Label="Client ID (ตรงกับ AuthServer)" InputId="cid"><input id="cid" @bind="_c.ClientId" maxlength="100" disabled="@_editing" /></Field>
+            <Field Label="ชื่อ" InputId="cn"><input id="cn" @bind="_c.Name" maxlength="200" /></Field>
+            <Field Label="คำขอ/วินาที" InputId="rl"><input id="rl" type="number" min="1" @bind="_c.RateLimitPerSecond" /></Field>
+            <Field Label="แจ้งเตือนเมื่อ error เกิน (%)" InputId="ae"><input id="ae" type="number" min="1" max="100" @bind="_c.AlertOnErrorRate" /></Field>
+        </FieldGrid>
+        <label class="check-list"><input type="checkbox" @bind="_c.Enabled" /> เปิดใช้งาน</label>
+        <div class="row-actions" style="margin-top:12px">
+            <AppButton Text="บันทึก" Variant="ButtonVariant.Primary" Busy="Busy" Disabled="@string.IsNullOrWhiteSpace(_c.ClientId)" OnClick="SaveAsync" />
+            @if (_editing) { <AppButton Text="ยกเลิก" Variant="ButtonVariant.Secondary" OnClick="Reset" /> }
+        </div>
+    </Card>
+</RequirePermission>
+
+@code {
+    private readonly IReadOnlyList<Breadcrumb> _crumbs = [new("หน้าแรก", ""), new("ตั้งค่า"), new("ระบบที่เชื่อมต่อ")];
+    private IReadOnlyList<IntegrationClientDTO> _items = [];
+    private IntegrationClientDTO _c = new();
+    private bool _editing;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private Task LoadAsync() => LoadSafeAsync(async () => _items = await Api.GetAsync<List<IntegrationClientDTO>>("api/v1/settings/integrations"));
+
+    private void Edit(IntegrationClientDTO c)
+    {
+        _c = new IntegrationClientDTO { ClientId = c.ClientId, Name = c.Name, Enabled = c.Enabled, RateLimitPerSecond = c.RateLimitPerSecond, AlertOnErrorRate = c.AlertOnErrorRate };
+        _editing = true;
+    }
+
+    private void Reset()
+    {
+        _c = new IntegrationClientDTO();
+        _editing = false;
+    }
+
+    private async Task SaveAsync()
+    {
+        _c.ClientId = _c.ClientId.Trim();
+        if (await SaveSafeAsync(async () => _items = await Api.PutAsync<List<IntegrationClientDTO>>("api/v1/settings/integrations", _c), "บันทึกแล้ว"))
+        {
+            Reset();
+        }
+    }
+}

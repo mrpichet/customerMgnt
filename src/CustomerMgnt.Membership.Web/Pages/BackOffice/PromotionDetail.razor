@@ -1,0 +1,129 @@
+@page "/promotions/{Id:long}"
+@attribute [Authorize]
+@inherits MembershipPage
+@* A19 รายละเอียดแคมเปญ: ส่งอนุมัติ / หยุดชั่วคราว / ใช้ต่อ / ยกเลิก + การใช้งาน *@
+<PageTitle>แคมเปญ @_c?.Code</PageTitle>
+
+<RequirePermission Permission="@P.PromotionRead">
+    @if (LoadError is not null)
+    {
+        <ErrorView Title="โหลดข้อมูลไม่สำเร็จ" Message="@LoadError" OnRetry="LoadAsync" />
+    }
+    else if (_c is null)
+    {
+        <LoadingState />
+    }
+    else
+    {
+        <PageHeader Title="@($"{_c.Code} {_c.Name}")" Description="@_c.Description" Breadcrumbs="Crumbs">
+            <Badge><Badge Text="@Text.Campaign(_c.Status)" Level="@Text.Level(_c.Status)" /></Badge>
+            <Actions>
+                @if (_c.Status is CampaignStatus.Draft or CampaignStatus.Rejected)
+                {
+                    <AppButton Text="แก้ไข" Icon="edit" Variant="ButtonVariant.Secondary" Permission="@P.PromotionWrite" Href="@($"promotions/{Id}/edit")" />
+                }
+                <AppButton Text="ทดลองคำนวณ" Icon="bar-chart" Variant="ButtonVariant.Secondary" Href="@($"promotions/simulate?campaignId={Id}")" />
+            </Actions>
+        </PageHeader>
+
+        @if (_c.ApprovalRequestId is long aid)
+        {
+            <Alert Level="AlertLevel.Info">คำขออนุมัติล่าสุด: <a href="approvals/@aid">#@aid</a></Alert>
+        }
+
+        <PermissionView Permission="@P.PromotionWrite">
+            @if (Actions.Count > 0)
+            {
+                <Card Title="ดำเนินการ">
+                    <Field Label="เหตุผล / หมายเหตุ" InputId="why"><input id="why" @bind="_reason" maxlength="500" /></Field>
+                    <div class="row-actions" style="margin-top:12px">
+                        @foreach ((string action, string label, ButtonVariant variant) in Actions)
+                        {
+                            <AppButton Text="@label" Variant="variant" Busy="Busy" OnClick="@(() => ActAsync(action, label))"
+                                       Disabled="@(action is "cancel" or "pause" && string.IsNullOrWhiteSpace(_reason))" />
+                        }
+                    </div>
+                </Card>
+            }
+        </PermissionView>
+
+        <Card Title="การใช้งาน">
+            <dl class="kv">
+                <dt>ใช้แล้ว</dt><dd>@Text.Int(_c.Usage.Uses) ครั้ง @(_c.Limits.TotalUses is int t ? $"จาก {t:N0}" : "")</dd>
+                <dt>กำลังจอง</dt><dd>@Text.Int(_c.Usage.Reserved) ครั้ง</dd>
+                <dt>งบที่ใช้</dt><dd>@Text.Num(_c.Usage.BudgetUsed) บาท @(_c.Limits.Budget is decimal b ? $"จาก {b:N2}" : "")</dd>
+                <dt>งบที่จองไว้</dt><dd>@Text.Num(_c.Usage.BudgetReserved) บาท</dd>
+            </dl>
+        </Card>
+
+        <Card Title="รายละเอียด">
+            <dl class="kv">
+                <dt>ช่วงเวลา</dt><dd>@Text.DateTime(_c.StartAt) – @Text.DateTime(_c.EndAt)</dd>
+                <dt>รางวัล</dt><dd>@Text.Reward(_c.RewardType): @RewardText</dd>
+                <dt>ระดับ</dt><dd>@(_c.Level == PromotionLevel.Bill ? "ทั้งบิล" : "รายการสินค้า")</dd>
+                <dt>ต้องใช้คูปอง</dt><dd>@(_c.RequiresCoupon ? "ใช่" : "ไม่")</dd>
+                <dt>ยอดซื้อขั้นต่ำ</dt><dd>@Text.Num(_c.Conditions.MinSpend)</dd>
+                <dt>สินค้า/หมวด</dt><dd>@Or(Text.JoinList(_c.Conditions.ItemCodes.Concat(_c.Conditions.Categories)), "ทุกสินค้า")</dd>
+                <dt>สาขา</dt><dd>@Or(Text.JoinList(_c.Conditions.Branches), "ทุกสาขา")</dd>
+                <dt>ช่องทาง</dt><dd>@Or(Text.JoinList(_c.Conditions.Channels.Select(x => x.ToString())), "ทุกช่องทาง")</dd>
+                <dt>วัน/เวลา</dt><dd>@Or(Text.JoinList(_c.Conditions.DaysOfWeek.Select(d => d.ToString())), "ทุกวัน") @(_c.Conditions.TimeFrom is null ? "" : $"{_c.Conditions.TimeFrom:HH\\:mm}–{_c.Conditions.TimeTo:HH\\:mm}")</dd>
+                <dt>เดือนเกิดเท่านั้น</dt><dd>@(_c.Conditions.BirthdayMonthOnly ? "ใช่" : "ไม่")</dd>
+                <dt>กลุ่มเป้าหมาย</dt><dd>@(_c.Targets.AllMembers ? "สมาชิกทุกคน" : $"Tier: {Or(Text.JoinList(_c.Targets.TierCodes), "-")} / Segment: {Or(Text.JoinList(_c.Targets.SegmentIds.Select(i => i.ToString(CultureInfo.InvariantCulture))), "-")}")</dd>
+                <dt>การใช้ร่วม</dt><dd>@_c.StackMode @_c.ExclusionGroup (ลำดับ @_c.Priority)</dd>
+                <dt>จำกัด</dt><dd>ต่อคน @(_c.Limits.PerMemberTotal?.ToString(CultureInfo.InvariantCulture) ?? "∞") / ต่อวัน @(_c.Limits.PerMemberPerDay?.ToString(CultureInfo.InvariantCulture) ?? "ค่าเริ่มต้น")</dd>
+                <dt>สร้างโดย</dt><dd>@_c.CreatedBy เมื่อ @Text.DateTime(_c.CreatedAt)</dd>
+            </dl>
+        </Card>
+    }
+</RequirePermission>
+
+@code {
+    [Parameter] public long Id { get; set; }
+
+    private CampaignDTO? _c;
+    private string? _reason;
+
+    private IReadOnlyList<Breadcrumb> Crumbs => [new("หน้าแรก", ""), new("แคมเปญโปรโมชัน", "promotions"), new(_c?.Code ?? "แคมเปญ")];
+
+    private List<(string, string, ButtonVariant)> Actions => _c?.Status switch
+    {
+        CampaignStatus.Draft or CampaignStatus.Rejected => [("submit", "ส่งอนุมัติ", ButtonVariant.Primary), ("cancel", "ยกเลิกแคมเปญ", ButtonVariant.Danger)],
+        CampaignStatus.Approved or CampaignStatus.Scheduled or CampaignStatus.Active => [("pause", "หยุดชั่วคราว", ButtonVariant.Secondary), ("cancel", "ยกเลิกแคมเปญ", ButtonVariant.Danger)],
+        CampaignStatus.Paused => [("resume", "ใช้ต่อ", ButtonVariant.Primary), ("cancel", "ยกเลิกแคมเปญ", ButtonVariant.Danger)],
+        CampaignStatus.PendingApproval => [("cancel", "ยกเลิกแคมเปญ", ButtonVariant.Danger)],
+        _ => [],
+    };
+
+    private string RewardText
+    {
+        get
+        {
+            CampaignRewardDTO r = _c!.Reward;
+            return _c.RewardType switch
+            {
+                RewardType.PercentDiscount => $"{r.Percent:0.##}%" + (r.Cap is decimal cap ? $" สูงสุด {cap:N2} บาท" : ""),
+                RewardType.AmountDiscount => $"{r.Amount:N2} บาท",
+                RewardType.BuyXGetY => $"ซื้อ {r.BuyQty} แถม {r.GetQty}",
+                RewardType.SpendThreshold => $"ซื้อครบ {r.Threshold:N2} ลด {r.Amount:N2}",
+                RewardType.BonusPoints => $"{r.BonusPoints:N0} คะแนน",
+                RewardType.PointMultiplier => $"x{r.Multiplier:0.##}",
+                RewardType.IssueCoupon => $"ชุดคูปอง #{r.CouponBatchId}",
+                _ => "-",
+            };
+        }
+    }
+
+    private static string Or(string s, string fallback) => string.IsNullOrEmpty(s) ? fallback : s;
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private Task LoadAsync() => LoadSafeAsync(async () => _c = await Api.GetAsync<CampaignDTO>($"api/v1/promotions/{Id}"));
+
+    private async Task ActAsync(string action, string label)
+    {
+        bool ok = await SaveSafeAsync(async () =>
+            _c = await Api.PostAsync<CampaignDTO>($"api/v1/promotions/{Id}/{action}", new CampaignActionRequest { Version = _c!.Version, Reason = Clean(_reason) }),
+            $"{label}แล้ว");
+        if (ok) _reason = null;
+    }
+}

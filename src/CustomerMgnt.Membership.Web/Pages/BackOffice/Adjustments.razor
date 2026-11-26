@@ -1,0 +1,59 @@
+@page "/points/adjustments"
+@attribute [Authorize]
+@inherits MembershipPage
+@* A16 รายการปรับคะแนน *@
+<PageTitle>รายการปรับคะแนน</PageTitle>
+
+<RequirePermission Permission="@P.PointsRead">
+    <ListTemplate TItem="AdjustmentDTO" Title="รายการปรับคะแนน" Description="รายการที่เกินเพดานจะรออนุมัติในเมนูรายการรออนุมัติ"
+                  Breadcrumbs="_crumbs" Permissions="_perms" Items="_items" Loading="_loading" ErrorMessage="@LoadError" OnRetry="LoadAsync"
+                  CriteriaActiveCount="@(_status is null ? 0 : 1)" OnSearch="LoadAsync" OnClear="ClearAsync" PageSize="20"
+                  NewText="ปรับคะแนน" OnNew="@(() => Nav.NavigateTo(MemberIdQuery is null ? "points/adjustments/new" : $"points/adjustments/new?memberId={MemberIdQuery}"))">
+        <Criteria>
+            <Field Label="สถานะ" InputId="c-st">
+                <select id="c-st" @bind="_status">
+                    <option value="">ทั้งหมด</option>
+                    @foreach (AdjustmentStatus s in Enum.GetValues<AdjustmentStatus>()) { <option value="@s">@Text.Adjustment(s)</option> }
+                </select>
+            </Field>
+        </Criteria>
+        <Columns>
+            <TableColumn TItem="AdjustmentDTO" Title="เวลา" Field="a => Text.DateTime(a.CreatedAt)" SortBy="a => a.CreatedAt" Sortable />
+            <TableColumn TItem="AdjustmentDTO" Title="สมาชิก" Field="a => a.MemberId" />
+            <TableColumn TItem="AdjustmentDTO" Title="คะแนน" Field="a => a.Points" Format="N0" Align="ColumnAlign.End" IsPrimary />
+            <TableColumn TItem="AdjustmentDTO" Title="เหตุผล" Field="a => a.Reason" />
+            <TableColumn TItem="AdjustmentDTO" Title="ผู้ขอ" Field="a => a.RequestedBy" HideOnMobile />
+            <TableColumn TItem="AdjustmentDTO" Title="สถานะ" SortBy="a => a.Status">
+                <Template>
+                    <Badge Text="@Text.Adjustment(context.Status)" Level="@(context.Status == AdjustmentStatus.Applied ? AlertLevel.Success : context.Status == AdjustmentStatus.PendingApproval ? AlertLevel.Warning : AlertLevel.Danger)" />
+                    @if (context.ApprovalRequestId is long aid) { <a href="approvals/@aid" style="margin-left:8px">คำขอ</a> }
+                </Template>
+            </TableColumn>
+        </Columns>
+    </ListTemplate>
+</RequirePermission>
+
+@code {
+    [SupplyParameterFromQuery(Name = "memberId")] public long? MemberIdQuery { get; set; }
+
+    private readonly IReadOnlyList<Breadcrumb> _crumbs = [new("หน้าแรก", ""), new("รายการปรับคะแนน")];
+    private readonly ListPermissions _perms = new() { Create = P.PointsAdjust };
+    private AdjustmentStatus? _status;
+    private IReadOnlyList<AdjustmentDTO>? _items;
+    private bool _loading;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        await LoadSafeAsync(async () => _items = await Api.GetAsync<List<AdjustmentDTO>>("api/v1/points/adjustments", new { status = _status, memberId = MemberIdQuery }));
+        _loading = false;
+    }
+
+    private Task ClearAsync()
+    {
+        _status = null;
+        return LoadAsync();
+    }
+}

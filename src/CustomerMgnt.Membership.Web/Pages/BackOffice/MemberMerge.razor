@@ -1,0 +1,105 @@
+@page "/members/merge"
+@attribute [Authorize]
+@inherits MembershipPage
+@* A8 รวมบัญชีซ้ำ: เลือกบัญชีหลัก/บัญชีรอง → ดูผลก่อนรวม → ยื่นขออนุมัติ (มีผลเมื่ออนุมัติ) *@
+<PageTitle>รวมบัญชีสมาชิก</PageTitle>
+
+<RequirePermission Permission="@P.MemberMerge">
+    <PageHeader Title="รวมบัญชีสมาชิก" Description="ย้ายคะแนน คูปอง และประวัติซื้อจากบัญชีรองไปบัญชีหลัก แล้วปิดบัญชีรอง ต้องได้รับอนุมัติจากผู้มีสิทธิ์อีกคนก่อนจึงมีผล" Breadcrumbs="_crumbs" />
+
+    <Card Title="1. เลือกบัญชี">
+        <div class="row-actions" style="align-items:flex-end">
+            <Field Label="เลขสมาชิกบัญชีหลัก (เก็บไว้)" InputId="pn"><input id="pn" @bind="_primaryNo" maxlength="30" /></Field>
+            <Field Label="เลขสมาชิกบัญชีรอง (จะถูกปิด)" InputId="sn"><input id="sn" @bind="_secondaryNo" maxlength="30" /></Field>
+            <AppButton Text="ดูผลก่อนรวม" Variant="ButtonVariant.Primary" Busy="Busy" OnClick="PreviewAsync"
+                       Disabled="@(string.IsNullOrWhiteSpace(_primaryNo) || string.IsNullOrWhiteSpace(_secondaryNo))" />
+        </div>
+    </Card>
+
+    @if (_preview is not null)
+    {
+        <Card Title="2. ผลก่อนรวม">
+            @foreach (string w in _preview.Warnings) { <Alert Level="AlertLevel.Warning">@w</Alert> }
+            <table class="simple-table">
+                <thead><tr><th>ข้อมูล</th><th>บัญชีหลัก @_preview.Primary.MemberNo</th><th>บัญชีรอง @_preview.Secondary.MemberNo</th><th>ใช้ค่าจากบัญชีรอง</th></tr></thead>
+                <tbody>
+                    @foreach ((string key, string label, string? a, string? b) in Rows)
+                    {
+                        <tr>
+                            <td>@label</td><td>@(a ?? "-")</td><td>@(b ?? "-")</td>
+                            <td><input type="checkbox" aria-label="@($"ใช้{label}จากบัญชีรอง")" checked="@_take.Contains(key)" @onchange="e => Toggle(key, e.Value is true)" /></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            <dl class="kv" style="margin-top:12px">
+                <dt>คะแนนที่จะย้าย</dt><dd>@Text.Int(_preview.PointsToMove)</dd>
+                <dt>คูปองที่จะย้าย</dt><dd>@Text.Int(_preview.CouponsToMove)</dd>
+                <dt>รายการซื้อที่จะย้าย</dt><dd>@Text.Int(_preview.TransactionsToMove)</dd>
+            </dl>
+        </Card>
+
+        <Card Title="3. ยื่นขออนุมัติ">
+            <Field Label="เหตุผล (บังคับ)" InputId="mr"><textarea id="mr" @bind="_reason" rows="3" maxlength="500"></textarea></Field>
+            <div class="row-actions" style="margin-top:12px">
+                <AppButton Text="ยื่นขออนุมัติรวมบัญชี" Variant="ButtonVariant.Primary" Busy="Busy" OnClick="SubmitAsync" Disabled="@string.IsNullOrWhiteSpace(_reason)" />
+            </div>
+        </Card>
+    }
+</RequirePermission>
+
+@code {
+    private readonly IReadOnlyList<Breadcrumb> _crumbs = [new("หน้าแรก", ""), new("รายการสมาชิก", "members"), new("รวมบัญชี")];
+
+    private string? _primaryNo;
+    private string? _secondaryNo;
+    private string? _reason;
+    private MergePreviewDTO? _preview;
+    private readonly HashSet<string> _take = new(StringComparer.Ordinal);
+
+    private IEnumerable<(string Key, string Label, string? A, string? B)> Rows => _preview is null ? [] :
+    [
+        ("firstName", "ชื่อ", _preview.Primary.FirstName, _preview.Secondary.FirstName),
+        ("lastName", "นามสกุล", _preview.Primary.LastName, _preview.Secondary.LastName),
+        ("email", "อีเมล", _preview.Primary.EmailMasked, _preview.Secondary.EmailMasked),
+        ("birthDate", "วันเกิด", _preview.Primary.BirthDateMasked, _preview.Secondary.BirthDateMasked),
+        ("province", "จังหวัด", _preview.Primary.Province, _preview.Secondary.Province),
+    ];
+
+    private void Toggle(string key, bool on)
+    {
+        if (on) _take.Add(key); else _take.Remove(key);
+    }
+
+    private async Task PreviewAsync()
+    {
+        Busy = true;
+        try
+        {
+            MemberDTO p = await Api.GetAsync<MemberDTO>($"api/v1/members/by-no/{Uri.EscapeDataString(_primaryNo!.Trim())}");
+            MemberDTO s = await Api.GetAsync<MemberDTO>($"api/v1/members/by-no/{Uri.EscapeDataString(_secondaryNo!.Trim())}");
+            _preview = await Api.GetAsync<MergePreviewDTO>("api/v1/members/merges/preview", new { primaryId = p.Id, secondaryId = s.Id });
+            _take.Clear();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _preview = null;
+            Toasts.Error(Text.Error(ex));
+        }
+        finally
+        {
+            Busy = false;
+        }
+    }
+
+    private async Task SubmitAsync()
+    {
+        ApprovalRequestDTO? a = null;
+        bool ok = await SaveSafeAsync(async () =>
+            a = await Api.PostAsync<ApprovalRequestDTO>("api/v1/members/merges", new MergeRequest
+            {
+                PrimaryId = _preview!.Primary.Id, SecondaryId = _preview.Secondary.Id, TakeFromSecondary = [.. _take], Reason = _reason!.Trim(),
+            }), "ยื่นขออนุมัติรวมบัญชีแล้ว");
+        if (ok && a is not null) Nav.NavigateTo($"approvals/{a.Id}");
+    }
+}

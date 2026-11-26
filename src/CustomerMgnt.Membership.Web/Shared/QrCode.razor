@@ -1,0 +1,24 @@
+@using QRCoder
+@* แสดง QR (SVG) สำหรับให้พนักงานสแกนที่ POS — สร้างในเบราว์เซอร์ ไม่ส่งข้อมูลออกนอกระบบ *@
+<div class="qr" role="img" aria-label="@Label">@((MarkupString)_svg)</div>
+
+@code {
+    /// <summary>ข้อความที่เข้ารหัส</summary>
+    [Parameter, EditorRequired] public string Value { get; set; } = string.Empty;
+
+    /// <summary>คำอธิบายสำหรับ screen reader</summary>
+    [Parameter] public string Label { get; set; } = "QR code";
+
+    private string _svg = string.Empty;
+    private string? _rendered;
+
+    protected override void OnParametersSet()
+    {
+        if (_rendered == Value) return;
+        _rendered = Value;
+        using var gen = new QRCodeGenerator();
+        using QRCodeData data = gen.CreateQrCode(Value, QRCodeGenerator.ECCLevel.M);
+        var svg = new SvgQRCode(data);
+        _svg = svg.GetGraphic(new System.Drawing.Size(220, 220), "#000000", "#ffffff", drawQuietZones: true, sizingMode: SvgQRCode.SizingMode.ViewBoxAttribute);
+    }
+}

@@ -1,0 +1,38 @@
+@page "/segments"
+@attribute [Authorize]
+@inherits MembershipPage
+@* A24 รายการ Segment *@
+<PageTitle>Segment</PageTitle>
+
+<RequirePermission Permission="@P.SegmentRead">
+    <ListTemplate TItem="SegmentDTO" Title="Segment สมาชิก" Description="กลุ่มสมาชิกตามเงื่อนไข ใช้กำหนดกลุ่มเป้าหมายแคมเปญ แจกคูปอง และส่งข้อความ ระบบคำนวณสมาชิกใหม่ทุกคืน (ถ้าเปิดไว้)"
+                  Breadcrumbs="_crumbs" Permissions="_perms" Items="_items" Loading="_loading" ErrorMessage="@LoadError" OnRetry="LoadAsync"
+                  NewText="สร้าง Segment" OnNew="@(() => Nav.NavigateTo("segments/new"))" OnEdit="@(s => Nav.NavigateTo($"segments/{s.Id}/edit"))"
+                  OnView="@(s => Nav.NavigateTo($"segments/{s.Id}/edit"))" ItemName="@(s => s.Name)">
+        <Columns>
+            <TableColumn TItem="SegmentDTO" Title="ชื่อ" Field="s => s.Name" IsPrimary Sortable />
+            <TableColumn TItem="SegmentDTO" Title="คำอธิบาย" Field="s => s.Description" HideOnMobile />
+            <TableColumn TItem="SegmentDTO" Title="จำนวนสมาชิก" Field="s => s.MemberCount" Format="N0" Align="ColumnAlign.End" Sortable />
+            <TableColumn TItem="SegmentDTO" Title="คำนวณล่าสุด" Field="s => Text.DateTime(s.RefreshedAt)" SortBy="s => s.RefreshedAt" Sortable HideOnMobile />
+            <TableColumn TItem="SegmentDTO" Title="คำนวณทุกคืน" Field="s => Daily(s)" HideOnMobile />
+        </Columns>
+    </ListTemplate>
+</RequirePermission>
+
+@code {
+    private readonly IReadOnlyList<Breadcrumb> _crumbs = [new("หน้าแรก", ""), new("Segment")];
+    private readonly ListPermissions _perms = new() { Create = P.SegmentWrite, View = P.SegmentRead, Edit = P.SegmentWrite };
+    private IReadOnlyList<SegmentDTO>? _items;
+    private bool _loading;
+
+    private static string Daily(SegmentDTO s) => s.RefreshDaily ? "ใช่" : "ไม่";
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        await LoadSafeAsync(async () => _items = await Api.GetAsync<List<SegmentDTO>>("api/v1/segments"));
+        _loading = false;
+    }
+}

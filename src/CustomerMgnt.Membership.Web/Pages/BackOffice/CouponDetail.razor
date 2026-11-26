@@ -1,0 +1,73 @@
+@page "/coupons/codes/{Code}"
+@attribute [Authorize]
+@inherits MembershipPage
+@* A23 (ต่อ) รายละเอียดคูปอง + ประวัติ + ยกเลิก *@
+<PageTitle>คูปอง @Code</PageTitle>
+
+<RequirePermission Permission="@P.CouponRead">
+    @if (LoadError is not null)
+    {
+        <ErrorView Title="โหลดข้อมูลไม่สำเร็จ" Message="@LoadError" OnRetry="LoadAsync" />
+    }
+    else if (_d is null)
+    {
+        <LoadingState />
+    }
+    else
+    {
+        <PageHeader Title="@($"คูปอง {_d.Coupon.Code}")" Description="@_d.Coupon.CampaignName" Breadcrumbs="Crumbs">
+            <Badge><Badge Text="@Text.Coupon(_d.Coupon.Status)" Level="@Text.Level(_d.Coupon.Status)" /></Badge>
+        </PageHeader>
+        <Card>
+            <dl class="kv">
+                <dt>แคมเปญ</dt><dd><a href="promotions/@_d.Coupon.CampaignId">@(_d.Coupon.CampaignName ?? $"#{_d.Coupon.CampaignId}")</a></dd>
+                <dt>ชุด</dt><dd>@_d.Coupon.BatchId</dd>
+                <dt>สมาชิก</dt><dd>@if (_d.Coupon.MemberId is long mid) { <a href="members/@mid">#@mid</a> } else { <span>ไม่ผูก</span> }</dd>
+                <dt>หมดอายุ</dt><dd>@Text.DateTime(_d.Coupon.ExpiresAt)</dd>
+                <dt>ใช้ในรายการ</dt><dd>@(_d.Coupon.RedeemedTransactionId ?? "-")</dd>
+            </dl>
+        </Card>
+        @if (_d.Coupon.Status is CouponStatus.Available)
+        {
+            <PermissionView Permission="@P.CouponWrite">
+                <Card Title="ยกเลิกคูปอง">
+                    <Field Label="เหตุผล" InputId="cr"><input id="cr" @bind="_reason" maxlength="500" /></Field>
+                    <div class="row-actions" style="margin-top:12px">
+                        <AppButton Text="ยกเลิกคูปอง" Variant="ButtonVariant.Danger" Busy="Busy" Disabled="@string.IsNullOrWhiteSpace(_reason)" OnClick="CancelAsync" />
+                    </div>
+                </Card>
+            </PermissionView>
+        }
+        <DataTable TItem="CouponEventDTO" Items="_d.History" Caption="ประวัติคูปอง" PageSize="20">
+            <Columns>
+                <TableColumn TItem="CouponEventDTO" Title="เวลา" Field="e => Text.DateTime(e.At)" />
+                <TableColumn TItem="CouponEventDTO" Title="จาก" Field="e => Text.Coupon(e.FromStatus)" />
+                <TableColumn TItem="CouponEventDTO" Title="เป็น" Field="e => Text.Coupon(e.ToStatus)" />
+                <TableColumn TItem="CouponEventDTO" Title="อ้างอิง" Field="e => e.Reference" />
+                <TableColumn TItem="CouponEventDTO" Title="ผู้ทำ" Field="e => e.Actor" />
+            </Columns>
+        </DataTable>
+    }
+</RequirePermission>
+
+@code {
+    [Parameter] public string Code { get; set; } = string.Empty;
+
+    private CouponDetailDTO? _d;
+    private string? _reason;
+
+    private IReadOnlyList<Breadcrumb> Crumbs => [new("หน้าแรก", ""), new("รหัสคูปอง", "coupons/codes"), new(Code)];
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private Task LoadAsync() => LoadSafeAsync(async () => _d = await Api.GetAsync<CouponDetailDTO>($"api/v1/coupons/{Uri.EscapeDataString(Code)}"));
+
+    private async Task CancelAsync()
+    {
+        if (await SaveSafeAsync(() => Api.PostAsync<CouponDTO>($"api/v1/coupons/{Uri.EscapeDataString(Code)}/cancel", new CancelCouponRequest { Reason = _reason!.Trim() }), "ยกเลิกคูปองแล้ว"))
+        {
+            _reason = null;
+            await LoadAsync();
+        }
+    }
+}

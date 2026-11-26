@@ -1,0 +1,156 @@
+@page "/portal/login"
+@layout PortalLayout
+@inherits MembershipPage
+@implements IDisposable
+@inject IJSRuntime JS
+@inject IOptions<PortalOptions> Portal
+@inject ExternalLoginService External
+@inject AuthSession Session
+@* P1 เข้าสู่ระบบสมาชิกด้วย Google / Facebook (ผ่าน AuthServer) *@
+<PageTitle>เข้าสู่ระบบสมาชิก</PageTitle>
+
+<Card Title="เข้าสู่ระบบสมาชิก" Description="ใช้บัญชี Google หรือ Facebook เข้าสู่ระบบ ครั้งแรกจะให้กรอกข้อมูลสมัครสมาชิกและยืนยันเบอร์โทรด้วย OTP">
+    @if (_error is not null) { <Alert Level="AlertLevel.Danger">@_error</Alert> }
+    @if (_mfa)
+    {
+        <Field Label="รหัสยืนยันตัวตน 2 ขั้น (6 หลัก)" InputId="mfa"><input id="mfa" @bind="_otp" maxlength="8" inputmode="numeric" autocomplete="one-time-code" /></Field>
+        <div class="row-actions" style="margin-top:12px">
+            <AppButton Text="ยืนยัน" Variant="ButtonVariant.Primary" Busy="Busy" Disabled="@string.IsNullOrWhiteSpace(_otp)" OnClick="SubmitOtpAsync" />
+        </div>
+    }
+    else
+    {
+        <div class="portal-login">
+            @if (!string.IsNullOrWhiteSpace(Portal.Value.GoogleClientId))
+            {
+                <div id="google-signin"></div>
+            }
+            @if (!string.IsNullOrWhiteSpace(Portal.Value.FacebookAppId))
+            {
+                <AppButton Text="เข้าสู่ระบบด้วย Facebook" Variant="ButtonVariant.Secondary" Busy="Busy" OnClick="FacebookAsync" />
+            }
+            @if (string.IsNullOrWhiteSpace(Portal.Value.GoogleClientId) && string.IsNullOrWhiteSpace(Portal.Value.FacebookAppId))
+            {
+                <Alert Level="AlertLevel.Warning">ยังไม่ได้ตั้งค่าการเข้าสู่ระบบด้วย Google / Facebook กรุณาติดต่อผู้ดูแลระบบ</Alert>
+            }
+        </div>
+    }
+</Card>
+<p class="muted" style="margin-top:16px">เจ้าหน้าที่? <a href="login">เข้าสู่ระบบเจ้าหน้าที่</a></p>
+
+@code {
+    [SupplyParameterFromQuery] public string? ReturnUrl { get; set; }
+
+    private DotNetObjectReference<PortalLogin>? _ref;
+    private string? _error;
+    private bool _mfa;
+    private string? _otp;
+    private string? _provider;
+    private string? _token;
+
+    protected override async Task OnInitializedAsync()
+    {
+        ClaimsPrincipal user = await Perms.GetUserAsync();
+        if (user.Identity?.IsAuthenticated == true) await GoNextAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || string.IsNullOrWhiteSpace(Portal.Value.GoogleClientId)) return;
+        _ref = DotNetObjectReference.Create(this);
+        try
+        {
+            await JS.InvokeVoidAsync("membershipExternalLogin.renderGoogle", Portal.Value.GoogleClientId, "google-signin", _ref);
+        }
+        catch (JSException)
+        {
+            _error = "โหลดปุ่ม Google ไม่สำเร็จ กรุณาลองใหม่";
+            StateHasChanged();
+        }
+    }
+
+    /// <summary>เรียกจาก JS เมื่อได้ token ของ provider</summary>
+    [JSInvokable]
+    public async Task OnProviderToken(string provider, string token)
+    {
+        _provider = provider;
+        _token = token;
+        await SignInAsync(null);
+        StateHasChanged();
+    }
+
+    private async Task FacebookAsync()
+    {
+        Busy = true;
+        try
+        {
+            string? token = await JS.InvokeAsync<string?>("membershipExternalLogin.loginFacebook", Portal.Value.FacebookAppId);
+            if (token is null) return;
+            _provider = "Facebook";
+            _token = token;
+            await SignInAsync(null);
+        }
+        catch (JSException)
+        {
+            _error = "เชื่อมต่อ Facebook ไม่สำเร็จ กรุณาลองใหม่";
+        }
+        finally
+        {
+            Busy = false;
+        }
+    }
+
+    private Task SubmitOtpAsync() => SignInAsync(_otp?.Trim());
+
+    private async Task SignInAsync(string? otp)
+    {
+        if (_provider is null || _token is null) return;
+        Busy = true;
+        _error = null;
+        AuthResult r = await External.SignInAsync(_provider, _token, otp);
+        Busy = false;
+        if (r.Succeeded)
+        {
+            _token = null;
+            await GoNextAsync();
+            return;
+        }
+
+        _mfa = r.MfaRequired;
+        _error = r.ErrorCode switch
+        {
+            "mfa_required" => null,
+            "invalid_otp" => "รหัสยืนยันไม่ถูกต้อง",
+            "account_locked" => "บัญชีถูกล็อกชั่วคราว กรุณาลองใหม่ภายหลัง",
+            "account_disabled" => "บัญชีถูกระงับ",
+            "provider_not_configured" => "ระบบยังไม่ได้เปิดใช้การเข้าสู่ระบบด้วยบัญชีนี้",
+            "access_denied_risk" => "ระบบตรวจพบความเสี่ยง ไม่อนุญาตให้เข้าสู่ระบบ",
+            "concurrency_limit" or "rate_limited" => "ผู้ใช้งานมากเกินไป กรุณาลองใหม่ภายหลัง",
+            "network_error" => "เชื่อมต่อเซิร์ฟเวอร์ไม่ได้",
+            _ => "เข้าสู่ระบบไม่สำเร็จ",
+        };
+    }
+
+    private async Task GoNextAsync()
+    {
+        try
+        {
+            await Api.GetAsync<MemberDTO>("api/v1/me/member");
+            Nav.NavigateTo(SafeReturn(), replace: true);
+        }
+        catch (ApiException ex) when (ex.Code == "not_registered")
+        {
+            Nav.NavigateTo("portal/register", replace: true);
+        }
+        catch (ApiException ex)
+        {
+            _error = Text.Error(ex);
+            await Session.LogoutAsync();
+        }
+    }
+
+    private string SafeReturn() =>
+        !string.IsNullOrEmpty(ReturnUrl) && ReturnUrl.StartsWith("portal", StringComparison.Ordinal) && !ReturnUrl.Contains("//", StringComparison.Ordinal) ? ReturnUrl : "portal";
+
+    public void Dispose() => _ref?.Dispose();
+}

@@ -1,0 +1,45 @@
+/* ส่วนเสริมเล็กน้อยของระบบสมาชิก — ใช้ token ของ webcommon เท่านั้น (เรียบ ไม่มีเงา/gradient/animation) */
+/* flex-wrap (ไม่ใช้ grid auto-fill) เพื่อไม่ให้ min-content ดันความกว้างของ AppShell เกินจอ */
+.kpi-grid { display: flex; flex-wrap: wrap; gap: var(--space-4, 16px); margin-bottom: var(--space-5, 24px); }
+.kpi-grid > * { flex: 1 1 200px; min-width: 0; }
+.kpi { border: 1px solid var(--color-border, #d0d5dd); border-radius: var(--radius-md, 6px); padding: var(--space-4, 16px); background: var(--color-surface, #fff); }
+.kpi__label { color: var(--color-text-muted, #667085); font-size: .875rem; }
+.kpi__value { font-size: 1.5rem; font-weight: 600; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.kv { display: grid; grid-template-columns: minmax(140px, 220px) 1fr; gap: 6px 16px; margin: 0; }
+.kv dt { color: var(--color-text-muted, #667085); }
+.kv dd { margin: 0; }
+.stack { display: flex; flex-direction: column; gap: var(--space-4, 16px); }
+.row-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.lines-table { width: 100%; border-collapse: collapse; }
+.lines-table th, .lines-table td { border-bottom: 1px solid var(--color-border, #d0d5dd); padding: 6px 8px; text-align: left; }
+.lines-table td.num, .lines-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.portal { max-width: 960px; margin: 0 auto; padding: var(--space-4, 16px); }
+.portal-nav { display: flex; flex-wrap: wrap; gap: 4px 16px; border-bottom: 1px solid var(--color-border, #d0d5dd); padding: 8px 0 12px; margin-bottom: 16px; }
+.portal-nav a { text-decoration: none; color: var(--color-text, #101828); padding: 4px 0; }
+.portal-nav a.active { font-weight: 600; border-bottom: 2px solid var(--color-primary, #1d4ed8); }
+.portal-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 0; }
+.qr { font-family: ui-monospace, monospace; font-size: 1.25rem; letter-spacing: .1em; border: 1px dashed var(--color-border, #d0d5dd); padding: 8px 12px; display: inline-block; }
+.progress-line { height: 8px; background: var(--color-border, #e4e7ec); border-radius: 4px; overflow: hidden; }
+.progress-line > span { display: block; height: 100%; background: var(--color-primary, #1d4ed8); }
+.ext-login { display: flex; flex-direction: column; gap: 12px; align-items: stretch; }
+.pre-json { white-space: pre-wrap; word-break: break-word; font-family: ui-monospace, monospace; font-size: .8125rem; background: var(--color-surface-muted, #f9fafb); border: 1px solid var(--color-border, #d0d5dd); padding: 8px; border-radius: 4px; max-height: 360px; overflow: auto; }
+.simple-table { width: 100%; border-collapse: collapse; }
+.simple-table th, .simple-table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--color-border, #e4e7ec); vertical-align: top; }
+.simple-table th { font-weight: 600; color: var(--color-text-muted, #475467); background: var(--color-surface-muted, #f9fafb); }
+.simple-table td.num, .simple-table th.num { text-align: right; }
+.check-list { display: flex; flex-wrap: wrap; gap: 8px 20px; }
+.check-list label { display: inline-flex; gap: 6px; align-items: center; }
+.rule-group { border-left: 2px solid var(--color-border, #d0d5dd); padding: 8px 0 8px 12px; margin: 8px 0; }
+.rule-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 6px 0; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.9em; white-space: pre-wrap; word-break: break-all; }
+.qr { width: 220px; max-width: 100%; background: #fff; padding: 8px; border: 1px solid var(--color-border, #e4e7ec); }
+.qr svg { width: 100%; height: auto; display: block; }
+.coupon-code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 1.25rem; letter-spacing: 0.08em; }
+.card-grid { display: flex; flex-wrap: wrap; gap: 16px; }
+.card-grid > * { flex: 1 1 260px; min-width: 0; max-width: 420px; }
+.portal-login { display: grid; gap: 12px; justify-items: start; }
+.big-number { font-size: 2rem; font-weight: 600; line-height: 1.2; }
+.compare-grid > * { flex-basis: 320px; }
+.rule-row > select, .rule-row > input { width: auto; flex: 1 1 180px; min-width: 0; }
+.rule-row > label { flex: 0 0 auto; }
+.check-list input[type="checkbox"], .check-list input[type="radio"] { width: auto; }

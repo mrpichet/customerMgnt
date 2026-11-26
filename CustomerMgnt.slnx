@@ -7,6 +7,7 @@
     <Project Path="src/CustomerMgnt.Api/CustomerMgnt.Api.csproj" />
     <Project Path="src/CustomerMgnt.Mcp/CustomerMgnt.Mcp.csproj" />
     <Project Path="src/CustomerMgnt.Web/CustomerMgnt.Web.csproj" />
+    <Project Path="src/CustomerMgnt.Membership.Web/CustomerMgnt.Membership.Web.csproj" />
   </Folder>
   <Folder Name="/samples/">
     <Project Path="samples/CustomerMgnt.AiSample/CustomerMgnt.AiSample.csproj" />
@@ -20,5 +21,8 @@
     <Project Path="external/common/src/Common.Logging/Common.Logging.csproj" />
     <Project Path="external/common/src/Common.AspNetCore/Common.AspNetCore.csproj" />
     <Project Path="external/common/src/Common.AI/Common.AI.csproj" />
+  </Folder>
+  <Folder Name="/external/webcommon/">
+    <Project Path="external/webcommon/src/WebCommon.UI/WebCommon.UI.csproj" />
   </Folder>
 </Solution>

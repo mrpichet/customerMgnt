@@ -1,0 +1,65 @@
+@page "/coupons/batches/new"
+@attribute [Authorize]
+@inherits MembershipPage
+@* A22 สร้างชุดคูปอง (สร้างรหัสเบื้องหลัง) *@
+<PageTitle>สร้างชุดคูปอง</PageTitle>
+
+<RequirePermission Permission="@P.CouponWrite">
+    <FormTemplate Title="สร้างชุดคูปอง" Description="ระบบสร้างรหัสแบบสุ่มที่เดาไม่ได้ในเบื้องหลัง ชุดใหญ่อาจใช้เวลาหลายนาที"
+                  Breadcrumbs="_crumbs" Mode="FormMode.New" Model="_req" SavePermission="@P.CouponWrite" SaveText="สร้าง" OnSave="SaveAsync" OnCancel="Back">
+        <ChildContent>
+            <FormSection Title="ข้อมูลชุด">
+                <FieldGrid Columns="2">
+                    <Field Label="แคมเปญที่ให้สิทธิ์" InputId="cmp">
+                        <select id="cmp" @bind="_req.CampaignId">
+                            <option value="0">-- เลือก --</option>
+                            @foreach (CampaignSummaryDTO c in _campaigns) { <option value="@c.Id">@c.Code @c.Name (@Text.Campaign(c.Status))</option> }
+                        </select>
+                    </Field>
+                    <FormField Label="ชื่อชุด" InputId="nm" For="() => _req.Name" Required><InputText id="nm" @bind-Value="_req.Name" maxlength="200" /></FormField>
+                    <FormField Label="จำนวน" InputId="qty" For="() => _req.Quantity" Required><InputNumber id="qty" @bind-Value="_req.Quantity" min="1" /></FormField>
+                    <FormField Label="Prefix (ไม่เกิน 8 ตัว)" InputId="pf" For="() => _req.CodePrefix"><InputText id="pf" @bind-Value="_req.CodePrefix" maxlength="8" /></FormField>
+                    <FormField Label="ความยาวรหัส (ไม่รวม prefix)" InputId="len" For="() => _req.CodeLength"><InputNumber id="len" @bind-Value="_req.CodeLength" min="6" max="20" /></FormField>
+                    <Field Label="หมดอายุ" InputId="exp"><input id="exp" type="datetime-local" @bind="_expires" /></Field>
+                    <FormField Label="แลกด้วยคะแนน (ว่าง = ไม่เปิดให้แลก)" InputId="pc" For="() => _req.PointsCost"><InputNumber id="pc" @bind-Value="_req.PointsCost" min="1" /></FormField>
+                </FieldGrid>
+                <label class="check-list"><InputCheckbox @bind-Value="_req.PerMember" /> ผูกกับสมาชิกเมื่อแจก (ใช้ได้เฉพาะเจ้าของ)</label>
+            </FormSection>
+        </ChildContent>
+    </FormTemplate>
+</RequirePermission>
+
+@code {
+    private readonly IReadOnlyList<Breadcrumb> _crumbs = [new("หน้าแรก", ""), new("ชุดคูปอง", "coupons"), new("สร้างชุดคูปอง")];
+    private readonly CouponBatchRequest _req = new() { Quantity = 100, PerMember = true };
+    private IReadOnlyList<CampaignSummaryDTO> _campaigns = [];
+    private DateTime? _expires = DateTime.Today.AddMonths(3);
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _campaigns = (await Api.GetAsync<PagedResultDTO<CampaignSummaryDTO>>("api/v1/promotions", new { pageSize = 200 })).Items
+                .Where(c => c.Status is not (CampaignStatus.Ended or CampaignStatus.Cancelled or CampaignStatus.Rejected)).ToList();
+        }
+        catch (ApiException ex)
+        {
+            Toasts.Error(Text.Error(ex));
+        }
+    }
+
+    private async Task<bool> SaveAsync()
+    {
+        if (_req.CampaignId == 0 || _expires is null)
+        {
+            Toasts.Error("กรุณาเลือกแคมเปญและวันหมดอายุ");
+            return false;
+        }
+
+        _req.ExpiresAt = new DateTimeOffset(_expires.Value);
+        _req.CodePrefix = _req.CodePrefix.Trim().ToUpperInvariant();
+        return await SaveSafeAsync(() => Api.PostAsync<JobDTO>("api/v1/coupons/batches", _req), "เริ่มสร้างคูปองแล้ว (ทำงานเบื้องหลัง)", "coupons");
+    }
+
+    private void Back() => Nav.NavigateTo("coupons");
+}

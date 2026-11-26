@@ -1,0 +1,78 @@
+@page "/portal/profile/edit"
+@layout PortalLayout
+@attribute [Authorize]
+@inherits PortalPage
+@* P9 (ต่อ) แก้ไขข้อมูลส่วนตัว — เปลี่ยนเบอร์ต้องยืนยัน OTP ของเบอร์ใหม่ *@
+<PageTitle>แก้ไขข้อมูลส่วนตัว</PageTitle>
+
+@if (LoadError is not null)
+{
+    <ErrorView Title="โหลดข้อมูลไม่สำเร็จ" Message="@LoadError" OnRetry="LoadAsync" />
+}
+else if (_req is null)
+{
+    <LoadingState />
+}
+else if (_challenge is not null)
+{
+    <Card Title="ยืนยันเบอร์ใหม่" Description="@($"กรอกรหัส OTP ที่ส่งไปยังเบอร์ใหม่ (หมดอายุ {Text.DateTime(_challenge.ExpiresAt)}) เบอร์จะเปลี่ยนเมื่อยืนยันสำเร็จ")">
+        <Field Label="รหัส OTP" InputId="otp"><input id="otp" @bind="_otp" maxlength="8" inputmode="numeric" autocomplete="one-time-code" /></Field>
+        <div class="row-actions" style="margin-top:12px">
+            <AppButton Text="ยืนยัน" Variant="ButtonVariant.Primary" Busy="Busy" Disabled="@string.IsNullOrWhiteSpace(_otp)" OnClick="VerifyAsync" />
+            <AppButton Text="ข้ามไปก่อน" Variant="ButtonVariant.Secondary" Href="portal/profile" />
+        </div>
+    </Card>
+}
+else
+{
+    <FormTemplate Title="แก้ไขข้อมูลส่วนตัว" Description="กรอกเฉพาะช่องที่ต้องการเปลี่ยน เบอร์และอีเมลเว้นว่าง = ใช้ค่าเดิม" Mode="FormMode.Edit" Model="_req"
+                  OnSave="SaveAsync" OnCancel="@(() => Nav.NavigateTo("portal/profile"))">
+        <ChildContent>
+            <FormSection Title="ข้อมูล">
+                <FieldGrid Columns="2">
+                    <FormField Label="ชื่อ" InputId="fn" For="() => _req.FirstName"><InputText id="fn" @bind-Value="_req.FirstName" maxlength="100" /></FormField>
+                    <FormField Label="นามสกุล" InputId="ln" For="() => _req.LastName"><InputText id="ln" @bind-Value="_req.LastName" maxlength="100" /></FormField>
+                    <FormField Label="เบอร์ใหม่" InputId="ph" For="() => _req.Phone" Hint="@($"ปัจจุบัน {_current}")"><InputText id="ph" type="tel" @bind-Value="_req.Phone" maxlength="20" /></FormField>
+                    <FormField Label="อีเมลใหม่" InputId="em" For="() => _req.Email"><InputText id="em" type="email" @bind-Value="_req.Email" maxlength="254" /></FormField>
+                    <Field Label="วันเกิด" InputId="bd"><input id="bd" type="date" @bind="_birth" /></Field>
+                    <Field Label="จังหวัด" InputId="pv"><input id="pv" @bind="_req.Province" maxlength="100" /></Field>
+                </FieldGrid>
+            </FormSection>
+        </ChildContent>
+    </FormTemplate>
+}
+
+@code {
+    private UpdateMemberRequest? _req;
+    private OtpChallengeDTO? _challenge;
+    private DateTime? _birth;
+    private string? _current;
+    private string? _otp;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private Task LoadAsync() => PortalLoadAsync(async () =>
+    {
+        MemberDTO m = await Api.GetAsync<MemberDTO>("api/v1/me/member");
+        _current = m.PhoneMasked;
+        _req = new UpdateMemberRequest { Version = m.Version, FirstName = m.FirstName, LastName = m.LastName, Province = m.Province, Gender = m.Gender };
+    });
+
+    private async Task<bool> SaveAsync()
+    {
+        _req!.Phone = Clean(_req.Phone);
+        _req.Email = Clean(_req.Email);
+        _req.Province = Clean(_req.Province);
+        _req.BirthDate = _birth is null ? null : DateOnly.FromDateTime(_birth.Value);
+        UpdateMemberResultDTO? r = null;
+        bool ok = await SaveSafeAsync(async () => r = await Api.PutAsync<UpdateMemberResultDTO>("api/v1/me/member", _req), "บันทึกแล้ว");
+        if (!ok || r is null) return false;
+        if (r.Challenge is not null) _challenge = r.Challenge;
+        else Nav.NavigateTo("portal/profile");
+        return true;
+    }
+
+    private Task VerifyAsync() => SaveSafeAsync(
+        () => Api.PostAsync<MemberDTO>("api/v1/me/member/phone/verify", new VerifyOtpRequest { ChallengeId = _challenge!.ChallengeId, Code = _otp!.Trim() }),
+        "เปลี่ยนเบอร์โทรแล้ว", "portal/profile");
+}

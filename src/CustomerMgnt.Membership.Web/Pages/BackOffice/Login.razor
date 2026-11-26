@@ -1,0 +1,20 @@
+@page "/login"
+@layout LoginLayout
+@* A1 เข้าสู่ระบบเจ้าหน้าที่ (AuthServer + MFA) *@
+<PageTitle>เข้าสู่ระบบ · @App.Value.Name</PageTitle>
+
+<LoginForm ReturnUrl="@ReturnUrl" />
+<p class="muted" style="margin-top:16px">สมาชิก? <a href="portal/login">เข้าสู่ระบบสมาชิก</a></p>
+
+@code {
+    [SupplyParameterFromQuery] public string? ReturnUrl { get; set; }
+    [Inject] private IOptions<AppInfoOptions> App { get; set; } = default!;
+    [Inject] private PermissionService Permissions { get; set; } = default!;
+    [Inject] private NavigationManager Nav { get; set; } = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        ClaimsPrincipal user = await Permissions.GetUserAsync();
+        if (user.Identity?.IsAuthenticated == true) Nav.NavigateTo("", replace: true);
+    }
+}

@@ -1,0 +1,9 @@
+<Project>
+  <!--
+    submodule ใน external/ ที่ไม่มี Directory.Packages.props ของตัวเอง (เช่น webcommon) ระบุ Version ใน PackageReference เอง
+    จึงปิด Central Package Management ของ CustomerMgnt สำหรับโปรเจกต์เหล่านั้น (external/common มีไฟล์ของตัวเองอยู่แล้ว)
+  -->
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+</Project>

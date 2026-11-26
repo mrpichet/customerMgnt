@@ -258,6 +258,11 @@ public sealed class PortalService
 
     // ------------------------------------------------------------------ consent / PDPA
 
+    /// <summary>ฉบับความยินยอมปัจจุบัน (ใช้ตอนสมัคร — ยังไม่ต้องเป็นสมาชิก)</summary>
+    /// <param name="ct">ยกเลิก</param>
+    /// <returns>ฉบับที่เผยแพร่ล่าสุด หรือ null</returns>
+    public Task<ConsentVersionDTO?> GetCurrentConsentAsync(CancellationToken ct) => _memberService.CurrentConsentAsync(ct);
+
     /// <summary>ความยินยอมของฉัน + ฉบับปัจจุบัน</summary>
     public async Task<MyConsentsDTO> GetConsentsAsync(MembershipCaller caller, CancellationToken ct)
     {

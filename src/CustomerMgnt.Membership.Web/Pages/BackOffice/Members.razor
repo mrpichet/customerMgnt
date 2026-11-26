@@ -1,0 +1,111 @@
+@page "/members"
+@attribute [Authorize]
+@* A3 รายการสมาชิก *@
+<PageTitle>รายการสมาชิก</PageTitle>
+
+<RequirePermission Permission="@P.MemberRead">
+    <ListTemplate TItem="MemberSummaryDTO" Title="รายการสมาชิก" Description="ค้นหาด้วยเลขสมาชิก ชื่อ เบอร์ หรืออีเมล (เบอร์/อีเมลค้นแบบตรงทั้งค่า) ข้อมูลส่วนบุคคลแสดงแบบปิดบางส่วน"
+                  Breadcrumbs="_crumbs" Permissions="_perms" Items="_items" Loading="_loading" ErrorMessage="@_error" OnRetry="LoadAsync"
+                  CriteriaActiveCount="ActiveCount" OnSearch="LoadAsync" OnClear="ClearAsync"
+                  NewText="สมัครสมาชิกใหม่" OnNew="@(() => Nav.NavigateTo("members/new"))"
+                  OnView="@(m => Nav.NavigateTo($"members/{m.Id}"))" OnEdit="@(m => Nav.NavigateTo($"members/{m.Id}/edit"))"
+                  ItemName="@(m => $"{m.MemberNo} {m.DisplayName}")" PageSize="20"
+                  ExportColumns="_export" ExportTitle="รายการสมาชิก">
+        <Criteria>
+            <Field Label="ข้อความ (ชื่อ/เลขสมาชิก)" InputId="c-text"><input id="c-text" @bind="_c.Text" maxlength="100" /></Field>
+            <Field Label="เบอร์โทร" InputId="c-phone"><input id="c-phone" type="tel" @bind="_c.Phone" maxlength="20" /></Field>
+            <Field Label="อีเมล" InputId="c-email"><input id="c-email" type="email" @bind="_c.Email" maxlength="254" /></Field>
+            <Field Label="สถานะ" InputId="c-status">
+                <select id="c-status" @bind="_c.Status">
+                    <option value="">ทั้งหมด</option>
+                    @foreach (MemberStatus s in Enum.GetValues<MemberStatus>()) { <option value="@s">@Text.Member(s)</option> }
+                </select>
+            </Field>
+            <Field Label="Tier" InputId="c-tier">
+                <select id="c-tier" @bind="_c.TierCode">
+                    <option value="">ทั้งหมด</option>
+                    @foreach (TierDTO t in _tiers) { <option value="@t.Code">@t.Name</option> }
+                </select>
+            </Field>
+            <Field Label="Segment" InputId="c-seg">
+                <select id="c-seg" @bind="_c.SegmentId">
+                    <option value="">ทั้งหมด</option>
+                    @foreach (SegmentDTO s in _segments) { <option value="@s.Id">@s.Name</option> }
+                </select>
+            </Field>
+        </Criteria>
+        <Columns>
+            <TableColumn TItem="MemberSummaryDTO" Title="เลขสมาชิก" Field="m => m.MemberNo" Sortable />
+            <TableColumn TItem="MemberSummaryDTO" Title="ชื่อ" Field="m => m.DisplayName" Sortable IsPrimary />
+            <TableColumn TItem="MemberSummaryDTO" Title="เบอร์โทร" Field="m => m.PhoneMasked" HideOnMobile />
+            <TableColumn TItem="MemberSummaryDTO" Title="Tier" Field="m => m.TierCode" Sortable />
+            <TableColumn TItem="MemberSummaryDTO" Title="คะแนน" Field="m => m.PointsAvailable" Format="N0" Align="ColumnAlign.End" Sortable />
+            <TableColumn TItem="MemberSummaryDTO" Title="สถานะ" SortBy="m => m.Status">
+                <Template><Badge Text="@Text.Member(context.Status)" Level="@Text.Level(context.Status)" /></Template>
+            </TableColumn>
+            <TableColumn TItem="MemberSummaryDTO" Title="สมัครเมื่อ" Field="m => Text.Date(m.CreatedAt)" SortBy="m => m.CreatedAt" Sortable HideOnMobile />
+        </Columns>
+    </ListTemplate>
+    @if (_total > (_items?.Count ?? 0))
+    {
+        <p class="muted">แสดง @Text.Int(_items?.Count ?? 0) จาก @Text.Int(_total) รายการ — ระบุเงื่อนไขเพิ่มเพื่อให้แคบลง</p>
+    }
+</RequirePermission>
+
+@code {
+    [Inject] private MembershipApiClient Api { get; set; } = default!;
+    [Inject] private NavigationManager Nav { get; set; } = default!;
+    [Inject] private StatusService Status { get; set; } = default!;
+
+    private readonly IReadOnlyList<Breadcrumb> _crumbs = [new("หน้าแรก", ""), new("รายการสมาชิก")];
+    private readonly ListPermissions _perms = new() { Create = P.MemberWrite, View = P.MemberRead, Edit = P.MemberWrite, Export = P.MemberExport };
+    private readonly IReadOnlyList<ExportColumn<MemberSummaryDTO>> _export =
+    [
+        new("เลขสมาชิก", m => m.MemberNo), new("ชื่อ", m => m.DisplayName), new("เบอร์โทร", m => m.PhoneMasked), new("Tier", m => m.TierCode),
+        new("คะแนน", m => m.PointsAvailable), new("สถานะ", m => Text.Member(m.Status)), new("รหัสลูกค้า", m => m.CustomerCode), new("สมัครเมื่อ", m => m.CreatedAt),
+    ];
+
+    private MemberSearchCriteria _c = new() { PageSize = 200 };
+    private IReadOnlyList<MemberSummaryDTO>? _items;
+    private IReadOnlyList<TierDTO> _tiers = [];
+    private IReadOnlyList<SegmentDTO> _segments = [];
+    private long _total;
+    private bool _loading;
+    private string? _error;
+
+    private int ActiveCount => new object?[] { _c.Text, _c.Phone, _c.Email, _c.Status, _c.TierCode, _c.SegmentId }.Count(x => x is not null && x is not "");
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { _tiers = await Api.GetAsync<List<TierDTO>>("api/v1/tiers"); } catch (ApiException) { }
+        try { _segments = await Api.GetAsync<List<SegmentDTO>>("api/v1/segments"); } catch (ApiException) { }
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            PagedResultDTO<MemberSummaryDTO> r = await Api.GetAsync<PagedResultDTO<MemberSummaryDTO>>("api/v1/members", _c);
+            _items = r.Items;
+            _total = r.Total;
+            Status.Set($"พบสมาชิก {r.Total:N0} รายการ");
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _error = Text.Error(ex);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private Task ClearAsync()
+    {
+        _c = new MemberSearchCriteria { PageSize = 200 };
+        return LoadAsync();
+    }
+}

@@ -106,10 +106,42 @@ if (exportCatalog)
 // UiSecurityHeaders ต้องอยู่ก่อน UseCommonWebDefaults: OnStarting callback ทำงานแบบ LIFO → ของเราทำงานหลังสุดและกำหนด CSP ของหน้า UI ได้
 // ใช้ WebRootFileProvider (รวม static web assets ของโปรเจกต์ UI ตอน Development) แทนการเช็กไฟล์บนดิสก์
 bool hasUi = app.Environment.WebRootFileProvider.GetFileInfo("index.html").Exists;
-if (hasUi)
+bool hasMembershipUi = app.Environment.WebRootFileProvider.GetFileInfo("membership/index.html").Exists;
+if (hasUi || hasMembershipUi)
 {
     app.UseMiddleware<UiSecurityHeadersMiddleware>();
+}
+
+if (hasMembershipUi)
+{
+    // หน้าจอระบบสมาชิก (Back Office + Portal) ที่ /membership/ — ต้องมาก่อน UseBlazorFrameworkFiles() ของ UI หลัก
+    // /membership → /membership/ (base href) และ /membership/_content/* → /_content/* (ไฟล์ของ RCL เช่น webcommon อยู่ที่ราก)
+    app.Use((ctx, next) =>
+    {
+        PathString path = ctx.Request.Path;
+        if (path.Value is "/membership")
+        {
+            ctx.Response.Redirect("/membership/");
+            return Task.CompletedTask;
+        }
+
+        if (path.StartsWithSegments("/membership/_content", out PathString rest))
+        {
+            ctx.Request.Path = new PathString("/_content").Add(rest);
+        }
+
+        return next(ctx);
+    });
+    app.UseBlazorFrameworkFiles("/membership");
+}
+
+if (hasUi)
+{
     app.UseBlazorFrameworkFiles();
+}
+
+if (hasUi || hasMembershipUi)
+{
     app.UseStaticFiles();
 }
 
@@ -123,6 +155,12 @@ if (app.Environment.IsDevelopment())
 
 app.MapControllers();
 app.MapMcp("/mcp").RequireAuthorization(PermissionPolicyProvider.Prefix + Permissions.AnalyticsRead);
+if (hasMembershipUi)
+{
+    // SPA fallback ของระบบสมาชิก (route เฉพาะกว่า fallback ของ UI หลัก จึงชนะ)
+    app.MapFallbackToFile("membership/{*path:nonfile}", "membership/index.html").AllowAnonymous();
+}
+
 if (hasUi)
 {
     // SPA fallback เฉพาะเส้นทางที่ไม่ใช่ API (path ของ API ที่ไม่มีจริงต้องได้ 404 ไม่ใช่หน้า HTML)
