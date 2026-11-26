@@ -9,6 +9,7 @@ using System.Text.Json.Serialization;
 using Common.AspNetCore.Authentication;
 using Common.AspNetCore.Catalog;
 using Common.AspNetCore.Hosting;
+using Common.AspNetCore.Versioning;
 using CustomerMgnt.AI;
 using CustomerMgnt.Api.Controllers;
 using CustomerMgnt.Api.Infrastructure;
@@ -28,7 +29,15 @@ bool exportCatalog = args.Contains("--export-catalog");
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
 // ---- Step 1: ค่าเริ่มต้นของ Common (secrets, Kestrel hardening, LogServer, ProblemDetails, rate limit, health) ----
+// Membership API ลงทะเบียนก่อน: exception handler ของระบบสมาชิกต้องทำงานก่อน CommonExceptionHandler
+builder.Services.AddMembershipApi();
 builder.AddCommonWebDefaults(maxRequestBodyBytes: 16 * 1024 * 1024);
+
+// OTP แบบรหัสคงที่ใช้ได้เฉพาะ Development (กันลืมค่าไว้ใน production)
+if (!builder.Environment.IsDevelopment() && !string.IsNullOrEmpty(builder.Configuration["Membership:OtpFixedCodeForDevelopment"]))
+{
+    throw new InvalidOperationException("Membership:OtpFixedCodeForDevelopment is allowed in Development only.");
+}
 
 // ---- Step 2: ฐานข้อมูล — in-memory อนุญาตเฉพาะ Development / export catalog (กัน deploy ผิดพลาดแล้วข้อมูลหาย) ----
 bool allowInMemory = builder.Environment.IsDevelopment() || exportCatalog;
@@ -71,6 +80,7 @@ builder.Services.AddAuthServerAuthentication(builder.Configuration);
 
 // ---- Step 7: MVC controllers, JSON (enum เป็น string เหมือนระบบอื่นใน ecosystem), OpenAPI ----
 builder.Services.AddControllers().AddJsonOptions(o => o.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
+builder.Services.AddCommonApiVersioning(builder.Configuration); // api/x มี api/v1/x ด้วย; route ของระบบสมาชิกเป็น api/v1 ตั้งแต่แรก
 builder.Services.AddOpenApi();
 
 // ---- Step 8: AI tools (Microsoft.Extensions.AI AIFunction) → MCP over HTTP (/mcp) -------
@@ -103,7 +113,9 @@ if (hasUi)
     app.UseStaticFiles();
 }
 
+app.UseMembershipRequestId();
 app.UseCommonWebDefaults();
+app.UseCommonApiVersioning();
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi().AllowAnonymous(); // /openapi/v1.json
