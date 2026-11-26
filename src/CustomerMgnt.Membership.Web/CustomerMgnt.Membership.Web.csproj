@@ -20,6 +20,8 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" />
     <PackageReference Include="QRCoder" />
+    <!-- DevExpress ใช้เฉพาะกราฟของหน้าวิเคราะห์ (DxChart / DxPieChart) — license มาจาก DevExpress_License ตอน build ห้าม commit -->
+    <PackageReference Include="DevExpress.Blazor" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" PrivateAssets="all" />
   </ItemGroup>
 </Project>

@@ -1,0 +1,69 @@
+@page "/analytics/promotions"
+@attribute [Authorize]
+@inherits AnaPage
+@* AN-03 Dashboard โปรโมชัน (ANA-DASH-003) — เฉพาะแคมเปญที่ผู้ใช้เห็นได้ *@
+<PageTitle>ภาพรวมโปรโมชัน</PageTitle>
+
+<RequirePermission Permission="@A.PromotionRead">
+    <PageHeader Title="ภาพรวมโปรโมชัน" Description="แคมเปญที่คุณมีสิทธิ์ดู: สถานะ ผลรวม แคมเปญเด่น และการใช้งบประมาณ" Breadcrumbs="_crumbs">
+        <Actions><ExportButton Source="ExportSource.Dashboard" Page="AN-03" Filter="Filter" /></Actions>
+    </PageHeader>
+    <AnaFilterBar PageCode="AN-03" Value="Filter" OnApply="f => Apply(f)" ShowCampaign />
+    @if (LoadError is not null)
+    {
+        <ErrorView Title="โหลดข้อมูลไม่สำเร็จ" Message="@LoadError" OnRetry="LoadAsync" />
+    }
+    else if (_r is null)
+    {
+        <LoadingState />
+    }
+    else
+    {
+        PromotionDashboardDTO d = _r.Data;
+        <AnaBanner Meta="Meta(_r)" />
+        <KpiGrid Kpis="d.Kpis" OnDrill="Drill" />
+        <div class="ana-two">
+            <Card Title="แคมเปญตามสถานะ"><KeyValueChart Items="d.CampaignsByStatus" Pie /></Card>
+            <Card Title="การใช้งบประมาณ">
+                @if (d.BudgetUsage.Count == 0) { <EmptyState Title="ไม่มีแคมเปญที่กำหนดงบ" /> }
+                else
+                {
+                    <table class="simple-table">
+                        <thead><tr><th>แคมเปญ</th><th class="num">งบ</th><th class="num">ใช้ไป</th><th>%</th></tr></thead>
+                        <tbody>
+                            @foreach (BudgetUsageDTO b in d.BudgetUsage)
+                            {
+                                <tr>
+                                    <td><a href="analytics/campaigns/@b.CampaignCode?@Q()">@b.CampaignCode</a></td>
+                                    <td class="num">@AnaText.Num(b.Budget)</td><td class="num">@AnaText.Num(b.Used)</td>
+                                    <td><div class="progress-line" title="@AnaText.Pct(b.UsedPct)"><span style="width:@(Math.Min(100, b.UsedPct).ToString(System.Globalization.CultureInfo.InvariantCulture))%"></span></div> @AnaText.Pct(b.UsedPct)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </Card>
+        </div>
+        <Card Title="แคมเปญยอดขายสูงสุด">
+            <table class="simple-table">
+                <thead><tr><th>แคมเปญ</th><th>สถานะ</th><th class="num">ผู้เข้าร่วม</th><th class="num">ยอดขายแคมเปญ</th></tr></thead>
+                <tbody>
+                    @foreach (TopCampaignDTO c in d.TopCampaigns)
+                    {
+                        <tr><td><a href="analytics/campaigns/@c.CampaignCode?@Q()">@c.CampaignCode — @c.Name</a></td><td>@Text.Campaign(c.Status)</td><td class="num">@AnaText.Int(c.Participants)</td><td class="num">@AnaText.Num(c.CampaignSales)</td></tr>
+                    }
+                    @if (d.TopCampaigns.Count == 0) { <tr><td colspan="4" class="muted">ไม่มีข้อมูล</td></tr> }
+                </tbody>
+            </table>
+        </Card>
+    }
+</RequirePermission>
+
+@code {
+    private readonly IReadOnlyList<Breadcrumb> _crumbs = [new("หน้าแรก", ""), new("วิเคราะห์ข้อมูล", "analytics"), new("ภาพรวมโปรโมชัน")];
+    private AnalyticsResultDTO<PromotionDashboardDTO>? _r;
+
+    protected override string PageCode => "AN-03";
+
+    protected override Task LoadAsync() => LoadSafeAsync(async () => _r = await Api.GetAsync<AnalyticsResultDTO<PromotionDashboardDTO>>($"api/v1/analytics/dashboards/promotions?{Q()}"));
+}

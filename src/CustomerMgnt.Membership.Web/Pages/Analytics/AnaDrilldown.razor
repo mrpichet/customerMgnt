@@ -1,0 +1,100 @@
+@page "/analytics/drilldown"
+@attribute [Authorize]
+@inherits AnaPage
+@* AN-09 Drill-down (ANA-FILTER-002) — รายชื่อสมาชิกต้องมี ana.member.detail; บันทึกเป็น Segment / ส่งออกได้ *@
+<PageTitle>รายละเอียดตัวเลข</PageTitle>
+
+<PageHeader Title="@($"รายละเอียด: {AnaText.Label(_metric ?? "")}")" Description="รายการที่ประกอบเป็นตัวเลขนี้ ตามตัวกรองและขอบเขตของคุณ (ข้อมูลส่วนบุคคลแสดงแบบปิดบางส่วน)" Breadcrumbs="Crumbs">
+    <Actions>
+        <ExportButton Source="ExportSource.Drilldown" Metric="@_metric" Level="_level" Filter="Filter" />
+    </Actions>
+</PageHeader>
+<Card>
+    <FieldGrid Columns="3">
+        <Field Label="ระดับ" InputId="lv">
+            <select id="lv" value="@_level" @onchange="e => Go(e.Value?.ToString(), _sort, 1)">
+                <option value="Member">สมาชิก</option><option value="Transaction">รายการขาย</option>
+            </select>
+        </Field>
+        <Field Label="เรียงตาม" InputId="so">
+            <select id="so" value="@(_sort ?? "")" @onchange="e => Go(_level.ToString(), e.Value?.ToString(), 1)">
+                <option value="">ค่าเริ่มต้น</option>
+                @foreach (ColumnDTO c in _r?.Data.Columns ?? []) { <option value="@($"-{c.Key}")">@c.Label (มาก → น้อย)</option><option value="@c.Key">@c.Label (น้อย → มาก)</option> }
+            </select>
+        </Field>
+    </FieldGrid>
+</Card>
+@if (LoadError is not null) { <ErrorView Title="โหลดข้อมูลไม่สำเร็จ" Message="@LoadError" OnRetry="LoadAsync" /> }
+else if (_r is null) { <LoadingState /> }
+else
+{
+    DrilldownPageDTO d = _r.Data;
+    <AnaBanner Meta="Meta(_r)" />
+    <Card Title="@($"ทั้งหมด {AnaText.Int(d.Total)} รายการ")">
+        <div style="overflow-x:auto">
+            <table class="simple-table">
+                <thead><tr>@foreach (ColumnDTO c in d.Columns) { <th class="@(IsNum(c) ? "num" : null)">@c.Label</th> }</tr></thead>
+                <tbody>
+                    @foreach (Dictionary<string, object?> row in d.Rows)
+                    {
+                        <tr>@foreach (ColumnDTO c in d.Columns) { <td class="@(IsNum(c) ? "num" : null)">@AnaText.Cell(row.GetValueOrDefault(c.Key), c.Type)</td> }</tr>
+                    }
+                    @if (d.Rows.Count == 0) { <tr><td colspan="@Math.Max(1, d.Columns.Count)" class="muted">ไม่มีข้อมูล</td></tr> }
+                </tbody>
+            </table>
+        </div>
+        <div class="row-actions">
+            <AppButton Text="ก่อนหน้า" Disabled="@(d.Page <= 1)" OnClick="() => Go(_level.ToString(), _sort, d.Page - 1)" />
+            <span class="muted">หน้า @d.Page / @Math.Max(1, (d.Total + d.PageSize - 1) / d.PageSize)</span>
+            <AppButton Text="ถัดไป" Disabled="@((long)d.Page * d.PageSize >= d.Total)" OnClick="() => Go(_level.ToString(), _sort, d.Page + 1)" />
+        </div>
+    </Card>
+    @if (_level == DrillLevel.Member)
+    {
+        <PermissionView Permission="segment.write">
+            <Card Title="บันทึกรายชื่อนี้เป็น Segment (snapshot)">
+                <Field Label="ชื่อ Segment" InputId="sn"><input id="sn" @bind="_name" maxlength="200" /></Field>
+                <AppButton Text="บันทึก Segment" Variant="ButtonVariant.Primary" Busy="Busy" Disabled="@string.IsNullOrWhiteSpace(_name)" OnClick="SaveAsync" />
+            </Card>
+        </PermissionView>
+    }
+}
+
+@code {
+    private AnalyticsResultDTO<DrilldownPageDTO>? _r;
+    private string? _metric, _sort, _back, _name;
+    private DrillLevel _level = DrillLevel.Member;
+    private int _page = 1;
+
+    protected override string PageCode => "AN-09";
+
+    private IReadOnlyList<Breadcrumb> Crumbs => [new("หน้าแรก", ""), new("วิเคราะห์ข้อมูล", "analytics"), .. _back is null ? Array.Empty<Breadcrumb>() : [new Breadcrumb("หน้าที่มา", $"{_back}?{Q()}")], new("รายละเอียด")];
+
+    private static bool IsNum(ColumnDTO c) => c.Type is "Count" or "Baht" or "Decimal" or "Percent" or "Points";
+
+    protected override Task LoadAsync()
+    {
+        _metric = Param("metric");
+        _sort = Param("sort");
+        _back = Param("back");
+        _level = Enum.TryParse(Param("level"), out DrillLevel l) ? l : DrillLevel.Member;
+        _page = int.TryParse(Param("page"), out int p) ? Math.Max(1, p) : 1;
+        if (string.IsNullOrEmpty(_metric))
+        {
+            LoadError = "ไม่ได้ระบุตัวเลขที่ต้องการดูรายละเอียด";
+            return Task.CompletedTask;
+        }
+
+        return LoadSafeAsync(async () => _r = await Api.GetAsync<AnalyticsResultDTO<DrilldownPageDTO>>(
+            $"api/v1/analytics/drilldown?{Q(("metric", _metric), ("level", _level), ("sort", _sort), ("page", _page), ("pageSize", 50))}"));
+    }
+
+    private void Go(string? level, string? sort, int page) =>
+        Apply(Filter, ("metric", _metric), ("level", level), ("sort", string.IsNullOrEmpty(sort) ? null : sort), ("page", page), ("back", _back));
+
+    private Task SaveAsync() => SaveSafeAsync(async () =>
+    {
+        SegmentSnapshotResultDTO r = await Api.PostAsync<SegmentSnapshotResultDTO>("api/v1/analytics/drilldown/segments", new DrilldownSegmentRequest { Name = _name!.Trim(), Metric = _metric!, Filter = Filter });
+        Toasts.Info($"Segment มีสมาชิก {r.MemberCount:N0} คน");
+    }, "บันทึก Segment แล้ว");
+}

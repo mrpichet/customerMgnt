@@ -11,6 +11,9 @@
     <link rel="icon" type="image/svg+xml" href="img/favicon.svg" />
     <link rel="stylesheet" href="_content/WebCommon.UI/css/tokens.css" />
     <link rel="stylesheet" href="_content/WebCommon.UI/css/base.css" />
+    <!-- DevExpress (เฉพาะกราฟ): core styles เท่านั้น ไม่ใช้ global theme เพื่อไม่ให้ทับ style ของ webcommon -->
+    <link rel="stylesheet" href="_content/DevExpress.Blazor.Themes.Fluent/core.min.css?v26.1.6.0" />
+    <link rel="stylesheet" href="_content/DevExpress.Blazor.Themes.Fluent/accents/blue.min.css?v26.1.6.0" />
     <link rel="stylesheet" href="css/membership.css" />
     <link rel="stylesheet" href="CustomerMgnt.Membership.Web.styles.css" />
 </head>
@@ -30,6 +33,11 @@
         <button type="button" class="dismiss" aria-label="ปิดข้อความ">✕</button>
     </div>
     <script src="js/external-login.js"></script>
+    <!-- DevExpress scripts: ตรงกับ DxResourceManager.RegisterScripts() (แก้เลขเวอร์ชันเมื่ออัปเกรด DevExpress.Blazor) -->
+    <script type="text/javascript" src="./_content/DevExpress.Blazor.Resources/js/preload-script.js?v=26.1.6.0"></script>
+    <dxbl-resource-script src="./_content/DevExpress.Blazor/modules/dx-blazor-all.js?v=26.1.6.0"></dxbl-resource-script>
+    <dxbl-resource-script src="./_content/DevExpress.Blazor.Resources/js/devextreme/dx.all.js?v=26.1.6.0"></dxbl-resource-script>
+    <script type="module" src="./_content/DevExpress.Blazor.Resources/js/import-scripts.js?v=26.1.6.0"></script>
     <script src="_framework/blazor.webassembly.js"></script>
 </body>
 </html>

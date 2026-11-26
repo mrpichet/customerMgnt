@@ -1,0 +1,36 @@
+@* แถบลิงก์ย่อยของกลุ่มหน้า — คงตัวกรองใน URL เมื่อสลับหน้า *@
+@inject NavigationManager Nav
+<nav class="ana-sub" aria-label="@Label">
+    @foreach ((string href, string text) in Links)
+    {
+        <a href="@Href(href)" class="@(Current == href ? "active" : null)" aria-current="@(Current == href ? "page" : null)">@text</a>
+    }
+</nav>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<(string Href, string Text)> Links { get; set; } = [];
+    [Parameter] public string Label { get; set; } = "หน้าย่อย";
+
+    private string Current
+    {
+        get
+        {
+            string rel = Nav.ToBaseRelativePath(Nav.Uri);
+            int q = rel.IndexOf('?', StringComparison.Ordinal);
+            return q < 0 ? rel : rel[..q];
+        }
+    }
+
+    private string Href(string path)
+    {
+        int q = Nav.Uri.IndexOf('?', StringComparison.Ordinal);
+        return q < 0 ? path : path + Nav.Uri[q..];
+    }
+
+    /// <summary>หน้าวิเคราะห์สมาชิก AN-04..AN-08, AN-15</summary>
+    public static readonly IReadOnlyList<(string, string)> MemberPages =
+    [
+        ("analytics/members/activity", "กลุ่มการใช้งาน"), ("analytics/members/rfm", "RFM"), ("analytics/members/cohorts", "Cohort"),
+        ("analytics/members/repeat", "การกลับมาซื้อ"), ("analytics/members/value", "มูลค่าการซื้อ"), ("analytics/members/sources", "แหล่งที่มา"),
+    ];
+}

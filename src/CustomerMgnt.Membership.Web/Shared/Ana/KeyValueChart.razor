@@ -1,0 +1,32 @@
+@using DevExpress.Blazor
+@* กราฟแท่งหรือวงกลมจากรายการ key/value *@
+@if (Items is null || Items.Count == 0)
+{
+    <EmptyState Title="ไม่มีข้อมูล" />
+}
+else if (Pie)
+{
+    <DxPieChart Data="Items" Height="@Height" CssClass="ana-chart">
+        <DxPieChartSeries T="KeyValueDTO" TArgument="string" TValue="decimal" ArgumentField="k => k.Label ?? k.Key" ValueField="k => k.Value">
+            <DxChartSeriesLabel Visible="true" />
+        </DxPieChartSeries>
+        <DxChartLegend Position="RelativePosition.Outside" HorizontalAlignment="HorizontalAlignment.Right" />
+        <DxChartTooltip Enabled="true" />
+    </DxPieChart>
+}
+else
+{
+    <DxChart Data="Items" Height="@Height" CssClass="ana-chart" Rotated="@Horizontal">
+        <DxChartBarSeries Name="@Name" T="KeyValueDTO" TArgument="string" TValue="decimal" ArgumentField="k => k.Label ?? k.Key" ValueField="k => k.Value" />
+        <DxChartLegend Visible="false" />
+        <DxChartTooltip Enabled="true" />
+    </DxChart>
+}
+
+@code {
+    [Parameter] public IReadOnlyList<KeyValueDTO>? Items { get; set; }
+    [Parameter] public bool Pie { get; set; }
+    [Parameter] public bool Horizontal { get; set; }
+    [Parameter] public string Name { get; set; } = "ค่า";
+    [Parameter] public string Height { get; set; } = "280px";
+}

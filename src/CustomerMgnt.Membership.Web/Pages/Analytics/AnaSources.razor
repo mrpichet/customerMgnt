@@ -1,0 +1,52 @@
+@page "/analytics/members/sources"
+@attribute [Authorize]
+@inherits AnaPage
+@* AN-15 แหล่งที่มาสมาชิก (ANA-CHANNEL-001) *@
+<PageTitle>แหล่งที่มาสมาชิก</PageTitle>
+
+<RequirePermission Permission="@A.MemberRead">
+    <PageHeader Title="วิเคราะห์สมาชิก: แหล่งที่มา" Description="สมาชิกใหม่ตามช่องทางสมัครและแคมเปญที่พามา พร้อมคุณภาพ (ยืนยันตัวตน ซื้อครั้งแรก ซื้อซ้ำ)" Breadcrumbs="_crumbs" />
+    <AnaSubNav Links="AnaSubNav.MemberPages" Label="วิเคราะห์สมาชิก" />
+    <AnaFilterBar PageCode="AN-15" Value="Filter" OnApply="f => Apply(f)" ShowMember ShowCompare="false" ShowProduct="false" />
+    @if (LoadError is not null) { <ErrorView Title="โหลดข้อมูลไม่สำเร็จ" Message="@LoadError" OnRetry="LoadAsync" /> }
+    else if (_r is null) { <LoadingState /> }
+    else
+    {
+        <AnaBanner Meta="Meta(_r)" />
+        <Card Title="ตามช่องทางสมัคร">
+            <table class="simple-table">
+                <thead><tr><th>ช่องทาง</th><th class="num">สมาชิกใหม่</th><th class="num">ยืนยันตัวตน</th><th class="num">ซื้อครั้งแรก</th><th class="num">ซื้อซ้ำ</th></tr></thead>
+                <tbody>
+                    @foreach (RegisteredChannelSourceDTO r in _r.Data.ByRegisteredChannel)
+                    {
+                        <tr><td>@r.Key</td><td class="num">@AnaText.Int(r.NewMembers)</td><td class="num">@AnaText.Pct(r.VerifiedRate)</td><td class="num">@AnaText.Pct(r.FirstPurchaseRate)</td><td class="num">@AnaText.Pct(r.RepeatRate)</td></tr>
+                    }
+                </tbody>
+            </table>
+        </Card>
+        <Card Title="ตามแคมเปญที่พามาสมัคร">
+            <table class="simple-table">
+                <thead><tr><th>แคมเปญ</th><th class="num">สมาชิกใหม่</th><th class="num">ซื้อครั้งแรก</th><th class="num">ต้นทุนต่อสมาชิกใหม่</th></tr></thead>
+                <tbody>
+                    @foreach (CampaignSourceDTO r in _r.Data.BySourceCampaign)
+                    {
+                        <tr>
+                            <td>@r.CampaignCode</td><td class="num">@AnaText.Int(r.NewMembers)</td><td class="num">@AnaText.Pct(r.FirstPurchaseRate)</td>
+                            <td class="num">@(r.CostPerNewMember.Value is null ? AnaText.Reason(r.CostPerNewMember.InsufficientReason) : AnaText.Value(r.CostPerNewMember.Value, r.CostPerNewMember.Unit))</td>
+                        </tr>
+                    }
+                    @if (_r.Data.BySourceCampaign.Count == 0) { <tr><td colspan="4" class="muted">ไม่มีข้อมูล</td></tr> }
+                </tbody>
+            </table>
+        </Card>
+    }
+</RequirePermission>
+
+@code {
+    private readonly IReadOnlyList<Breadcrumb> _crumbs = [new("หน้าแรก", ""), new("วิเคราะห์ข้อมูล", "analytics"), new("แหล่งที่มาสมาชิก")];
+    private AnalyticsResultDTO<MemberSourceDTO>? _r;
+
+    protected override string PageCode => "AN-15";
+
+    protected override Task LoadAsync() => LoadSafeAsync(async () => _r = await Api.GetAsync<AnalyticsResultDTO<MemberSourceDTO>>($"api/v1/analytics/members/sources?{Q()}"));
+}

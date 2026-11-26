@@ -1,0 +1,28 @@
+@* แถบสถานะของผลลัพธ์: ช่วงที่ใช้จริง, เวลาข้อมูล, stale, ขอบเขตว่าง/ถูกตัด *@
+@if (Meta is not null)
+{
+    @if (Meta.ScopeEmpty)
+    {
+        <Alert Level="AlertLevel.Info">ไม่มีข้อมูลในขอบเขตของคุณ — ติดต่อผู้ดูแลเพื่อกำหนดขอบเขตข้อมูล (สาขา/ช่องทาง/แบรนด์)</Alert>
+    }
+    @if (Meta.ScopeClamped)
+    {
+        <Alert Level="AlertLevel.Info">ตัวกรองบางค่าอยู่นอกขอบเขตของคุณจึงถูกตัดออก</Alert>
+    }
+    @if (Meta.Stale)
+    {
+        <Alert Level="AlertLevel.Warning">ข้อมูลอาจไม่เป็นปัจจุบัน — คำนวณล่าสุด @Text.DateTime(Meta.DataAsOf)</Alert>
+    }
+    @if (Meta.Applied is AppliedFilterDTO a)
+    {
+        <p class="muted ana-applied">
+            ช่วง @AnaText.Date(a.From) – @AnaText.Date(a.To)
+            @if (a.CompareFrom is DateOnly cf && a.CompareTo is DateOnly ct) { <span> · เทียบกับ @AnaText.Date(cf) – @AnaText.Date(ct)</span> }
+            @if (Meta.DataAsOf is not null) { <span> · ข้อมูล ณ @Text.DateTime(Meta.DataAsOf)</span> }
+        </p>
+    }
+}
+
+@code {
+    [Parameter] public AnaMeta? Meta { get; set; }
+}

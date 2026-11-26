@@ -1,0 +1,79 @@
+@page "/analytics/members/cohorts"
+@attribute [Authorize]
+@inherits AnaPage
+@* AN-06 Cohort (ANA-MEM-003) *@
+<PageTitle>Cohort</PageTitle>
+
+<RequirePermission Permission="@A.MemberRead">
+    <PageHeader Title="วิเคราะห์สมาชิก: Cohort" Description="สมาชิกที่เริ่มในเดือนเดียวกัน กลับมาซื้อ (หรือยอดขายสะสม) ในเดือนที่ 0, 1, 2, …" Breadcrumbs="_crumbs" />
+    <AnaSubNav Links="AnaSubNav.MemberPages" Label="วิเคราะห์สมาชิก" />
+    <AnaFilterBar PageCode="AN-06" Value="Filter" OnApply="f => Apply(f, Extra())" ShowMember ShowCompare="false" />
+    <Card>
+        <FieldGrid Columns="3">
+            <Field Label="จัดกลุ่มตาม" InputId="cb">
+                <select id="cb" @bind="_by"><option value="Registration">เดือนที่สมัคร</option><option value="FirstPurchase">เดือนที่ซื้อครั้งแรก</option><option value="SourceCampaign">แคมเปญที่พามาสมัคร</option></select>
+            </Field>
+            <Field Label="วัดผล" InputId="cm">
+                <select id="cm" @bind="_measure"><option value="Retention">อัตรากลับมาซื้อ (%)</option><option value="CumulativeSales">ยอดขายสะสมต่อคน (บาท)</option></select>
+            </Field>
+            <Field Label="จำนวนเดือน (1–24)" InputId="mo"><input id="mo" type="number" min="1" max="24" @bind="_months" /></Field>
+        </FieldGrid>
+        <AppButton Text="แสดง" Variant="ButtonVariant.Primary" OnClick="() => Apply(Filter, Extra())" />
+    </Card>
+    @if (LoadError is not null) { <ErrorView Title="โหลดข้อมูลไม่สำเร็จ" Message="@LoadError" OnRetry="LoadAsync" /> }
+    else if (_r is null) { <LoadingState /> }
+    else
+    {
+        <AnaBanner Meta="Meta(_r)" />
+        <Card>
+            <div style="overflow-x:auto">
+                <table class="simple-table ana-heat">
+                    <thead><tr><th>Cohort</th><th class="num">จำนวน</th>@for (int i = 0; i < _cols; i++) { <th class="num">M@(i)</th> }</tr></thead>
+                    <tbody>
+                        @foreach (CohortRowDTO row in _r.Data.Rows)
+                        {
+                            <tr>
+                                <td>@row.Cohort</td><td class="num">@AnaText.Int(row.Size)</td>
+                                @for (int i = 0; i < _cols; i++)
+                                {
+                                    decimal? v = i < row.Values.Count ? row.Values[i] : null;
+                                    <td class="num" style="@Heat(v)">@(v is null ? "" : _r.Data.Measure == CohortMeasure.Retention ? AnaText.Pct(v) : AnaText.Num(v))</td>
+                                }
+                            </tr>
+                        }
+                        @if (_r.Data.Rows.Count == 0) { <tr><td colspan="@(_cols + 2)" class="muted">ไม่มีข้อมูล</td></tr> }
+                    </tbody>
+                </table>
+            </div>
+        </Card>
+    }
+</RequirePermission>
+
+@code {
+    private readonly IReadOnlyList<Breadcrumb> _crumbs = [new("หน้าแรก", ""), new("วิเคราะห์ข้อมูล", "analytics"), new("Cohort")];
+    private AnalyticsResultDTO<CohortDTO>? _r;
+    private CohortBy _by = CohortBy.Registration;
+    private CohortMeasure _measure = CohortMeasure.Retention;
+    private int _months = 12;
+    private int _cols;
+    private decimal _max = 1;
+
+    protected override string PageCode => "AN-06";
+
+    private (string, object?)[] Extra() => [("cohortBy", _by), ("measure", _measure), ("months", Math.Clamp(_months, 1, 24))];
+
+    protected override Task LoadAsync()
+    {
+        _by = Enum.TryParse(Param("cohortBy"), out CohortBy b) ? b : CohortBy.Registration;
+        _measure = Enum.TryParse(Param("measure"), out CohortMeasure m) ? m : CohortMeasure.Retention;
+        _months = int.TryParse(Param("months"), out int n) ? Math.Clamp(n, 1, 24) : 12;
+        return LoadSafeAsync(async () =>
+        {
+            _r = await Api.GetAsync<AnalyticsResultDTO<CohortDTO>>($"api/v1/analytics/members/cohorts?{Q(Extra())}");
+            _cols = _r.Data.Rows.Select(x => x.Values.Count).DefaultIfEmpty(0).Max();
+            _max = Math.Max(1, _r.Data.Rows.SelectMany(x => x.Values).Where(x => x is not null).Select(x => x!.Value).DefaultIfEmpty(1).Max());
+        });
+    }
+
+    private string Heat(decimal? v) => v is decimal d ? $"background: color-mix(in srgb, var(--color-primary, #1d4ed8) {(int)(60m * d / _max)}%, transparent)" : string.Empty;
+}

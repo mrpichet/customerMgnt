@@ -1,0 +1,50 @@
+@page "/analytics/members"
+@attribute [Authorize]
+@inherits AnaPage
+@* AN-02 Dashboard สมาชิก (ANA-DASH-002) *@
+<PageTitle>ภาพรวมสมาชิก</PageTitle>
+
+<RequirePermission Permission="@A.MemberRead">
+    <PageHeader Title="ภาพรวมสมาชิก" Description="สมาชิกใหม่ตามช่องทางสมัคร สถานะ ระดับ และกลุ่มการใช้งาน" Breadcrumbs="_crumbs">
+        <Actions><ExportButton Source="ExportSource.Dashboard" Page="AN-02" Filter="Filter" /></Actions>
+    </PageHeader>
+    <AnaFilterBar PageCode="AN-02" Value="Filter" OnApply="f => Apply(f)" ShowMember ShowProduct="false" />
+    @if (LoadError is not null)
+    {
+        <ErrorView Title="โหลดข้อมูลไม่สำเร็จ" Message="@LoadError" OnRetry="LoadAsync" />
+    }
+    else if (_r is null)
+    {
+        <LoadingState />
+    }
+    else
+    {
+        MemberDashboardDTO d = _r.Data;
+        <AnaBanner Meta="Meta(_r)" />
+        <div class="kpi-grid">
+            <MetricCard Metric="d.NearTierUpgrade" Label="ใกล้เลื่อนระดับ" OnDrill="Drill" />
+            <MetricCard Metric="d.TierAtRisk" Label="เสี่ยงลดระดับ" OnDrill="Drill" />
+            <MetricCard Metric="d.VerificationRate" Label="อัตรายืนยันตัวตน" OnDrill="Drill" />
+        </div>
+        <Card Title="สมาชิกใหม่ตามช่องทางสมัคร"><SeriesChart Series="d.NewByRegisteredChannel" Bar /></Card>
+        <div class="ana-two">
+            <Card Title="ตามสถานะ"><KeyValueChart Items="d.ByStatus" Pie /></Card>
+            <Card Title="ตามระดับ (Tier)"><KeyValueChart Items="d.ByTier" Name="สมาชิก" /></Card>
+        </div>
+        <Card Title="กลุ่มการใช้งาน">
+            <div class="kpi-grid">
+                @foreach (ActivityGroupCountDTO g in d.ActivityGroups) { <MetricCard Metric="g.Value" Label="@g.Key" OnDrill="Drill" /> }
+            </div>
+            <a href="analytics/members/activity?@Q()">ดูรายละเอียดกลุ่มการใช้งาน</a>
+        </Card>
+    }
+</RequirePermission>
+
+@code {
+    private readonly IReadOnlyList<Breadcrumb> _crumbs = [new("หน้าแรก", ""), new("วิเคราะห์ข้อมูล", "analytics"), new("ภาพรวมสมาชิก")];
+    private AnalyticsResultDTO<MemberDashboardDTO>? _r;
+
+    protected override string PageCode => "AN-02";
+
+    protected override Task LoadAsync() => LoadSafeAsync(async () => _r = await Api.GetAsync<AnalyticsResultDTO<MemberDashboardDTO>>($"api/v1/analytics/dashboards/members?{Q()}"));
+}
