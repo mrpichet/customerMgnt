@@ -53,6 +53,7 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<IExternalLinkDAO, ExternalLinkADO>();
         services.TryAddSingleton<IEngagementDAO, EngagementADO>();
         services.TryAddSingleton<IUserProfileDAO, UserProfileADO>();
+        services.AddMembershipAdoData();
 
         // Step 3: migration ก่อน hosted service อื่น (ลงทะเบียนก่อน = start ก่อน)
         services.AddHostedService<CustomerMgntMigrator>();
