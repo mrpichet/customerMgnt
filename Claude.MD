@@ -1172,6 +1172,7 @@ MCP over HTTP (ModelContextProtocol SDK) ใช้ Bearer token ของ AuthSe
 | Method | Route | สิทธิ์ | ขาเข้า | คืนค่า |
 |---|---|---|---|---|
 | GET | `/api/v1/analytics/funnels` | ana.promotion.read | – | `FunnelDTO[]` |
+| GET | `/api/v1/analytics/funnels/{id}` | ana.promotion.read | – | `FunnelDTO` (ใช้ในหน้าแก้ไข AN-16F) |
 | GET | `/api/v1/analytics/funnels/{id}/result` | ana.promotion.read | ตัวกรอง §28.1 + `campaign` (แคมเปญที่มองไม่เห็นถูกตัด) | `AnalyticsResultDTO<FunnelResultDTO>` — AN-16 |
 | POST | `/api/v1/analytics/funnels` | ana.settings.manage | `FunnelDTO` | 201 — AN-16F |
 | PUT / DELETE | `/api/v1/analytics/funnels/{id}` | ana.settings.manage | `FunnelDTO` (`version`) | `FunnelDTO` / 204 |
@@ -1236,8 +1237,9 @@ MCP over HTTP (ModelContextProtocol SDK) ใช้ Bearer token ของ AuthSe
 | GET | `/api/v1/analytics/admin/data-status` | ana.dashboard.read | – | `DataStatusDTO` — AN-26 |
 | GET | `/api/v1/analytics/admin/data-issues` | ana.dashboard.read | `?kind=&page=&pageSize=` | `PagedResultDTO<DataIssueDTO>` |
 | POST | `/api/v1/analytics/admin/refresh` | ana.settings.manage | `{ tables?: string[], from, to }` (≤ 731 วัน) | 202 `RefreshRunDTO` / 409 `refresh_running` (มีงานช่วงทับกันอยู่) |
+| GET | `/api/v1/analytics/admin/refresh` | ana.dashboard.read | – | `RefreshRunDTO[]` (คำขอล่าสุด ใหม่สุดก่อน) |
 | GET | `/api/v1/analytics/admin/data-scopes` | ana.settings.manage | `?subject=` | `DataScopeRuleDTO[]` — AN-27 |
-| GET | `/api/v1/analytics/admin/data-scopes/effective?sub=` | ana.settings.manage | – | `EffectiveScopeDTO` (รวมของผู้ใช้ + ทุก role พร้อมที่มา) |
+| GET | `/api/v1/analytics/admin/data-scopes/effective?sub=&roles=` | ana.settings.manage | `roles` ซ้ำได้ (Role อยู่ใน AuthServer จึงต้องส่งมาเอง) | `EffectiveScopeDTO` (รวมของผู้ใช้ + ทุก role พร้อมที่มา) |
 | POST | `/api/v1/analytics/admin/data-scopes` | ana.settings.manage | `DataScopeRuleDTO` | 201 — AN-28 |
 | PUT / DELETE | `/api/v1/analytics/admin/data-scopes/{id}` | ana.settings.manage | `DataScopeRuleDTO` (`version`) | `DataScopeRuleDTO` / 204 |
 
@@ -1325,3 +1327,22 @@ MCP over HTTP (ModelContextProtocol SDK) ใช้ Bearer token ของ AuthSe
 | ตัวกรอง | เก็บใน URL query (ตามชื่อพารามิเตอร์ §28.1) แชร์ลิงก์ได้; ผู้เปิดเห็นตามขอบเขตของตน |
 | หน้าเต็ม | สร้าง / ดู / แก้ (รายงาน, schedule, alert, funnel, ขอบเขต) เป็นหน้าเต็ม ไม่ใช้ popup |
 | ข้อมูลไม่พอ | แสดง "ข้อมูลไม่เพียงพอ" พร้อมเหตุผลจาก `insufficientReason`; `stale: true` แสดงแถบเตือนพร้อมเวลา `dataAsOf` |
+
+## 44. หมายเหตุการ implement รอบแรก (ส่วนที่ต่างจาก §28–43)
+
+| หัวข้อ | สิ่งที่ทำจริง |
+|---|---|
+| Read model | มี 4 ตาราง: `ana_member_daily` (ยอดขายรายสมาชิก/วัน/สาขา/ช่องทาง + แบรนด์), `ana_member_snapshot`, `ana_points_daily`, `ana_coupon_daily` — ตัวเลขอื่น (แคมเปญ, RFM, cohort, funnel) คำนวณสดจากตารางเหล่านี้ + ตาราง `mbr_*` |
+| เอกสาร | ตัวกรองที่บันทึก, รายงาน, schedule, funnel, alert rule/event, ขอบเขต, data issue, refresh run เก็บในตารางกลาง `ana_document` (JSON + `version` ใช้ optimistic concurrency) |
+| Ingest | ใช้ idempotency filter เดียวกับระบบสมาชิก (`Idempotency-Key` ตาม §36); body ที่ไม่ใช่ array หรือ JSON ผิดรูป = 400 ทั้งคำขอ ส่วนรายการผิดรายตัวตอบผลรายรายการใน 200 |
+| ส่งออก | ใช้ตาราง `mbr_export` เดิม (รหัสรายงานขึ้นต้น `ana:`), รูปแบบ Xlsx / Csv (ไม่มี PDF); `unmasked: true` ตอบ 400 `unmasked_not_supported` (ข้อมูลส่วนบุคคลถูกปิดบางส่วนเสมอ) |
+| ตัวเลขตามสาขา/ช่องทาง | จำนวนสมาชิก (ไม่ใช่ยอดขาย) แยกสาขา/ช่องทางใช้สาขาและช่องทางหลักของสมาชิกจาก snapshot |
+| คะแนน | รายการ Reverse ไม่แยกประเภท; คะแนนคงเหลือและภาระคะแนนเป็นค่าปัจจุบัน (ไม่ย้อนตามช่วงวันที่) |
+| คูปอง | `coupon.avgDaysToRedeem` ตอบ `missing_source` (ยังไม่มีวันรับคูปองรายใบ) |
+| RFM / รายงานมาตรฐาน | กลุ่ม RFM และรายงานมาตรฐาน 4 รายการกำหนดในโค้ด (แก้ไม่ได้ แต่คัดลอกไปปรับได้) |
+| MessageHub | สมมติว่า MessageHub ส่ง `reference` (= messageId) และรองรับไฟล์แนบสำหรับ schedule — ต้องยืนยันกับระบบ MessageHub |
+| ตั้งค่า worker | ส่วน config ชื่อ `MemberAnalytics` (`WorkerEnabled`, …) และ `Analytics:RefreshInitialDelaySeconds` |
+| Drill-down | ระดับมีเฉพาะ `Member` และ `Transaction`; เรียงลำดับ `sort=key` (น้อย → มาก) / `sort=-key` (มาก → น้อย) |
+| กราฟ | โหลดเฉพาะ CSS แกนของธีม Fluent (ไม่ใช้ธีมเต็ม เพื่อไม่ทับหน้าตา WebCommon) และกำหนดสีกราฟเองที่ `AnaText.ChartPalette` |
+| ตัวกรองเริ่มต้น | เปิดหน้าวิเคราะห์โดยไม่มี query string = ใช้ตัวกรองที่บันทึกที่ตั้งเป็นค่าเริ่มต้นของหน้านั้น (ถ้ามี) |
+| ทดสอบ | `MemberAnalyticsApiTests` (API ครบเส้นทางหลัก) และ `MemberAnalyticsDatabaseTests` (ADO กับ Postgres จริง); เส้นทาง SQL Server ยังไม่ได้ทดสอบกับฐานข้อมูลจริง |
