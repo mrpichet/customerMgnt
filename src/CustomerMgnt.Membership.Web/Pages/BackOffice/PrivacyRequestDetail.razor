@@ -1,0 +1,85 @@
+@page "/privacy-requests/{Id:long}"
+@attribute [Authorize]
+@inherits MembershipPage
+@* A41 (ต่อ) ดำเนินการคำขอ PDPA *@
+<PageTitle>คำขอ PDPA #@Id</PageTitle>
+
+<RequirePermission Permission="@P.PrivacyManage">
+    @if (LoadError is not null)
+    {
+        <ErrorView Title="โหลดข้อมูลไม่สำเร็จ" Message="@LoadError" OnRetry="LoadAsync" />
+    }
+    else if (_r is null)
+    {
+        <LoadingState />
+    }
+    else
+    {
+        <PageHeader Title="@($"คำขอ{Text.Privacy(_r.Type)} #{_r.Id}")" Description="@($"สมาชิก {_r.MemberNo}")" Breadcrumbs="Crumbs">
+            <Badge><Badge Text="@Text.Privacy(_r.Status)" Level="@(_r.Status == PrivacyRequestStatus.Open ? AlertLevel.Warning : AlertLevel.Success)" /></Badge>
+            <Actions><AppButton Text="เปิดข้อมูลสมาชิก" Variant="ButtonVariant.Secondary" Href="@($"members/{_r.MemberId}")" /></Actions>
+        </PageHeader>
+        <Card>
+            <dl class="kv">
+                <dt>ยื่นเมื่อ</dt><dd>@Text.DateTime(_r.RequestedAt)</dd>
+                <dt>ครบกำหนด</dt><dd>@Text.Date(_r.DueAt)</dd>
+                <dt>รายละเอียด</dt><dd>@(_r.Detail ?? "-")</dd>
+                @if (_r.Status != PrivacyRequestStatus.Open)
+                {
+                    <dt>ผล</dt><dd>@(_r.Outcome ?? "-")</dd>
+                    <dt>หมายเหตุ</dt><dd>@(_r.Note ?? "-")</dd>
+                    <dt>ดำเนินการโดย</dt><dd>@_r.CompletedBy เมื่อ @Text.DateTime(_r.CompletedAt)</dd>
+                }
+            </dl>
+        </Card>
+        @if (_r.Status == PrivacyRequestStatus.Open)
+        {
+            <Card Title="ปิดคำขอ" Description="@Guide">
+                <FieldGrid Columns="2">
+                    <Field Label="ผล" InputId="oc">
+                        <select id="oc" @bind="_req.Outcome">
+                            <option value="@PrivacyRequestStatus.Completed">ดำเนินการแล้ว</option>
+                            <option value="@PrivacyRequestStatus.Rejected">ปฏิเสธ</option>
+                        </select>
+                    </Field>
+                </FieldGrid>
+                <Field Label="หมายเหตุ (บังคับ)" InputId="nt"><textarea id="nt" @bind="_req.Note" rows="3" maxlength="1000"></textarea></Field>
+                @if (_r.Type is PrivacyRequestType.Erase or PrivacyRequestType.Close && _req.Outcome == PrivacyRequestStatus.Completed)
+                {
+                    <Alert Level="AlertLevel.Warning">ระบบจะ@(_r.Type == PrivacyRequestType.Erase ? "ลบข้อมูลส่วนบุคคลและ" : "")ปิดบัญชีสมาชิกทันที ย้อนกลับไม่ได้</Alert>
+                }
+                <div class="row-actions" style="margin-top:12px">
+                    <AppButton Text="ปิดคำขอ" Variant="ButtonVariant.Primary" Busy="Busy" Disabled="@string.IsNullOrWhiteSpace(_req.Note)" OnClick="CompleteAsync" />
+                </div>
+            </Card>
+        }
+    }
+</RequirePermission>
+
+@code {
+    [Parameter] public long Id { get; set; }
+
+    private PrivacyRequestDTO? _r;
+    private readonly CompletePrivacyRequest _req = new();
+
+    private IReadOnlyList<Breadcrumb> Crumbs => [new("หน้าแรก", ""), new("คำขอสิทธิ์ PDPA", "privacy-requests"), new($"#{Id}")];
+
+    private string Guide => _r?.Type switch
+    {
+        PrivacyRequestType.Access => "ส่งสำเนาข้อมูลให้สมาชิกตามช่องทางที่ยืนยันตัวตนแล้ว แล้วบันทึกวิธีที่ส่งในหมายเหตุ",
+        PrivacyRequestType.Rectify => "แก้ไขข้อมูลที่หน้าแก้ไขสมาชิกก่อน แล้วปิดคำขอ",
+        PrivacyRequestType.Erase => "ลบข้อมูลส่วนบุคคล (ชื่อ เบอร์ อีเมล วันเกิด) และปิดบัญชี เก็บรายการขายแบบไม่ระบุตัวตน",
+        PrivacyRequestType.Close => "ปิดบัญชีสมาชิก คะแนนคงเหลือจะใช้ไม่ได้",
+        _ => string.Empty,
+    };
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private Task LoadAsync() => LoadSafeAsync(async () => _r = await Api.GetAsync<PrivacyRequestDTO>($"api/v1/privacy-requests/{Id}"));
+
+    private Task CompleteAsync() => SaveSafeAsync(async () =>
+    {
+        _req.Note = _req.Note.Trim();
+        _r = await Api.PostAsync<PrivacyRequestDTO>($"api/v1/privacy-requests/{Id}/complete", _req);
+    }, "ปิดคำขอแล้ว");
+}

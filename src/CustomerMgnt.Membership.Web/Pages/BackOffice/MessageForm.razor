@@ -1,0 +1,78 @@
+@page "/messages/new"
+@attribute [Authorize]
+@inherits MembershipPage
+@* A27 สร้างงานส่งข้อความ (SMS / Email / LINE) *@
+<PageTitle>สร้างงานส่งข้อความ</PageTitle>
+
+<RequirePermission Permission="@P.CampaignMessageSend">
+    <FormTemplate Title="สร้างงานส่งข้อความ" Description="เลือกผู้รับจาก Segment หรือระบุเลขสมาชิก ข้อความใช้แม่แบบที่ตั้งไว้ในผู้ให้บริการส่งข้อความ"
+                  Breadcrumbs="_crumbs" Mode="FormMode.New" Model="_req" SavePermission="@P.CampaignMessageSend" SaveText="สร้างงาน" OnSave="SaveAsync" OnCancel="Back">
+        <Notice>
+            @if (_req.Channel == MarketingChannel.Line)
+            {
+                <Alert Level="AlertLevel.Warning">ยังไม่ได้เชื่อมต่อ LINE — ผู้รับทางช่องทางนี้จะถูกข้ามทั้งหมด</Alert>
+            }
+        </Notice>
+        <ChildContent>
+            <FormSection Title="ผู้รับ">
+                <FieldGrid Columns="2">
+                    <Field Label="Segment" InputId="sg">
+                        <select id="sg" @bind="_req.SegmentId">
+                            <option value="">-- ไม่ใช้ Segment --</option>
+                            @foreach (SegmentDTO s in _segments) { <option value="@s.Id">@s.Name (@Text.Int(s.MemberCount))</option> }
+                        </select>
+                    </Field>
+                    <Field Label="ช่องทาง" InputId="ch">
+                        <select id="ch" @bind="_req.Channel">@foreach (MarketingChannel c in Enum.GetValues<MarketingChannel>()) { <option value="@c">@Text.Channel(c)</option> }</select>
+                    </Field>
+                </FieldGrid>
+                <Field Label="หรือเลขสมาชิก (คั่นด้วย , หรือขึ้นบรรทัดใหม่)" InputId="mn"><textarea id="mn" @bind="_memberNos" rows="3" maxlength="20000"></textarea></Field>
+            </FormSection>
+            <FormSection Title="ข้อความ">
+                <FieldGrid Columns="2">
+                    <FormField Label="รหัสแม่แบบ" InputId="tc" For="() => _req.TemplateCode" Required><InputText id="tc" @bind-Value="_req.TemplateCode" maxlength="100" /></FormField>
+                    <Field Label="กำหนดส่ง (ว่าง = ส่งทันที)" InputId="sch"><input id="sch" type="datetime-local" @bind="_scheduled" /></Field>
+                </FieldGrid>
+                <Field Label="ตัวแปร (บรรทัดละ ชื่อ=ค่า) — ระบบใส่ชื่อสมาชิก/คะแนนให้เอง" InputId="vars"><textarea id="vars" @bind="_vars" rows="4" maxlength="4000"></textarea></Field>
+            </FormSection>
+        </ChildContent>
+    </FormTemplate>
+</RequirePermission>
+
+@code {
+    private readonly IReadOnlyList<Breadcrumb> _crumbs = [new("หน้าแรก", ""), new("ส่งข้อความแคมเปญ", "messages"), new("สร้างงาน")];
+    private readonly CampaignMessageRequest _req = new() { Channel = MarketingChannel.Sms };
+    private IReadOnlyList<SegmentDTO> _segments = [];
+    private string? _memberNos;
+    private string? _vars;
+    private DateTime? _scheduled;
+
+    protected override async Task OnInitializedAsync() => _segments = await OptionalAsync(() => Api.GetAsync<List<SegmentDTO>>("api/v1/segments"));
+
+    private async Task<bool> SaveAsync()
+    {
+        List<string> nos = Text.SplitList(_memberNos?.Replace('\n', ','));
+        if (_req.SegmentId is null && nos.Count == 0)
+        {
+            Toasts.Error("กรุณาเลือก Segment หรือระบุเลขสมาชิก");
+            return false;
+        }
+
+        _req.Variables = (_vars ?? string.Empty).Split('\n').Select(l => l.Split('=', 2)).Where(p => p.Length == 2 && p[0].Trim().Length > 0)
+            .GroupBy(p => p[0].Trim()).ToDictionary(g => g.Key, g => g.Last()[1].Trim());
+        _req.ScheduledAt = _scheduled is null ? null : new DateTimeOffset(_scheduled.Value);
+        return await SaveSafeAsync(async () =>
+        {
+            if (nos.Count > 0)
+            {
+                List<long> ids = [];
+                foreach (string no in nos) ids.Add((await Api.GetAsync<MemberDTO>($"api/v1/members/by-no/{Uri.EscapeDataString(no)}")).Id);
+                _req.MemberIds = ids;
+            }
+
+            await Api.PostAsync<MessageJobDTO>("api/v1/campaign-messages", _req);
+        }, "สร้างงานส่งข้อความแล้ว", "messages");
+    }
+
+    private void Back() => Nav.NavigateTo("messages");
+}

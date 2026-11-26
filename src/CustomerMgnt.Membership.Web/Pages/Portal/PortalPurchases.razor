@@ -1,0 +1,33 @@
+@page "/portal/purchases"
+@layout PortalLayout
+@attribute [Authorize]
+@inherits PortalPage
+@* P8 ประวัติการซื้อ *@
+<PageTitle>ประวัติการซื้อ</PageTitle>
+
+<PageHeader Title="ประวัติการซื้อ" Description="รายการซื้อที่ได้รับคะแนน (แสดง 100 รายการล่าสุด)" />
+@if (LoadError is not null)
+{
+    <ErrorView Title="โหลดข้อมูลไม่สำเร็จ" Message="@LoadError" OnRetry="LoadAsync" />
+}
+else
+{
+    <DataTable TItem="TransactionSummaryDTO" Items="_items" Loading="@(_items is null)" Caption="ประวัติการซื้อ" PageSize="20">
+        <Columns>
+            <TableColumn TItem="TransactionSummaryDTO" Title="วันที่" Field="t => Text.DateTime(t.OccurredAt)" />
+            <TableColumn TItem="TransactionSummaryDTO" Title="สาขา" Field="t => t.BranchCode" HideOnMobile />
+            <TableColumn TItem="TransactionSummaryDTO" Title="ยอดชำระ" Field="t => t.NetPaid" Format="N2" Align="ColumnAlign.End" />
+            <TableColumn TItem="TransactionSummaryDTO" Title="ได้คะแนน" Field="t => t.PointsEarned" Format="N0" Align="ColumnAlign.End" />
+            <TableColumn TItem="TransactionSummaryDTO" Title="ใช้คะแนน" Field="t => t.PointsRedeemed" Format="N0" Align="ColumnAlign.End" HideOnMobile />
+            <TableColumn TItem="TransactionSummaryDTO" Title="สถานะ" Field="t => Text.Txn(t.Status)" />
+        </Columns>
+    </DataTable>
+}
+
+@code {
+    private IReadOnlyList<TransactionSummaryDTO>? _items;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private Task LoadAsync() => PortalLoadAsync(async () => _items = (await Api.GetAsync<PagedResultDTO<TransactionSummaryDTO>>("api/v1/me/purchases", new { page = 1, pageSize = 100 })).Items);
+}

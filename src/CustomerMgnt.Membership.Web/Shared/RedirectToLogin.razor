@@ -1,0 +1,13 @@
+@*
+    พาไปหน้า login พร้อม returnUrl — หน้า Portal (portal/...) ไปหน้า login ของสมาชิก
+*@
+@code {
+    [Inject] private NavigationManager Nav { get; set; } = default!;
+
+    protected override void OnInitialized()
+    {
+        string returnUrl = Nav.ToBaseRelativePath(Nav.Uri);
+        string login = returnUrl.StartsWith("portal", StringComparison.Ordinal) ? "portal/login" : "login";
+        Nav.NavigateTo(string.IsNullOrEmpty(returnUrl) ? login : $"{login}?returnUrl={Uri.EscapeDataString(returnUrl)}", replace: true);
+    }
+}

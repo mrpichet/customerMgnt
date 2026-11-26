@@ -1,0 +1,41 @@
+@page "/portal/profile"
+@layout PortalLayout
+@attribute [Authorize]
+@inherits PortalPage
+@* P9 ข้อมูลส่วนตัว (ดู) *@
+<PageTitle>ข้อมูลส่วนตัว</PageTitle>
+
+@if (LoadError is not null)
+{
+    <ErrorView Title="โหลดข้อมูลไม่สำเร็จ" Message="@LoadError" OnRetry="LoadAsync" />
+}
+else if (_m is null)
+{
+    <LoadingState />
+}
+else
+{
+    <PageHeader Title="ข้อมูลส่วนตัว" Description="@($"สมาชิกเลขที่ {_m.MemberNo}")">
+        <Actions><AppButton Text="แก้ไข" Icon="edit" Variant="ButtonVariant.Secondary" Href="portal/profile/edit" /></Actions>
+    </PageHeader>
+    <Card>
+        <dl class="kv">
+            <dt>ชื่อ-นามสกุล</dt><dd>@_m.FirstName @_m.LastName</dd>
+            <dt>เบอร์โทร</dt><dd>@(_m.PhoneMasked ?? "-")</dd>
+            <dt>อีเมล</dt><dd>@(_m.EmailMasked ?? "-")</dd>
+            <dt>วันเกิด</dt><dd>@(_m.BirthDateMasked ?? "-")</dd>
+            <dt>เพศ</dt><dd>@Text.Gender(_m.Gender)</dd>
+            <dt>จังหวัด</dt><dd>@(_m.Province ?? "-")</dd>
+            <dt>ระดับ</dt><dd>@(_m.Tier?.Name ?? "-")</dd>
+            <dt>สมัครเมื่อ</dt><dd>@Text.Date(_m.CreatedAt)</dd>
+        </dl>
+    </Card>
+}
+
+@code {
+    private MemberDTO? _m;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private Task LoadAsync() => PortalLoadAsync(async () => _m = await Api.GetAsync<MemberDTO>("api/v1/me/member"));
+}

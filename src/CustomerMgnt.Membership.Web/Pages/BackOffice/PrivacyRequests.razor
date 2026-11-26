@@ -1,0 +1,56 @@
+@page "/privacy-requests"
+@attribute [Authorize]
+@inherits MembershipPage
+@* A41 คำขอสิทธิ์เจ้าของข้อมูล (PDPA): ขอดู / แก้ไข / ลบ / ปิดบัญชี — กำหนดเสร็จภายใน 30 วัน *@
+<PageTitle>คำขอสิทธิ์ PDPA</PageTitle>
+
+<RequirePermission Permission="@P.PrivacyManage">
+    <ListTemplate TItem="PrivacyRequestDTO" Title="คำขอสิทธิ์เจ้าของข้อมูล (PDPA)" Description="ดำเนินการให้เสร็จภายในวันครบกำหนด การลบข้อมูลจะลบ/ทำให้ไม่ระบุตัวตนแต่เก็บรายการขายและ ledger ตามกฎหมายบัญชี"
+                  Breadcrumbs="_crumbs" Permissions="_perms" Items="_items" Loading="_loading" ErrorMessage="@LoadError" OnRetry="LoadAsync"
+                  CriteriaActiveCount="@(_status is null ? 0 : 1)" OnSearch="LoadAsync" OnClear="ClearAsync" PageSize="20"
+                  OnView="@(r => Nav.NavigateTo($"privacy-requests/{r.Id}"))">
+        <Criteria>
+            <Field Label="สถานะ" InputId="c-st">
+                <select id="c-st" @bind="_status">
+                    <option value="">ทั้งหมด</option>
+                    @foreach (PrivacyRequestStatus s in Enum.GetValues<PrivacyRequestStatus>()) { <option value="@s">@Text.Privacy(s)</option> }
+                </select>
+            </Field>
+        </Criteria>
+        <Columns>
+            <TableColumn TItem="PrivacyRequestDTO" Title="ยื่นเมื่อ" Field="r => Text.DateTime(r.RequestedAt)" SortBy="r => r.RequestedAt" Sortable />
+            <TableColumn TItem="PrivacyRequestDTO" Title="สมาชิก" Field="r => r.MemberNo" />
+            <TableColumn TItem="PrivacyRequestDTO" Title="ประเภท" Field="r => Text.Privacy(r.Type)" IsPrimary />
+            <TableColumn TItem="PrivacyRequestDTO" Title="ครบกำหนด" SortBy="r => r.DueAt" Sortable>
+                <Template>
+                    <span>@Text.Date(context.DueAt)</span>
+                    @if (context.Status == PrivacyRequestStatus.Open && context.DueAt < DateTimeOffset.Now) { <Badge Text="เลยกำหนด" Level="AlertLevel.Danger" /> }
+                </Template>
+            </TableColumn>
+            <TableColumn TItem="PrivacyRequestDTO" Title="สถานะ" Field="r => Text.Privacy(r.Status)" />
+        </Columns>
+    </ListTemplate>
+</RequirePermission>
+
+@code {
+    private readonly IReadOnlyList<Breadcrumb> _crumbs = [new("หน้าแรก", ""), new("คำขอสิทธิ์ PDPA")];
+    private readonly ListPermissions _perms = new() { View = P.PrivacyManage };
+    private PrivacyRequestStatus? _status = PrivacyRequestStatus.Open;
+    private IReadOnlyList<PrivacyRequestDTO>? _items;
+    private bool _loading;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        await LoadSafeAsync(async () => _items = await Api.GetAsync<List<PrivacyRequestDTO>>("api/v1/privacy-requests", new { status = _status }));
+        _loading = false;
+    }
+
+    private Task ClearAsync()
+    {
+        _status = null;
+        return LoadAsync();
+    }
+}

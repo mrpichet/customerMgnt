@@ -1,0 +1,45 @@
+@page "/portal/points"
+@layout PortalLayout
+@attribute [Authorize]
+@inherits PortalPage
+@* P4 คะแนนและประวัติคะแนน *@
+<PageTitle>คะแนนของฉัน</PageTitle>
+
+<PageHeader Title="คะแนนของฉัน" Description="คะแนนหมดอายุเมื่อครบอายุที่กำหนด นับจากเดือนที่ได้รับ (หมดสิ้นเดือน)" />
+@if (LoadError is not null)
+{
+    <ErrorView Title="โหลดข้อมูลไม่สำเร็จ" Message="@LoadError" OnRetry="LoadAsync" />
+}
+else
+{
+    @if (_p is not null)
+    {
+        <div class="kpi-grid">
+            <Card Title="ใช้ได้"><div class="big-number">@Text.Int(_p.Available)</div></Card>
+            <Card Title="กำลังใช้ (รอยืนยัน)"><div class="big-number">@Text.Int(_p.Reserved)</div></Card>
+            <Card Title="สะสมทั้งหมด"><div class="big-number">@Text.Int(_p.LifetimeEarned)</div></Card>
+        </div>
+    }
+    <DataTable TItem="PointLedgerDTO" Items="_ledger" Loading="@(_ledger is null)" Caption="ประวัติคะแนน" PageSize="20">
+        <Columns>
+            <TableColumn TItem="PointLedgerDTO" Title="วันที่" Field="l => Text.DateTime(l.CreatedAt)" />
+            <TableColumn TItem="PointLedgerDTO" Title="รายการ" Field="l => Text.Ledger(l.Type)" />
+            <TableColumn TItem="PointLedgerDTO" Title="คะแนน" Field="l => l.Points" Format="N0" Align="ColumnAlign.End" />
+            <TableColumn TItem="PointLedgerDTO" Title="คงเหลือ" Field="l => l.BalanceAfter" Format="N0" Align="ColumnAlign.End" />
+            <TableColumn TItem="PointLedgerDTO" Title="อ้างอิง" Field="l => l.TransactionId ?? l.Reason" HideOnMobile />
+        </Columns>
+    </DataTable>
+}
+
+@code {
+    private PointBalanceDTO? _p;
+    private IReadOnlyList<PointLedgerDTO>? _ledger;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private Task LoadAsync() => PortalLoadAsync(async () =>
+    {
+        _p = await Api.GetAsync<PointBalanceDTO>("api/v1/me/points");
+        _ledger = (await Api.GetAsync<PagedResultDTO<PointLedgerDTO>>("api/v1/me/points/ledger", new { page = 1, pageSize = 100 })).Items;
+    });
+}

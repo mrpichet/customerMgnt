@@ -1,0 +1,87 @@
+@page "/portal/rewards"
+@layout PortalLayout
+@attribute [Authorize]
+@inherits PortalPage
+@inject DialogService Dialogs
+@* P5 แลกคะแนนเป็นคูปอง (Idempotency-Key กันกดซ้ำ) *@
+<PageTitle>แลกของรางวัล</PageTitle>
+
+<PageHeader Title="แลกของรางวัล" Description="@($"คะแนนที่ใช้ได้ {Text.Int(_points?.Available ?? 0)} คะแนน — แลกแล้วได้คูปองในเมนูคูปองของฉัน")" />
+@if (LoadError is not null)
+{
+    <ErrorView Title="โหลดข้อมูลไม่สำเร็จ" Message="@LoadError" OnRetry="LoadAsync" />
+}
+else if (_rewards is null)
+{
+    <LoadingState />
+}
+else if (_rewards.Count == 0)
+{
+    <Alert Level="AlertLevel.Info">ยังไม่มีของรางวัลให้แลกในขณะนี้</Alert>
+}
+else
+{
+    <div class="card-grid">
+        @foreach (RewardDTO r in _rewards)
+        {
+            <Card Title="@r.Name" Description="@r.Description">
+                <div class="big-number">@Text.Int(r.PointsCost) คะแนน</div>
+                <div class="muted">ใช้ได้ถึง @Text.Date(r.ExpiresAt)</div>
+                <div class="row-actions" style="margin-top:12px">
+                    <AppButton Text="@(r.Affordable ? "แลก" : "คะแนนไม่พอ")" Variant="ButtonVariant.Primary" Disabled="@(!r.Affordable)" Busy="@(_busyId == r.Id)" OnClick="@(() => RedeemAsync(r))" />
+                </div>
+            </Card>
+        }
+    </div>
+}
+
+@code {
+    private IReadOnlyList<RewardDTO>? _rewards;
+    private PointBalanceDTO? _points;
+    private long? _busyId;
+    private readonly Dictionary<long, string> _keys = [];
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private Task LoadAsync() => PortalLoadAsync(async () =>
+    {
+        _points = await Api.GetAsync<PointBalanceDTO>("api/v1/me/points");
+        _rewards = await Api.GetAsync<List<RewardDTO>>("api/v1/me/rewards");
+    });
+
+    private async Task RedeemAsync(RewardDTO r)
+    {
+        ConfirmResult ok = await Dialogs.ConfirmAsync(new ConfirmRequest { Title = "ยืนยันการแลก", Message = $"ใช้ {r.PointsCost:N0} คะแนน แลก {r.Name}? แลกแล้วคืนคะแนนไม่ได้", ConfirmText = "แลก" });
+        if (!ok.Confirmed) return;
+
+        // ใช้คีย์เดิมเมื่อกดซ้ำหลังเครือข่ายขัดข้อง เพื่อไม่ให้ถูกหักคะแนนสองครั้ง
+        if (!_keys.TryGetValue(r.Id, out string? key))
+        {
+            key = Guid.NewGuid().ToString("N");
+            _keys[r.Id] = key;
+        }
+
+        _busyId = r.Id;
+        try
+        {
+            CouponDTO c = await Api.PostAsync<CouponDTO>($"api/v1/me/rewards/{r.Id}/redeem", null, default, key);
+            _keys.Remove(r.Id);
+            Toasts.Success($"แลกสำเร็จ ได้คูปอง {c.Code}");
+            Nav.NavigateTo("portal/coupons");
+        }
+        catch (ApiException ex) when (ex.Status is 409 or 422 or 400)
+        {
+            _keys.Remove(r.Id);
+            Toasts.Error(Text.Error(ex));
+            await LoadAsync();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Toasts.Error(Text.Error(ex));
+        }
+        finally
+        {
+            _busyId = null;
+        }
+    }
+}

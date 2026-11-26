@@ -30,7 +30,8 @@ public sealed record ProfileRequest([Required, StringLength(200)] string Display
 /// <summary>เข้าสู่ระบบ (ส่งต่อไป AuthServer)</summary>
 /// <param name="Login">ชื่อผู้ใช้</param>
 /// <param name="Password">รหัสผ่าน</param>
-public sealed record LoginRequest([Required, StringLength(256)] string Login, [Required, StringLength(512)] string Password);
+/// <param name="OtpCode">รหัส OTP 6 หลัก (เมื่อได้ 401 code = mfa_required)</param>
+public sealed record LoginRequest([Required, StringLength(256)] string Login, [Required, StringLength(512)] string Password, [StringLength(8)] string? OtpCode = null);
 
 /// <summary>วิเคราะห์อารมณ์</summary>
 /// <param name="Text">ข้อความ</param>

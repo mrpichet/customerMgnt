@@ -36,6 +36,7 @@
 | คำร้อง / TOR | state machine, ส่งต่อแบบ idempotent ไป ProjectMgnt (สร้างโครงการ) และ RequirementMgnt (TOR → requirement), incident ไป IssueTracking พร้อม severity ของลูกค้า, ลายเซ็นดิจิทัล PQC |
 | SLA | นโยบาย SLA แยกตามลูกค้า, severity ที่ลูกค้ากำหนดเอง, เวลาทำการ/วันหยุด, compliance (Met/Breached/AtRisk/OnTrack) |
 | ภาพรวม | อายุ issue ตาม severity, portfolio โครงการของลูกค้า, pipeline / leads |
+| สมาชิกและโปรโมชัน | สมัคร/ยืนยัน OTP, Tier, คะแนนแบบ lot (FEFO, หมดอายุ, คืนตามสัดส่วนสะสม), แคมเปญ 7 แบบ + คูปอง + Segment, POS checkout ผ่าน API (quote → reserve → commit, idempotent), อนุมัติแบบ maker-checker, PDPA — Back Office และ Member Portal ที่ `/membership/` (สัญญา API: `Claude.MD` ส่วนที่ 2) |
 | ML | lead scoring, sales forecast (Holt-Winters), next best action, sentiment, dynamic segmentation (k-means++), recommendation (item CF), send-time optimization, churn prediction, MA renewal + upsell, seasonal budget forecast, คะแนนความเสี่ยงลูกค้า |
 
 ## โครงสร้างโซลูชัน
@@ -49,12 +50,14 @@ CustomerMgnt.slnx
 │  ├─ CustomerMgnt.AI            AIFunction ของ business layer → ใช้ได้ทั้ง IChatClient และ MCP
 │  ├─ CustomerMgnt.Api           REST API + MCP over HTTP (/mcp) + โฮสต์ UI
 │  ├─ CustomerMgnt.Mcp           MCP server แบบ stdio (Claude Desktop / IDE)
-│  └─ CustomerMgnt.Web           Blazor WebAssembly + DevExpress 26.1
+│  ├─ CustomerMgnt.Web           Blazor WebAssembly + DevExpress 26.1
+│  └─ CustomerMgnt.Membership.Web Blazor WebAssembly ระบบสมาชิก (Back Office + Member Portal) ด้วย webcommon → /membership/
 ├─ samples/CustomerMgnt.AiSample  ตัวอย่าง IChatClient + UseFunctionInvocation (รันได้โดยไม่ต้องมี API key)
 ├─ tests/CustomerMgnt.Tests       MSTest (unit + API end-to-end + integration กับฐานข้อมูลจริง)
 ├─ deploy/                        Dockerfile, docker-compose (Postgres / SQL Server), generate-secrets.sh
 ├─ docs/api-catalog/              API catalog (REST + AI tools) ที่ export จากโค้ด
-└─ external/common                git submodule: mrpichet/common
+├─ external/common                git submodule: mrpichet/common
+└─ external/webcommon             git submodule: mrpichet/webcommon (Blazor UI กลาง)
 ```
 
 หลักการตั้งชื่อ: `*DTO` (ข้อมูลส่งต่อ), `I*DAO` (สัญญาการเข้าถึงข้อมูลใน Core), `*ADO` (Dapper implementation ใน Data), `*Service` (business logic, pure C#)
@@ -75,8 +78,11 @@ dotnet run --project src/CustomerMgnt.Api                        # API อย่
 
 - โหมด Development ใช้ **ฐานข้อมูลในหน่วยความจำ** และคีย์เข้ารหัสชั่วคราว (`appsettings.Development.json`) จึงรันได้ทันที
   นอก Development แอปจะไม่ยอมเริ่มถ้าไม่มี `Database:ConnectionString` (กันข้อมูลหายเพราะ deploy ผิดค่า)
-- การเข้าสู่ระบบใช้ AuthServer: ตั้ง `AuthServer:Authority` ให้ชี้ไป AuthServer ของคุณ แล้ว UI จะ login ผ่าน `/api/session/login`
+- การเข้าสู่ระบบใช้ AuthServer: ตั้ง `AuthServer:Authority` ให้ชี้ไป AuthServer ของคุณ แล้ว UI จะ login ผ่าน `/api/session/login` (ส่งต่อไป AuthServer `api/v1/auth/login`, รองรับ OTP ของผู้ใช้ที่เปิด MFA)
 - OpenAPI (เฉพาะ Development): `GET /openapi/v1.json`
+- ระบบสมาชิก: Back Office `http://localhost:5180/membership/` และ Member Portal `/membership/portal/` (ไม่ต้องใช้ DevExpress; ปิดด้วย `-p:IncludeMembershipUi=false`)
+  ตอนพัฒนาตั้ง `Membership__OtpFixedCodeForDevelopment=123456` เพื่อใช้ OTP คงที่โดยไม่ส่ง SMS (ใช้ได้เฉพาะ Development)
+  login ของสมาชิกด้วย Google/Facebook ตั้งที่ `src/CustomerMgnt.Membership.Web/wwwroot/appsettings.json` (`Portal:GoogleClientId`, `Portal:FacebookAppId`)
 - DevExpress: build ได้โดยไม่มี license (มี warning DX1000/DX1001 และแถบ evaluation บน UI) — ใส่ license key ตามวิธีของ DevExpress
   (`DevExpress_License.txt` หรือตัวแปร `DevExpress_License`) ห้าม commit license ลง repo
 
@@ -87,6 +93,7 @@ dotnet run --project src/CustomerMgnt.Api                        # API อย่
 | `Database:Provider` | `Postgres` (ค่าเริ่มต้น) หรือ `SqlServer` |
 | `Database:ConnectionString` | connection string |
 | `AuthServer:Authority` / `AuthServer:Audience` | AuthServer ที่ออก JWT |
+| `AuthServer:LoginClientId` | OAuth client ของหน้าจอหลักใน AuthServer (ค่าเริ่มต้น `customermgnt-web`) ที่ `/api/session/login` ใช้ |
 | `Integrations:{IssueTracking,ProjectMgnt,RequirementMgnt,MessageHub}:BaseUrl` | ปล่อยว่าง = ปิดการเชื่อมระบบนั้น |
 | `Integrations:ServiceAccount:*` | บัญชีบริการสำหรับงานเบื้องหลัง (เตือนนัดหมาย, ฝึกโมเดล) ที่ไม่มี token ของผู้ใช้ |
 | `Privacy:BlindIndexKey` | คีย์ HMAC (base64 ≥ 32 byte) สำหรับตรวจซ้ำเลขผู้เสียภาษี/อีเมล — ห้ามเปลี่ยนหลังมีข้อมูล |
@@ -289,6 +296,7 @@ dotnet test --project tests/CustomerMgnt.Tests
 
 - unit test ของ service (SLA, workflow คำร้อง, ML: SIMD เทียบ scalar, k-means, Holt-Winters, NBA, sentiment) ใช้ข้อมูลในหน่วยความจำและ `FakeTimeProvider`
 - API end-to-end ผ่าน `WebApplicationFactory` (401/403/400 ProblemDetails, webhook ไม่มีลายเซ็น → 401 ฯลฯ)
+- ระบบสมาชิก (`tests/CustomerMgnt.Tests/Membership`): สูตรคะแนนตามตัวอย่างใน spec (132 คะแนน, คืนสินค้า 30 + 102), promotion engine, กฎสถานะ/Tier/Segment และ end-to-end: กฎคะแนน → อนุมัติ (ห้ามอนุมัติเอง) → สมัครสมาชิก → POS checkout → commit ซ้ำด้วย key เดิม → คืนสินค้า
 - integration test กับฐานข้อมูลจริง (ข้ามอัตโนมัติถ้าไม่ตั้งตัวแปร):
 
 ```bash

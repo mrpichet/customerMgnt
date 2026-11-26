@@ -1,0 +1,244 @@
+@page "/promotions/new"
+@page "/promotions/{Id:long}/edit"
+@attribute [Authorize]
+@inherits MembershipPage
+@* A18 สร้าง/แก้ไขแคมเปญ (หน้าเต็ม) — บันทึกเป็นร่าง แล้วส่งอนุมัติจากหน้ารายละเอียด *@
+<PageTitle>@Title</PageTitle>
+
+<RequirePermission Permission="@P.PromotionWrite">
+    @if (LoadError is not null)
+    {
+        <ErrorView Title="โหลดข้อมูลไม่สำเร็จ" Message="@LoadError" OnRetry="LoadAsync" />
+    }
+    else if (_req is null)
+    {
+        <LoadingState />
+    }
+    else
+    {
+        <FormTemplate Title="@Title" Description="บันทึกแล้วแคมเปญอยู่ในสถานะร่าง ทดลองคำนวณและส่งอนุมัติได้จากหน้ารายละเอียด"
+                      Breadcrumbs="Crumbs" Mode="@(Id is null ? FormMode.New : FormMode.Edit)" Model="_req" SavePermission="@P.PromotionWrite" SaveText="บันทึกร่าง" OnSave="SaveAsync" OnCancel="Back">
+            <ChildContent>
+                <FormSection Title="ข้อมูลแคมเปญ">
+                    <FieldGrid Columns="2">
+                        <FormField Label="รหัส" InputId="code" For="() => _req.Code" Required><InputText id="code" @bind-Value="_req.Code" maxlength="30" disabled="@(Id is not null)" /></FormField>
+                        <FormField Label="ชื่อ" InputId="name" For="() => _req.Name" Required><InputText id="name" @bind-Value="_req.Name" maxlength="200" /></FormField>
+                        <Field Label="เริ่ม" InputId="start"><input id="start" type="datetime-local" @bind="_start" required /></Field>
+                        <Field Label="สิ้นสุด" InputId="end"><input id="end" type="datetime-local" @bind="_end" required /></Field>
+                    </FieldGrid>
+                    <Field Label="คำอธิบาย (แสดงใน Portal สมาชิก)" InputId="desc"><textarea id="desc" @bind="_req.Description" rows="3" maxlength="2000"></textarea></Field>
+                </FormSection>
+
+                <FormSection Title="รางวัล">
+                    <FieldGrid Columns="2">
+                        <Field Label="ประเภทรางวัล" InputId="rt">
+                            <select id="rt" @bind="_req.RewardType">
+                                @foreach (RewardType r in Enum.GetValues<RewardType>()) { <option value="@r">@Text.Reward(r)</option> }
+                            </select>
+                        </Field>
+                        <Field Label="ระดับ" InputId="lv">
+                            <select id="lv" @bind="_req.Level">
+                                <option value="@PromotionLevel.Bill">ทั้งบิล</option>
+                                <option value="@PromotionLevel.Line">รายการสินค้า</option>
+                            </select>
+                        </Field>
+                        @switch (_req.RewardType)
+                        {
+                            case RewardType.PercentDiscount:
+                                <Field Label="ส่วนลด (%)" InputId="pct"><input id="pct" type="number" step="0.01" min="0" max="100" @bind="_req.Reward.Percent" /></Field>
+                                <Field Label="ลดสูงสุด (บาท) — ว่าง = ไม่จำกัด" InputId="cap"><input id="cap" type="number" step="0.01" min="0" @bind="_req.Reward.Cap" /></Field>
+                                break;
+                            case RewardType.AmountDiscount:
+                                <Field Label="ส่วนลด (บาท)" InputId="amt"><input id="amt" type="number" step="0.01" min="0" @bind="_req.Reward.Amount" /></Field>
+                                break;
+                            case RewardType.BuyXGetY:
+                                <Field Label="ซื้อ (ชิ้น)" InputId="bq"><input id="bq" type="number" min="1" @bind="_req.Reward.BuyQty" /></Field>
+                                <Field Label="แถม (ชิ้น)" InputId="gq"><input id="gq" type="number" min="1" @bind="_req.Reward.GetQty" /></Field>
+                                break;
+                            case RewardType.SpendThreshold:
+                                <Field Label="ซื้อครบ (บาท)" InputId="th"><input id="th" type="number" step="0.01" min="0" @bind="_req.Reward.Threshold" /></Field>
+                                <Field Label="ลด (บาท)" InputId="tha"><input id="tha" type="number" step="0.01" min="0" @bind="_req.Reward.Amount" /></Field>
+                                break;
+                            case RewardType.BonusPoints:
+                                <Field Label="คะแนนพิเศษ" InputId="bp"><input id="bp" type="number" min="1" @bind="_req.Reward.BonusPoints" /></Field>
+                                break;
+                            case RewardType.PointMultiplier:
+                                <Field Label="ตัวคูณคะแนน (มากกว่า 1)" InputId="mu"><input id="mu" type="number" step="0.1" min="1" @bind="_req.Reward.Multiplier" /></Field>
+                                break;
+                            case RewardType.IssueCoupon:
+                                <Field Label="ชุดคูปองที่แจก" InputId="cb">
+                                    <select id="cb" @bind="_req.Reward.CouponBatchId">
+                                        <option value="">-- เลือก --</option>
+                                        @foreach (CouponBatchDTO b in _batches) { <option value="@b.Id">@b.Name (@b.CodePrefix)</option> }
+                                    </select>
+                                </Field>
+                                break;
+                        }
+                    </FieldGrid>
+                    <label class="check-list"><InputCheckbox @bind-Value="_req.RequiresCoupon" /> ต้องใช้คูปองจึงได้รับสิทธิ์</label>
+                </FormSection>
+
+                <FormSection Title="เงื่อนไข">
+                    <FieldGrid Columns="2">
+                        <Field Label="ยอดซื้อขั้นต่ำ (บาท)" InputId="ms"><input id="ms" type="number" step="0.01" min="0" @bind="_req.Conditions.MinSpend" /></Field>
+                        <Field Label="รหัสสินค้า (คั่นด้วย ,) — ว่าง = ทุกสินค้า" InputId="items"><input id="items" @bind="_items" maxlength="2000" /></Field>
+                        <Field Label="หมวดสินค้า (คั่นด้วย ,)" InputId="cats"><input id="cats" @bind="_cats" maxlength="1000" /></Field>
+                        <Field Label="สาขา (คั่นด้วย ,) — ว่าง = ทุกสาขา" InputId="brs"><input id="brs" @bind="_branches" maxlength="1000" /></Field>
+                        <Field Label="ช่วงเวลาในวัน ตั้งแต่" InputId="tf"><input id="tf" type="time" @bind="_req.Conditions.TimeFrom" /></Field>
+                        <Field Label="ถึง" InputId="tt"><input id="tt" type="time" @bind="_req.Conditions.TimeTo" /></Field>
+                    </FieldGrid>
+                    <Field Label="ช่องทางขาย — ไม่เลือก = ทุกช่องทาง" InputId="chs">
+                        <div class="check-list" id="chs">
+                            @foreach (SalesChannel c in Enum.GetValues<SalesChannel>())
+                            {
+                                <label><input type="checkbox" checked="@_req.Conditions.Channels.Contains(c)" @onchange="e => Toggle(_req.Conditions.Channels, c, e.Value is true)" /> @c</label>
+                            }
+                        </div>
+                    </Field>
+                    <Field Label="วันในสัปดาห์ — ไม่เลือก = ทุกวัน" InputId="dows">
+                        <div class="check-list" id="dows">
+                            @foreach ((DayOfWeek d, string label) in Days)
+                            {
+                                <label><input type="checkbox" checked="@_req.Conditions.DaysOfWeek.Contains(d)" @onchange="e => Toggle(_req.Conditions.DaysOfWeek, d, e.Value is true)" /> @label</label>
+                            }
+                        </div>
+                    </Field>
+                    <label class="check-list"><InputCheckbox @bind-Value="_req.Conditions.BirthdayMonthOnly" /> เฉพาะเดือนเกิดของสมาชิก</label>
+                </FormSection>
+
+                <FormSection Title="กลุ่มเป้าหมาย">
+                    <label class="check-list"><InputCheckbox @bind-Value="_req.Targets.AllMembers" /> สมาชิกทุกคน</label>
+                    @if (!_req.Targets.AllMembers)
+                    {
+                        <Field Label="Tier" InputId="tiers">
+                            <div class="check-list" id="tiers">
+                                @foreach (TierDTO t in _tiers)
+                                {
+                                    <label><input type="checkbox" checked="@_req.Targets.TierCodes.Contains(t.Code)" @onchange="e => Toggle(_req.Targets.TierCodes, t.Code, e.Value is true)" /> @t.Name</label>
+                                }
+                            </div>
+                        </Field>
+                        <Field Label="Segment" InputId="segs">
+                            <div class="check-list" id="segs">
+                                @foreach (SegmentDTO s in _segments)
+                                {
+                                    <label><input type="checkbox" checked="@_req.Targets.SegmentIds.Contains(s.Id)" @onchange="e => Toggle(_req.Targets.SegmentIds, s.Id, e.Value is true)" /> @s.Name (@Text.Int(s.MemberCount))</label>
+                                }
+                            </div>
+                        </Field>
+                    }
+                </FormSection>
+
+                <FormSection Title="การใช้ร่วมและจำกัดสิทธิ์">
+                    <FieldGrid Columns="2">
+                        <Field Label="การใช้ร่วมกับโปรอื่น" InputId="sm">
+                            <select id="sm" @bind="_req.StackMode">
+                                <option value="@StackMode.Exclusive">ใช้เดี่ยว (เลือกโปรที่คุ้มที่สุด)</option>
+                                <option value="@StackMode.Stackable">ใช้ร่วมได้</option>
+                                <option value="@StackMode.Group">ใช้ได้ 1 โปรต่อกลุ่ม</option>
+                            </select>
+                        </Field>
+                        @if (_req.StackMode == StackMode.Group)
+                        {
+                            <Field Label="ชื่อกลุ่ม" InputId="eg"><input id="eg" @bind="_req.ExclusionGroup" maxlength="50" /></Field>
+                        }
+                        <Field Label="ลำดับความสำคัญ (น้อย = ก่อน)" InputId="pr"><input id="pr" type="number" min="0" @bind="_req.Priority" /></Field>
+                        <Field Label="ต่อสมาชิกตลอดแคมเปญ (ครั้ง)" InputId="lt"><input id="lt" type="number" min="1" @bind="_req.Limits!.PerMemberTotal" /></Field>
+                        <Field Label="ต่อสมาชิกต่อวัน (ครั้ง)" InputId="ld"><input id="ld" type="number" min="1" @bind="_req.Limits!.PerMemberPerDay" /></Field>
+                        <Field Label="จำนวนครั้งรวม" InputId="lu"><input id="lu" type="number" min="1" @bind="_req.Limits!.TotalUses" /></Field>
+                        <Field Label="งบประมาณ (บาท)" InputId="lb"><input id="lb" type="number" step="0.01" min="0" @bind="_req.Limits!.Budget" /></Field>
+                    </FieldGrid>
+                    <p class="muted">ช่องจำกัดที่เว้นว่าง = ไม่จำกัด (ต่อสมาชิกต่อวันใช้ค่าเริ่มต้นจากตั้งค่ากติกา)</p>
+                </FormSection>
+            </ChildContent>
+        </FormTemplate>
+    }
+</RequirePermission>
+
+@code {
+    [Parameter] public long? Id { get; set; }
+
+    private static readonly (DayOfWeek, string)[] Days =
+    [
+        (DayOfWeek.Monday, "จ."), (DayOfWeek.Tuesday, "อ."), (DayOfWeek.Wednesday, "พ."), (DayOfWeek.Thursday, "พฤ."),
+        (DayOfWeek.Friday, "ศ."), (DayOfWeek.Saturday, "ส."), (DayOfWeek.Sunday, "อา."),
+    ];
+
+    private CampaignRequest? _req;
+    private IReadOnlyList<TierDTO> _tiers = [];
+    private IReadOnlyList<SegmentDTO> _segments = [];
+    private IReadOnlyList<CouponBatchDTO> _batches = [];
+    private DateTime? _start;
+    private DateTime? _end;
+    private string? _items;
+    private string? _cats;
+    private string? _branches;
+
+    private string Title => Id is null ? "สร้างแคมเปญ" : $"แก้ไขแคมเปญ {_req?.Code}";
+    private IReadOnlyList<Breadcrumb> Crumbs => Id is null
+        ? [new("หน้าแรก", ""), new("แคมเปญโปรโมชัน", "promotions"), new(Title)]
+        : [new("หน้าแรก", ""), new("แคมเปญโปรโมชัน", "promotions"), new(_req?.Code ?? "แคมเปญ", $"promotions/{Id}"), new("แก้ไข")];
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private Task LoadAsync() => LoadSafeAsync(async () =>
+    {
+        _tiers = await OptionalAsync(() => Api.GetAsync<List<TierDTO>>("api/v1/tiers"));
+        _segments = await OptionalAsync(() => Api.GetAsync<List<SegmentDTO>>("api/v1/segments"));
+        _batches = await OptionalAsync(() => Api.GetAsync<List<CouponBatchDTO>>("api/v1/coupons/batches"));
+        if (Id is null)
+        {
+            _req = new CampaignRequest { Limits = new CampaignLimitsDTO() };
+            _start = DateTime.Today.AddDays(1);
+            _end = DateTime.Today.AddDays(31);
+            return;
+        }
+
+        CampaignDTO c = await Api.GetAsync<CampaignDTO>($"api/v1/promotions/{Id}");
+        _req = new CampaignRequest
+        {
+            Code = c.Code, Name = c.Name, Description = c.Description, StartAt = c.StartAt, EndAt = c.EndAt, RewardType = c.RewardType, Reward = c.Reward,
+            Level = c.Level, RequiresCoupon = c.RequiresCoupon, Conditions = c.Conditions, Targets = c.Targets, StackMode = c.StackMode,
+            ExclusionGroup = c.ExclusionGroup, Priority = c.Priority, Limits = c.Limits, Version = c.Version,
+        };
+        _start = c.StartAt.ToLocalTime().DateTime;
+        _end = c.EndAt.ToLocalTime().DateTime;
+        _items = Text.JoinList(c.Conditions.ItemCodes);
+        _cats = Text.JoinList(c.Conditions.Categories);
+        _branches = Text.JoinList(c.Conditions.Branches);
+    });
+
+    private static void Toggle<T>(List<T> list, T value, bool on)
+    {
+        if (on && !list.Contains(value)) list.Add(value);
+        if (!on) list.Remove(value);
+    }
+
+    private async Task<bool> SaveAsync()
+    {
+        if (_start is null || _end is null)
+        {
+            Toasts.Error("กรุณาระบุวันเริ่มและวันสิ้นสุด");
+            return false;
+        }
+
+        _req!.StartAt = new DateTimeOffset(_start.Value);
+        _req.EndAt = new DateTimeOffset(_end.Value);
+        _req.Conditions.ItemCodes = Text.SplitList(_items);
+        _req.Conditions.Categories = Text.SplitList(_cats);
+        _req.Conditions.Branches = Text.SplitList(_branches);
+        _req.Description = Clean(_req.Description);
+        _req.ExclusionGroup = _req.StackMode == StackMode.Group ? Clean(_req.ExclusionGroup) : null;
+        CampaignDTO? saved = null;
+        bool ok = await SaveSafeAsync(async () =>
+        {
+            saved = Id is null
+                ? await Api.PostAsync<CampaignDTO>("api/v1/promotions", _req)
+                : await Api.PutAsync<CampaignDTO>($"api/v1/promotions/{Id}", _req);
+        }, "บันทึกแคมเปญแล้ว");
+        if (ok && saved is not null) Nav.NavigateTo($"promotions/{saved.Id}");
+        return ok;
+    }
+
+    private void Back() => Nav.NavigateTo(Id is null ? "promotions" : $"promotions/{Id}");
+}

@@ -1,0 +1,84 @@
+@page "/coupons/codes"
+@attribute [Authorize]
+@inherits MembershipPage
+@* A23 ค้นหารหัสคูปอง *@
+<PageTitle>รหัสคูปอง</PageTitle>
+
+<RequirePermission Permission="@P.CouponRead">
+    <ListTemplate TItem="CouponDTO" Title="รหัสคูปอง" Description="ค้นหาด้วยรหัส ชุด หรือสถานะ เปิดดูเพื่อดูประวัติหรือยกเลิกคูปอง"
+                  Breadcrumbs="_crumbs" Permissions="_perms" Items="_items" Loading="_loading" ErrorMessage="@LoadError" OnRetry="LoadAsync"
+                  CriteriaActiveCount="ActiveCount" OnSearch="SearchAsync" OnClear="ClearAsync" PageSize="20"
+                  OnView="@(c => Nav.NavigateTo($"coupons/codes/{Uri.EscapeDataString(c.Code)}"))">
+        <Criteria>
+            <Field Label="รหัสคูปอง" InputId="c-code"><input id="c-code" @bind="_code" maxlength="40" /></Field>
+            <Field Label="ชุด" InputId="c-b">
+                <select id="c-b" @bind="_c.BatchId">
+                    <option value="">ทั้งหมด</option>
+                    @foreach (CouponBatchDTO b in _batches) { <option value="@b.Id">@b.Name</option> }
+                </select>
+            </Field>
+            <Field Label="สถานะ" InputId="c-st">
+                <select id="c-st" @bind="_c.Status">
+                    <option value="">ทั้งหมด</option>
+                    @foreach (CouponStatus s in Enum.GetValues<CouponStatus>()) { <option value="@s">@Text.Coupon(s)</option> }
+                </select>
+            </Field>
+        </Criteria>
+        <Columns>
+            <TableColumn TItem="CouponDTO" Title="รหัส" Field="c => c.Code" IsPrimary Sortable />
+            <TableColumn TItem="CouponDTO" Title="แคมเปญ" Field="c => c.CampaignName ?? c.CampaignId.ToString(CultureInfo.InvariantCulture)" HideOnMobile />
+            <TableColumn TItem="CouponDTO" Title="สมาชิก" Field="c => c.MemberId" />
+            <TableColumn TItem="CouponDTO" Title="หมดอายุ" Field="c => Text.Date(c.ExpiresAt)" SortBy="c => c.ExpiresAt" Sortable HideOnMobile />
+            <TableColumn TItem="CouponDTO" Title="สถานะ" SortBy="c => c.Status">
+                <Template><Badge Text="@Text.Coupon(context.Status)" Level="@Text.Level(context.Status)" /></Template>
+            </TableColumn>
+        </Columns>
+    </ListTemplate>
+</RequirePermission>
+
+@code {
+    [SupplyParameterFromQuery(Name = "batchId")] public long? BatchIdQuery { get; set; }
+
+    private readonly IReadOnlyList<Breadcrumb> _crumbs = [new("หน้าแรก", ""), new("ชุดคูปอง", "coupons"), new("รหัสคูปอง")];
+    private readonly ListPermissions _perms = new() { View = P.CouponRead };
+    private CouponSearchCriteria _c = new();
+    private string? _code;
+    private IReadOnlyList<CouponBatchDTO> _batches = [];
+    private IReadOnlyList<CouponDTO>? _items;
+    private bool _loading;
+
+    private int ActiveCount => new object?[] { _code, _c.BatchId, _c.Status }.Count(x => x is not null && x is not "");
+
+    protected override async Task OnInitializedAsync()
+    {
+        _c.BatchId = BatchIdQuery;
+        _batches = await OptionalAsync(() => Api.GetAsync<List<CouponBatchDTO>>("api/v1/coupons/batches"));
+        await LoadAsync();
+    }
+
+    private Task SearchAsync()
+    {
+        // ใส่รหัสคูปอง = เปิดหน้ารายละเอียดเลย
+        if (!string.IsNullOrWhiteSpace(_code))
+        {
+            Nav.NavigateTo($"coupons/codes/{Uri.EscapeDataString(_code.Trim().ToUpperInvariant())}");
+            return Task.CompletedTask;
+        }
+
+        return LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        await LoadSafeAsync(async () => _items = (await Api.GetAsync<PagedResultDTO<CouponDTO>>("api/v1/coupons", new { _c.BatchId, _c.Status, pageSize = 500 })).Items);
+        _loading = false;
+    }
+
+    private Task ClearAsync()
+    {
+        _c = new CouponSearchCriteria();
+        _code = null;
+        return LoadAsync();
+    }
+}

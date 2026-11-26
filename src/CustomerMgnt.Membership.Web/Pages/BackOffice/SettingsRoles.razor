@@ -1,0 +1,29 @@
+@page "/settings/users"
+@attribute [Authorize]
+@inherits MembershipPage
+@* A39 ผู้ใช้และสิทธิ์ — ผู้ใช้/บทบาทจัดการที่ AuthServer หน้านี้แสดงแม่แบบบทบาทที่ต้องสร้างใน AuthServer *@
+<PageTitle>ผู้ใช้และสิทธิ์</PageTitle>
+
+<RequirePermission Permission="@P.SettingsManage">
+    <PageHeader Title="ผู้ใช้และสิทธิ์" Description="ผู้ใช้ บทบาท และการผูกสิทธิ์จัดการที่ AuthServer (Application customermgnt) — ตารางด้านล่างคือบทบาทแนะนำและสิทธิ์ของแต่ละบทบาท" Breadcrumbs="_crumbs" />
+    <Alert Level="AlertLevel.Info">สร้างบทบาทใน AuthServer ตามตารางนี้ แล้วกำหนดบทบาทให้ผู้ใช้ การเปลี่ยนแปลงใน AuthServer ต้องผ่านการอนุมัติของผู้ดูแลอีกคน</Alert>
+    @if (LoadError is not null)
+    {
+        <ErrorView Title="โหลดข้อมูลไม่สำเร็จ" Message="@LoadError" OnRetry="LoadAsync" />
+    }
+    <DataTable TItem="RoleTemplateDTO" Items="_items" Caption="แม่แบบบทบาท" ShowPager="false">
+        <Columns>
+            <TableColumn TItem="RoleTemplateDTO" Title="บทบาท" Field="r => r.Role" />
+            <TableColumn TItem="RoleTemplateDTO" Title="สิทธิ์" Field="r => Text.JoinList(r.Permissions)" />
+        </Columns>
+    </DataTable>
+</RequirePermission>
+
+@code {
+    private readonly IReadOnlyList<Breadcrumb> _crumbs = [new("หน้าแรก", ""), new("ตั้งค่า"), new("ผู้ใช้และสิทธิ์")];
+    private IReadOnlyList<RoleTemplateDTO> _items = [];
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private Task LoadAsync() => LoadSafeAsync(async () => _items = await Api.GetAsync<List<RoleTemplateDTO>>("api/v1/settings/roles"));
+}

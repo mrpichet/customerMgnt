@@ -4,6 +4,7 @@ using CustomerMgnt.Core.DataAccess;
 using CustomerMgnt.Data.Ado;
 using CustomerMgnt.Data.InMemory;
 using CustomerMgnt.Data.Infrastructure;
+using CustomerMgnt.Data.Membership;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -52,6 +53,7 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<IExternalLinkDAO, ExternalLinkADO>();
         services.TryAddSingleton<IEngagementDAO, EngagementADO>();
         services.TryAddSingleton<IUserProfileDAO, UserProfileADO>();
+        services.AddMembershipAdoData();
 
         // Step 3: migration ก่อน hosted service อื่น (ลงทะเบียนก่อน = start ก่อน)
         services.AddHostedService<CustomerMgntMigrator>();
@@ -77,6 +79,7 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<IExternalLinkDAO, InMemoryExternalLinkADO>();
         services.TryAddSingleton<IEngagementDAO, InMemoryEngagementADO>();
         services.TryAddSingleton<IUserProfileDAO, InMemoryUserProfileADO>();
+        services.AddMembershipInMemoryData();
         services.AddCommonInMemoryData();
         return services;
     }

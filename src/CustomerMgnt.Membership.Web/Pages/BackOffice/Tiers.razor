@@ -1,0 +1,45 @@
+@page "/tiers"
+@attribute [Authorize]
+@inherits MembershipPage
+@* A10 รายการระดับสมาชิก (Tier) *@
+<PageTitle>ระดับสมาชิก</PageTitle>
+
+<RequirePermission Permission="@P.MemberRead">
+    <ListTemplate TItem="TierDTO" Title="ระดับสมาชิก (Tier)" Description="เกณฑ์ยอดซื้อในรอบที่กำหนดใช้เลื่อน/คงระดับ ระบบทบทวนระดับทุกคืน"
+                  Breadcrumbs="_crumbs" Permissions="_perms" Items="_items" Loading="_loading" ErrorMessage="@LoadError" OnRetry="LoadAsync"
+                  NewText="เพิ่ม Tier" OnNew="@(() => Nav.NavigateTo("tiers/new"))" OnEdit="@(t => Nav.NavigateTo($"tiers/{t.Id}/edit"))"
+                  ItemName="@(t => t.Name)">
+        <HeaderActions>
+            <AppButton Text="ทบทวนระดับทั้งหมดตอนนี้" Variant="ButtonVariant.Secondary" Permission="@P.TierManage" Busy="Busy" OnClick="EvaluateAsync" />
+        </HeaderActions>
+        <Columns>
+            <TableColumn TItem="TierDTO" Title="ลำดับ" Field="t => t.Rank" Sortable />
+            <TableColumn TItem="TierDTO" Title="รหัส" Field="t => t.Code" />
+            <TableColumn TItem="TierDTO" Title="ชื่อ" Field="t => t.Name" IsPrimary />
+            <TableColumn TItem="TierDTO" Title="ยอดเลื่อนขั้น" Field="t => t.UpgradeThreshold" Format="N2" Align="ColumnAlign.End" />
+            <TableColumn TItem="TierDTO" Title="ยอดคงระดับ" Field="t => t.RetainThreshold" Format="N2" Align="ColumnAlign.End" />
+            <TableColumn TItem="TierDTO" Title="ตัวคูณคะแนน" Field="t => t.PointMultiplier" Format="N2" Align="ColumnAlign.End" />
+            <TableColumn TItem="TierDTO" Title="สถานะ" SortBy="t => t.IsActive">
+                <Template><Badge Text="@(context.IsActive ? "ใช้งาน" : "ปิด")" Level="@(context.IsActive ? AlertLevel.Success : AlertLevel.Info)" /></Template>
+            </TableColumn>
+        </Columns>
+    </ListTemplate>
+</RequirePermission>
+
+@code {
+    private readonly IReadOnlyList<Breadcrumb> _crumbs = [new("หน้าแรก", ""), new("ระดับสมาชิก")];
+    private readonly ListPermissions _perms = new() { Create = P.TierManage, Edit = P.TierManage };
+    private IReadOnlyList<TierDTO>? _items;
+    private bool _loading;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        await LoadSafeAsync(async () => _items = [.. (await Api.GetAsync<List<TierDTO>>("api/v1/tiers")).OrderBy(t => t.Rank)]);
+        _loading = false;
+    }
+
+    private Task EvaluateAsync() => SaveSafeAsync(() => Api.PostAsync<JobDTO>("api/v1/tiers/evaluate", new { }), "เริ่มทบทวนระดับสมาชิกแล้ว (ทำงานเบื้องหลัง)");
+}

@@ -1,0 +1,48 @@
+@inherits LayoutComponentBase
+@*
+    Member Portal: หน้าเรียบสำหรับมือถือ เมนูแนวนอน ไม่มี side nav ของเจ้าหน้าที่
+*@
+<div class="portal">
+    <header class="portal-head">
+        <AppBrand Variant="surface" />
+        <div class="row-actions">
+            <ThemeToggle />
+            <AuthorizeView>
+                <Authorized>
+                    <AppButton Text="ออกจากระบบ" Icon="log-out" Variant="ButtonVariant.Secondary" Size="ButtonSize.Small" OnClick="LogoutAsync" />
+                </Authorized>
+            </AuthorizeView>
+        </div>
+    </header>
+    <AuthorizeView>
+        <Authorized>
+            <nav class="portal-nav" aria-label="เมนูสมาชิก">
+                <NavLink href="portal" Match="NavLinkMatch.All">หน้าแรก</NavLink>
+                <NavLink href="portal/points">คะแนน</NavLink>
+                <NavLink href="portal/rewards">แลกของรางวัล</NavLink>
+                <NavLink href="portal/coupons">คูปองของฉัน</NavLink>
+                <NavLink href="portal/promotions">โปรโมชัน</NavLink>
+                <NavLink href="portal/purchases">ประวัติการซื้อ</NavLink>
+                <NavLink href="portal/profile">ข้อมูลส่วนตัว</NavLink>
+                <NavLink href="portal/consents">ความยินยอม</NavLink>
+                <NavLink href="portal/privacy">สิทธิข้อมูลส่วนบุคคล</NavLink>
+            </nav>
+        </Authorized>
+    </AuthorizeView>
+    <main id="main-content">
+        @Body
+    </main>
+    <ToastHost />
+    <DialogHost />
+</div>
+
+@code {
+    [Inject] private AuthSession Session { get; set; } = default!;
+    [Inject] private NavigationManager Nav { get; set; } = default!;
+
+    private async Task LogoutAsync()
+    {
+        await Session.LogoutAsync();
+        Nav.NavigateTo("portal/login", replace: true);
+    }
+}

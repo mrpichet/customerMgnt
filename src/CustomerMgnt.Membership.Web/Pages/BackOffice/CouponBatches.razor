@@ -1,0 +1,45 @@
+@page "/coupons"
+@attribute [Authorize]
+@inherits MembershipPage
+@* A21 ชุดคูปอง *@
+<PageTitle>ชุดคูปอง</PageTitle>
+
+<RequirePermission Permission="@P.CouponRead">
+    <ListTemplate TItem="CouponBatchDTO" Title="ชุดคูปอง" Description="สร้างรหัสคูปองครั้งละชุด ผูกกับแคมเปญที่กำหนดสิทธิ์ แจกให้สมาชิกหรือ Segment หรือให้แลกด้วยคะแนน"
+                  Breadcrumbs="_crumbs" Permissions="_perms" Items="_items" Loading="_loading" ErrorMessage="@LoadError" OnRetry="LoadAsync"
+                  NewText="สร้างชุดคูปอง" OnNew="@(() => Nav.NavigateTo("coupons/batches/new"))" OnView="@(b => Nav.NavigateTo($"coupons/codes?batchId={b.Id}"))"
+                  ItemName="@(b => b.Name)" PageSize="20">
+        <HeaderActions>
+            <AppButton Text="แจกคูปอง" Variant="ButtonVariant.Secondary" Permission="@P.CouponWrite" Href="coupons/issue" />
+        </HeaderActions>
+        <Columns>
+            <TableColumn TItem="CouponBatchDTO" Title="ชื่อ" Field="b => b.Name" IsPrimary Sortable />
+            <TableColumn TItem="CouponBatchDTO" Title="แคมเปญ" Field="b => b.CampaignId" />
+            <TableColumn TItem="CouponBatchDTO" Title="Prefix" Field="b => b.CodePrefix" HideOnMobile />
+            <TableColumn TItem="CouponBatchDTO" Title="สร้างแล้ว/จำนวน" Field="b => Progress(b)" Align="ColumnAlign.End" />
+            <TableColumn TItem="CouponBatchDTO" Title="แลกด้วยคะแนน" Field="b => b.PointsCost" Format="N0" Align="ColumnAlign.End" HideOnMobile />
+            <TableColumn TItem="CouponBatchDTO" Title="หมดอายุ" Field="b => Text.Date(b.ExpiresAt)" SortBy="b => b.ExpiresAt" Sortable />
+            <TableColumn TItem="CouponBatchDTO" Title="สถานะ" SortBy="b => b.Status">
+                <Template><Badge Text="@Text.Job(context.Status)" Level="@Text.Level(context.Status)" /></Template>
+            </TableColumn>
+        </Columns>
+    </ListTemplate>
+</RequirePermission>
+
+@code {
+    private readonly IReadOnlyList<Breadcrumb> _crumbs = [new("หน้าแรก", ""), new("ชุดคูปอง")];
+    private readonly ListPermissions _perms = new() { Create = P.CouponWrite, View = P.CouponRead };
+    private IReadOnlyList<CouponBatchDTO>? _items;
+    private bool _loading;
+
+    private static string Progress(CouponBatchDTO b) => $"{b.Generated:N0} / {b.Quantity:N0}";
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        await LoadSafeAsync(async () => _items = await Api.GetAsync<List<CouponBatchDTO>>("api/v1/coupons/batches"));
+        _loading = false;
+    }
+}

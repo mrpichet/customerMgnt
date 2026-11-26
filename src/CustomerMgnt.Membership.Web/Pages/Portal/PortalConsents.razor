@@ -1,0 +1,86 @@
+@page "/portal/consents"
+@layout PortalLayout
+@attribute [Authorize]
+@inherits PortalPage
+@* P10 ความยินยอม: ยอมรับฉบับล่าสุด / ให้หรือถอนการรับข่าวสารแยกตามช่องทาง *@
+<PageTitle>ความยินยอม</PageTitle>
+
+<PageHeader Title="ความยินยอม" Description="คุณถอนความยินยอมรับข่าวสารได้ทุกเมื่อ การถอนไม่กระทบคะแนนและสิทธิ์สมาชิก" />
+@if (LoadError is not null)
+{
+    <ErrorView Title="โหลดข้อมูลไม่สำเร็จ" Message="@LoadError" OnRetry="LoadAsync" />
+}
+else if (_d is null)
+{
+    <LoadingState />
+}
+else
+{
+    @if (_d.Current is not null)
+    {
+        <Card Title="@_d.Current.Title" Description="@($"มีผล {Text.Date(_d.Current.EffectiveAt)}")">
+            <details><summary>อ่านข้อตกลง</summary><div style="white-space:pre-wrap;max-height:300px;overflow:auto;margin-top:8px">@_d.Current.Body</div></details>
+            @if (!AcceptedCurrent) { <Alert Level="AlertLevel.Warning">มีข้อตกลงฉบับใหม่ กรุณาอ่านและกดยอมรับ</Alert> }
+        </Card>
+    }
+    <Card Title="การรับข่าวสารและโปรโมชัน">
+        <label class="check-list"><input type="checkbox" @bind="_marketing" /> ยินยอมรับข่าวสารและโปรโมชัน</label>
+        @if (_marketing)
+        {
+            <div class="check-list">
+                @foreach (MarketingChannel c in Enum.GetValues<MarketingChannel>())
+                {
+                    <label><input type="checkbox" checked="@_channels.Contains(c)" @onchange="e => Toggle(c, e.Value is true)" /> @Text.Channel(c)</label>
+                }
+            </div>
+        }
+        <div class="row-actions" style="margin-top:12px">
+            <AppButton Text="@(AcceptedCurrent ? "บันทึก" : "ยอมรับข้อตกลงและบันทึก")" Variant="ButtonVariant.Primary" Busy="Busy" OnClick="SaveAsync" />
+        </div>
+    </Card>
+    <DataTable TItem="MemberConsentDTO" Items="_d.History" Caption="ประวัติความยินยอม" PageSize="10">
+        <Columns>
+            <TableColumn TItem="MemberConsentDTO" Title="วันที่" Field="c => Text.DateTime(c.At)" />
+            <TableColumn TItem="MemberConsentDTO" Title="ฉบับ" Field="c => c.ConsentVersionId" />
+            <TableColumn TItem="MemberConsentDTO" Title="ข่าวสาร" Field="c => MarketingText(c)" />
+            <TableColumn TItem="MemberConsentDTO" Title="ช่องทางที่บันทึก" Field="c => c.Channel" HideOnMobile />
+        </Columns>
+    </DataTable>
+}
+
+@code {
+    private MyConsentsDTO? _d;
+    private bool _marketing;
+    private List<MarketingChannel> _channels = [];
+
+    private bool AcceptedCurrent => _d?.Current is null || _d.History.Any(h => h.ConsentVersionId == _d.Current.Id && h.Accepted);
+
+    private static string MarketingText(MemberConsentDTO c) => c.MarketingConsent ? Text.JoinList(c.MarketingChannels.Select(Text.Channel)) : "ไม่รับ";
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private Task LoadAsync() => PortalLoadAsync(async () =>
+    {
+        _d = await Api.GetAsync<MyConsentsDTO>("api/v1/me/consents");
+        MemberConsentDTO? last = _d.History.FirstOrDefault();
+        _marketing = last?.MarketingConsent ?? false;
+        _channels = last is null ? [] : [.. last.MarketingChannels];
+    });
+
+    private void Toggle(MarketingChannel c, bool on)
+    {
+        if (on && !_channels.Contains(c)) _channels.Add(c);
+        if (!on) _channels.Remove(c);
+    }
+
+    private async Task SaveAsync()
+    {
+        if (await SaveSafeAsync(async () => _d = await Api.PutAsync<MyConsentsDTO>("api/v1/me/consents", new UpdateConsentRequest
+            {
+                ConsentVersionId = _d?.Current?.Id, Accepted = true, MarketingConsent = _marketing, MarketingChannels = _marketing ? _channels : [],
+            }), "บันทึกความยินยอมแล้ว"))
+        {
+            await LoadAsync();
+        }
+    }
+}

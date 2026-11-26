@@ -1,0 +1,131 @@
+@page "/promotions/simulate"
+@attribute [Authorize]
+@inherits MembershipPage
+@* A20 ทดลองคำนวณ: ใส่สมาชิก + ตะกร้า ดูส่วนลด/คะแนนที่จะได้ (ไม่จองสิทธิ์ ไม่บันทึก) *@
+<PageTitle>ทดลองคำนวณโปรโมชัน</PageTitle>
+
+<RequirePermission Permission="@P.PromotionRead">
+    <PageHeader Title="ทดลองคำนวณโปรโมชัน" Description="ใช้สูตรเดียวกับ POS แต่ไม่จองสิทธิ์และไม่บันทึกรายการ ระบุแคมเปญเพื่อทดลองแคมเปญที่ยังไม่อนุมัติได้" Breadcrumbs="_crumbs" />
+
+    <Card Title="ข้อมูลการซื้อ">
+        <FieldGrid Columns="3">
+            <Field Label="เลขสมาชิก" InputId="mno"><input id="mno" @bind="_req.MemberNo" maxlength="30" /></Field>
+            <Field Label="สาขา" InputId="br"><input id="br" @bind="_req.BranchCode" maxlength="30" /></Field>
+            <Field Label="ช่องทาง" InputId="ch">
+                <select id="ch" @bind="_req.Channel">@foreach (SalesChannel c in Enum.GetValues<SalesChannel>()) { <option value="@c">@c</option> }</select>
+            </Field>
+            <Field Label="วันเวลาที่ซื้อ" InputId="at"><input id="at" type="datetime-local" @bind="_at" /></Field>
+            <Field Label="ส่วนลดท้ายบิล (บาท)" InputId="bd"><input id="bd" type="number" step="0.01" min="0" @bind="_req.BillDiscount" /></Field>
+            <Field Label="ใช้คะแนน" InputId="ptr"><input id="ptr" type="number" min="0" @bind="_req.PointsToRedeem" /></Field>
+            <Field Label="รหัสคูปอง (คั่นด้วย ,)" InputId="cp"><input id="cp" @bind="_coupons" maxlength="500" /></Field>
+            <Field Label="ทดลองเฉพาะแคมเปญ (รหัส id คั่นด้วย ,)" InputId="cids"><input id="cids" @bind="_campaignIds" maxlength="200" /></Field>
+        </FieldGrid>
+    </Card>
+
+    <Card Title="รายการสินค้า">
+        <table class="simple-table">
+            <thead><tr><th>#</th><th>รหัสสินค้า</th><th>หมวด</th><th class="num">จำนวน</th><th class="num">ราคาต่อหน่วย</th><th class="num">ส่วนลดรายการ</th><th></th></tr></thead>
+            <tbody>
+                @foreach (QuoteLineRequest l in _req.Lines)
+                {
+                    <tr>
+                        <td>@l.LineNo</td>
+                        <td><input aria-label="รหัสสินค้า" @bind="l.ItemCode" maxlength="50" /></td>
+                        <td><input aria-label="หมวด" @bind="l.Category" maxlength="50" /></td>
+                        <td class="num"><input aria-label="จำนวน" type="number" step="0.001" min="0" @bind="l.Qty" style="width:90px" /></td>
+                        <td class="num"><input aria-label="ราคาต่อหน่วย" type="number" step="0.01" min="0" @bind="l.UnitPrice" style="width:110px" /></td>
+                        <td class="num"><input aria-label="ส่วนลดรายการ" type="number" step="0.01" min="0" @bind="l.LineDiscount" style="width:110px" /></td>
+                        <td><AppButton Text="ลบ" Size="ButtonSize.Small" Variant="ButtonVariant.Secondary" OnClick="@(() => Remove(l))" /></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        <div class="row-actions" style="margin-top:12px">
+            <AppButton Text="เพิ่มรายการ" Variant="ButtonVariant.Secondary" OnClick="Add" />
+            <AppButton Text="คำนวณ" Variant="ButtonVariant.Primary" Busy="Busy" OnClick="RunAsync" Disabled="@(string.IsNullOrWhiteSpace(_req.MemberNo) || _req.Lines.Count == 0)" />
+        </div>
+    </Card>
+
+    @if (_q is not null)
+    {
+        <Card Title="ผลการคำนวณ">
+            <dl class="kv">
+                <dt>ยอดรวม</dt><dd>@Text.Num(_q.Subtotal)</dd>
+                <dt>ส่วนลดรายการ</dt><dd>@Text.Num(_q.LineDiscounts)</dd>
+                <dt>ส่วนลดโปรโมชัน</dt><dd>@Text.Num(_q.PromotionDiscount)</dd>
+                <dt>ส่วนลดคูปอง</dt><dd>@Text.Num(_q.CouponDiscount)</dd>
+                <dt>ส่วนลดท้ายบิล</dt><dd>@Text.Num(_q.BillDiscount)</dd>
+                <dt>ใช้คะแนน</dt><dd>@Text.Int(_q.PointsRedeemed) คะแนน = @Text.Num(_q.PointsTender) บาท</dd>
+                <dt>ยอดชำระ</dt><dd><strong>@Text.Num(_q.NetPayable)</strong></dd>
+                <dt>ยอดที่นับคะแนน</dt><dd>@Text.Num(_q.Eligible)</dd>
+                <dt>คะแนนที่จะได้</dt><dd><strong>@Text.Int(_q.PointsToEarn)</strong> (ฐาน @Text.Int(_q.BasePoints) กติกา @(_q.EarnRuleCode ?? "-"))</dd>
+            </dl>
+            @if (!string.IsNullOrEmpty(_q.PointsAdjustedReason)) { <Alert Level="AlertLevel.Info">@_q.PointsAdjustedReason</Alert> }
+            @foreach (RejectedCouponDTO r in _q.RejectedCoupons) { <Alert Level="AlertLevel.Warning">คูปอง @r.Code ใช้ไม่ได้: @r.Reason</Alert> }
+        </Card>
+        <Card Title="สิทธิ์ที่ได้รับ">
+            <table class="simple-table">
+                <thead><tr><th>แคมเปญ</th><th>ประเภท</th><th class="num">ส่วนลด</th><th class="num">คะแนนพิเศษ</th><th>รายการ</th><th>คูปอง</th></tr></thead>
+                <tbody>
+                    @foreach (BenefitDTO b in _q.Benefits)
+                    {
+                        <tr><td>@b.CampaignCode</td><td>@Text.Reward(b.Kind)</td><td class="num">@Text.Num(b.Amount)</td><td class="num">@Text.Int(b.BonusPoints)</td><td>@string.Join(", ", b.LineNos)</td><td>@b.CouponCode</td></tr>
+                    }
+                    @if (_q.Benefits.Count == 0) { <tr><td colspan="6" class="muted">ไม่มีโปรโมชันที่ตรงเงื่อนไข</td></tr> }
+                </tbody>
+            </table>
+        </Card>
+        <Card Title="รายละเอียดรายการสินค้า">
+            <table class="simple-table">
+                <thead><tr><th>#</th><th>สินค้า</th><th class="num">สุทธิ</th><th class="num">ส่วนลดโปร</th><th class="num">ส่วนลดบิล (เฉลี่ย)</th><th class="num">จ่ายจริง</th><th>นับคะแนน</th></tr></thead>
+                <tbody>
+                    @foreach (QuoteLineResultDTO l in _q.Lines)
+                    {
+                        <tr><td>@l.LineNo</td><td>@l.ItemCode</td><td class="num">@Text.Num(l.LineNet)</td><td class="num">@Text.Num(l.PromotionDiscount)</td><td class="num">@Text.Num(l.AllocatedBillDiscount)</td><td class="num">@Text.Num(l.LinePaid)</td><td>@(l.Eligible ? "ใช่" : "ไม่")</td></tr>
+                    }
+                </tbody>
+            </table>
+        </Card>
+    }
+</RequirePermission>
+
+@code {
+    [SupplyParameterFromQuery(Name = "campaignId")] public long? CampaignIdQuery { get; set; }
+
+    private readonly IReadOnlyList<Breadcrumb> _crumbs = [new("หน้าแรก", ""), new("แคมเปญโปรโมชัน", "promotions"), new("ทดลองคำนวณ")];
+    private readonly QuoteRequest _req = new() { Lines = [new QuoteLineRequest { LineNo = 1, Qty = 1 }] };
+    private DateTime? _at = DateTime.Now;
+    private string? _coupons;
+    private string? _campaignIds;
+    private QuoteDTO? _q;
+
+    protected override void OnInitialized() => _campaignIds = CampaignIdQuery?.ToString(CultureInfo.InvariantCulture);
+
+    private void Add() => _req.Lines.Add(new QuoteLineRequest { LineNo = _req.Lines.Count == 0 ? 1 : _req.Lines.Max(l => l.LineNo) + 1, Qty = 1 });
+
+    private void Remove(QuoteLineRequest l) => _req.Lines.Remove(l);
+
+    private async Task RunAsync()
+    {
+        _req.MemberNo = _req.MemberNo.Trim();
+        _req.BranchCode = Clean(_req.BranchCode);
+        _req.OccurredAt = _at is null ? null : new DateTimeOffset(_at.Value);
+        _req.CouponCodes = Text.SplitList(_coupons);
+        List<long> ids = [.. Text.SplitList(_campaignIds).Select(s => long.TryParse(s, CultureInfo.InvariantCulture, out long v) ? v : 0).Where(v => v > 0)];
+        _req.CampaignIds = ids.Count == 0 ? null : ids;
+        Busy = true;
+        try
+        {
+            _q = await Api.PostAsync<QuoteDTO>("api/v1/promotions/simulate", _req);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _q = null;
+            Toasts.Error(Text.Error(ex));
+        }
+        finally
+        {
+            Busy = false;
+        }
+    }
+}

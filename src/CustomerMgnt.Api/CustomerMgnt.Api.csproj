@@ -29,6 +29,11 @@
   <ItemGroup Condition="'$(IncludeWebUi)' == 'true'">
     <ProjectReference Include="..\CustomerMgnt.Web\CustomerMgnt.Web.csproj" />
   </ItemGroup>
+  <!-- หน้าจอระบบสมาชิก (Back Office + Member Portal, Blazor WASM + webcommon ไม่ใช้ DevExpress) เสิร์ฟที่ /membership/
+       แนบโดยปริยาย ปิดได้ด้วย -p:IncludeMembershipUi=false -->
+  <ItemGroup Condition="'$(IncludeMembershipUi)' != 'false'">
+    <ProjectReference Include="..\CustomerMgnt.Membership.Web\CustomerMgnt.Membership.Web.csproj" />
+  </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="CustomerMgnt.Tests" />
   </ItemGroup>

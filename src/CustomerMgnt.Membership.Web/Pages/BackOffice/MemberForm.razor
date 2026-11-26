@@ -1,0 +1,212 @@
+@page "/members/new"
+@page "/members/{Id:long}/edit"
+@attribute [Authorize]
+@*
+    A4 สมัครสมาชิกโดยเจ้าหน้าที่ / A6 แก้ไขข้อมูลสมาชิก — หน้าเต็ม ไม่ใช้ popup
+*@
+<PageTitle>@Title</PageTitle>
+
+<RequirePermission Permission="@P.MemberWrite">
+    @if (_loadError is not null)
+    {
+        <ErrorView Title="โหลดข้อมูลไม่สำเร็จ" Message="@_loadError" />
+    }
+    else if (Id is null)
+    {
+        <FormTemplate Title="@Title" Description="ระบบตรวจเบอร์/อีเมลซ้ำ แล้วส่ง OTP ไปที่เบอร์ของผู้สมัคร" Breadcrumbs="Crumbs" Mode="FormMode.New" Model="_reg"
+                      SavePermission="@P.MemberWrite" SaveText="สมัครและส่ง OTP" OnSave="RegisterAsync" OnCancel="Back">
+            <Notice>
+                @if (_dup is { Exists: true })
+                {
+                    <Alert Level="AlertLevel.Warning" Title="พบข้อมูลซ้ำ">มีสมาชิก @_dup.MemberNoMasked ใช้เบอร์หรืออีเมลนี้แล้ว <a href="members/@_dup.MemberId">เปิดดู</a></Alert>
+                }
+            </Notice>
+            <ChildContent>
+                <FormSection Title="ข้อมูลผู้สมัคร">
+                    <FieldGrid Columns="2">
+                        <FormField Label="ชื่อ" InputId="fn" For="() => _reg.FirstName" Required><InputText id="fn" @bind-Value="_reg.FirstName" maxlength="100" /></FormField>
+                        <FormField Label="นามสกุล" InputId="ln" For="() => _reg.LastName" Required><InputText id="ln" @bind-Value="_reg.LastName" maxlength="100" /></FormField>
+                        <FormField Label="เบอร์โทร" InputId="ph" For="() => _reg.Phone" Required Hint="ใช้รับ OTP">
+                            <InputText id="ph" type="tel" @bind-Value="_reg.Phone" maxlength="20" @onblur="CheckDuplicateAsync" />
+                        </FormField>
+                        <FormField Label="อีเมล" InputId="em" For="() => _reg.Email"><InputText id="em" type="email" @bind-Value="_reg.Email" maxlength="254" @onblur="CheckDuplicateAsync" /></FormField>
+                        <FormField Label="วันเกิด" InputId="bd" For="() => _reg.BirthDate"><InputDate id="bd" @bind-Value="_reg.BirthDate" /></FormField>
+                        <FormField Label="เพศ" InputId="gd" For="() => _reg.Gender">
+                            <InputSelect id="gd" @bind-Value="_reg.Gender">
+                                @foreach (Gender g in Enum.GetValues<Gender>()) { <option value="@g">@Text.Gender(g)</option> }
+                            </InputSelect>
+                        </FormField>
+                        <FormField Label="จังหวัด" InputId="pv" For="() => _reg.Province"><InputText id="pv" @bind-Value="_reg.Province" maxlength="100" /></FormField>
+                        <FormField Label="รหัสลูกค้าใน CustomerMgnt" InputId="cc" For="() => _reg.CustomerCode" Hint="เว้นว่าง = ระบบสร้างลูกค้าบุคคลใหม่ให้">
+                            <InputText id="cc" @bind-Value="_reg.CustomerCode" maxlength="40" />
+                        </FormField>
+                    </FieldGrid>
+                </FormSection>
+                <FormSection Title="ความยินยอม" Description="ผู้สมัครต้องอ่านและยอมรับฉบับที่ประกาศใช้ล่าสุด">
+                    <FieldGrid Columns="2">
+                        <FormField Label="ฉบับความยินยอม" InputId="cv" For="() => _reg.ConsentVersionId" Required>
+                            <InputSelect id="cv" @bind-Value="_reg.ConsentVersionId">
+                                <option value="">— เลือก —</option>
+                                @foreach (ConsentVersionDTO v in _consents) { <option value="@v.Id">@v.Title (มีผล @Text.Date(v.EffectiveAt))</option> }
+                            </InputSelect>
+                        </FormField>
+                        <Field Label="รับข่าวสารการตลาด" InputId="mk">
+                            <label class="check"><InputCheckbox id="mk" @bind-Value="_reg.MarketingConsent" /><span>ยินยอมรับข่าวสาร</span></label>
+                        </Field>
+                        @if (_reg.MarketingConsent)
+                        {
+                            <Field Label="ช่องทางที่รับ" InputId="mkc" Full>
+                                @foreach (MarketingChannel ch in Enum.GetValues<MarketingChannel>())
+                                {
+                                    <label class="check" style="margin-right:16px"><input type="checkbox" checked="@Has(ch)" @onchange="e => Toggle(ch, (bool)e.Value!)" /><span>@Text.Channel(ch)</span></label>
+                                }
+                            </Field>
+                        }
+                    </FieldGrid>
+                </FormSection>
+            </ChildContent>
+        </FormTemplate>
+    }
+    else if (_upd is null)
+    {
+        <LoadingState />
+    }
+    else
+    {
+        <FormTemplate Title="@Title" Description="กรอกเฉพาะช่องที่ต้องการเปลี่ยน — เปลี่ยนเบอร์ต้องยืนยัน OTP ของเบอร์ใหม่" Breadcrumbs="Crumbs" Mode="FormMode.Edit" Model="_upd"
+                      SavePermission="@P.MemberWrite" OnSave="UpdateAsync" OnCancel="Back">
+            <ChildContent>
+                <FormSection Title="@($"ข้อมูลสมาชิก {_member?.MemberNo}")">
+                    <FieldGrid Columns="2">
+                        <FormField Label="ชื่อ" InputId="fn" For="() => _upd.FirstName"><InputText id="fn" @bind-Value="_upd.FirstName" maxlength="100" /></FormField>
+                        <FormField Label="นามสกุล" InputId="ln" For="() => _upd.LastName"><InputText id="ln" @bind-Value="_upd.LastName" maxlength="100" /></FormField>
+                        <FormField Label="เบอร์โทรใหม่" InputId="ph" For="() => _upd.Phone" Hint="@($"ปัจจุบัน {_member?.PhoneMasked}")"><InputText id="ph" type="tel" @bind-Value="_upd.Phone" maxlength="20" /></FormField>
+                        <FormField Label="อีเมลใหม่" InputId="em" For="() => _upd.Email" Hint="@($"ปัจจุบัน {_member?.EmailMasked}")"><InputText id="em" type="email" @bind-Value="_upd.Email" maxlength="254" /></FormField>
+                        <FormField Label="วันเกิด" InputId="bd" For="() => _upd.BirthDate"><InputDate id="bd" @bind-Value="_upd.BirthDate" /></FormField>
+                        <FormField Label="เพศ" InputId="gd" For="() => _upd.Gender">
+                            <InputSelect id="gd" @bind-Value="_upd.Gender">
+                                @foreach (Gender g in Enum.GetValues<Gender>()) { <option value="@g">@Text.Gender(g)</option> }
+                            </InputSelect>
+                        </FormField>
+                        <FormField Label="จังหวัด" InputId="pv" For="() => _upd.Province"><InputText id="pv" @bind-Value="_upd.Province" maxlength="100" /></FormField>
+                    </FieldGrid>
+                </FormSection>
+            </ChildContent>
+        </FormTemplate>
+    }
+</RequirePermission>
+
+@code {
+    [Parameter] public long? Id { get; set; }
+    [Inject] private MembershipApiClient Api { get; set; } = default!;
+    [Inject] private NavigationManager Nav { get; set; } = default!;
+    [Inject] private ToastService Toasts { get; set; } = default!;
+
+    private RegisterMemberRequest _reg = new() { MarketingChannels = [] };
+    private UpdateMemberRequest? _upd;
+    private MemberDTO? _member;
+    private DuplicateCheckDTO? _dup;
+    private IReadOnlyList<ConsentVersionDTO> _consents = [];
+    private string? _loadError;
+
+    private string Title => Id is null ? "สมัครสมาชิกใหม่" : $"แก้ไขข้อมูลสมาชิก {_member?.MemberNo}";
+
+    private IReadOnlyList<Breadcrumb> Crumbs => [new("หน้าแรก", ""), new("รายการสมาชิก", "members"), new(Title)];
+
+    protected override async Task OnParametersSetAsync()
+    {
+        try
+        {
+            if (Id is null)
+            {
+                _consents = [.. (await Api.GetAsync<List<ConsentVersionDTO>>("api/v1/settings/consents").ConfigureAwait(true)).Where(v => v.IsPublished).OrderByDescending(v => v.EffectiveAt)];
+                _reg.ConsentVersionId ??= _consents.FirstOrDefault()?.Id;
+            }
+            else
+            {
+                _member = await Api.GetAsync<MemberDTO>($"api/v1/members/{Id}");
+                _upd = new UpdateMemberRequest { Version = _member.Version, FirstName = _member.FirstName, LastName = _member.LastName, Gender = _member.Gender, Province = _member.Province };
+            }
+        }
+        catch (ApiException ex) when (ex.Status == 403 && Id is null)
+        {
+            // เจ้าหน้าที่ไม่มีสิทธิ์อ่านตั้งค่า — ให้กรอกเลขฉบับเอง
+            _consents = [];
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _loadError = Text.Error(ex);
+        }
+    }
+
+    private bool Has(MarketingChannel ch) => _reg.MarketingChannels?.Contains(ch) == true;
+
+    private void Toggle(MarketingChannel ch, bool on)
+    {
+        _reg.MarketingChannels ??= [];
+        if (on && !_reg.MarketingChannels.Contains(ch)) _reg.MarketingChannels.Add(ch);
+        if (!on) _reg.MarketingChannels.Remove(ch);
+    }
+
+    private async Task CheckDuplicateAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_reg.Phone) && string.IsNullOrWhiteSpace(_reg.Email)) return;
+        try
+        {
+            _dup = await Api.PostAsync<DuplicateCheckDTO>("api/v1/members/duplicates/check", new DuplicateCheckRequest { Phone = NullIfEmpty(_reg.Phone), Email = NullIfEmpty(_reg.Email) });
+        }
+        catch (ApiException)
+        {
+            _dup = null;
+        }
+    }
+
+    private async Task<bool> RegisterAsync()
+    {
+        try
+        {
+            _reg.Email = NullIfEmpty(_reg.Email);
+            _reg.CustomerCode = NullIfEmpty(_reg.CustomerCode);
+            MemberRegistrationResultDTO r = await Api.PostAsync<MemberRegistrationResultDTO>("api/v1/members", _reg);
+            Toasts.Success($"สมัครสมาชิก {r.Member.MemberNo} แล้ว — ส่ง OTP ไปที่เบอร์ผู้สมัคร");
+            Nav.NavigateTo(r.Challenge is null ? $"members/{r.Member.Id}" : $"members/{r.Member.Id}?challenge={Uri.EscapeDataString(r.Challenge.ChallengeId)}");
+            return true;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Toasts.Error(Text.Error(ex));
+            return false;
+        }
+    }
+
+    private async Task<bool> UpdateAsync()
+    {
+        try
+        {
+            _upd!.Phone = NullIfEmpty(_upd.Phone);
+            _upd.Email = NullIfEmpty(_upd.Email);
+            UpdateMemberResultDTO r = await Api.PutAsync<UpdateMemberResultDTO>($"api/v1/members/{Id}", _upd);
+            if (r.Challenge is not null)
+            {
+                Toasts.Info("บันทึกแล้ว เบอร์ใหม่ต้องยืนยัน OTP ก่อนจึงมีผล");
+                Nav.NavigateTo($"members/{Id}?challenge={Uri.EscapeDataString(r.Challenge.ChallengeId)}");
+            }
+            else
+            {
+                Toasts.Success("บันทึกข้อมูลสมาชิกแล้ว");
+                Nav.NavigateTo($"members/{Id}");
+            }
+
+            return true;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Toasts.Error(Text.Error(ex));
+            return false;
+        }
+    }
+
+    private static string? NullIfEmpty(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+
+    private void Back() => Nav.NavigateTo(Id is null ? "members" : $"members/{Id}");
+}

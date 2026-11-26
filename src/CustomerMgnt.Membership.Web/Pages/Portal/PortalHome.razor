@@ -1,0 +1,60 @@
+@page "/portal"
+@layout PortalLayout
+@attribute [Authorize]
+@inherits PortalPage
+@* P3 หน้าแรกสมาชิก: Tier, คะแนน, คะแนนใกล้หมดอายุ, คูปองที่ใช้ได้ *@
+<PageTitle>หน้าแรกสมาชิก</PageTitle>
+
+@if (LoadError is not null)
+{
+    <ErrorView Title="โหลดข้อมูลไม่สำเร็จ" Message="@LoadError" OnRetry="LoadAsync" />
+}
+else if (_m is null)
+{
+    <LoadingState />
+}
+else
+{
+    <PageHeader Title="@($"สวัสดี คุณ{_m.FirstName}")" Description="@($"สมาชิกเลขที่ {_m.MemberNo}")" />
+    <div class="kpi-grid">
+        <Card Title="ระดับสมาชิก">
+            <div class="big-number">@(_m.Tier?.Name ?? "-")</div>
+            @if (_m.Tier?.ReviewAt is not null) { <div class="muted">ทบทวนระดับ @Text.Date(_m.Tier.ReviewAt)</div> }
+        </Card>
+        <Card Title="คะแนนที่ใช้ได้">
+            <div class="big-number">@Text.Int(_p?.Available ?? 0)</div>
+            @if ((_p?.Debt ?? 0) > 0) { <div class="muted">ค้างหัก @Text.Int(_p!.Debt) คะแนน</div> }
+            <a href="portal/points">ดูประวัติคะแนน</a>
+        </Card>
+        <Card Title="คูปองที่ใช้ได้">
+            <div class="big-number">@Text.Int(_coupons.Count)</div>
+            <a href="portal/coupons">ดูคูปองของฉัน</a>
+        </Card>
+    </div>
+    @if (_p is { ExpiringSoon.Count: > 0 })
+    {
+        <Card Title="คะแนนใกล้หมดอายุ">
+            <ul>@foreach (ExpiringPointsDTO e in _p.ExpiringSoon) { <li>@Text.Int(e.Points) คะแนน หมดอายุ @Text.Date(e.ExpiresAt)</li> }</ul>
+            <AppButton Text="ใช้คะแนนแลกของรางวัล" Variant="ButtonVariant.Secondary" Href="portal/rewards" />
+        </Card>
+    }
+    @if (_m.Status != MemberStatus.Active)
+    {
+        <Alert Level="AlertLevel.Warning">สถานะสมาชิก: @Text.Member(_m.Status) — บางบริการอาจใช้ไม่ได้ กรุณาติดต่อสาขา</Alert>
+    }
+}
+
+@code {
+    private MemberDTO? _m;
+    private PointBalanceDTO? _p;
+    private IReadOnlyList<CouponDTO> _coupons = [];
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private Task LoadAsync() => PortalLoadAsync(async () =>
+    {
+        _m = await Api.GetAsync<MemberDTO>("api/v1/me/member");
+        _p = await Api.GetAsync<PointBalanceDTO>("api/v1/me/points");
+        _coupons = await Api.GetAsync<List<CouponDTO>>("api/v1/me/coupons", new { status = CouponStatus.Available });
+    });
+}

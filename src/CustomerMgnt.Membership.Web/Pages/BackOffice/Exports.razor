@@ -1,0 +1,59 @@
+@page "/reports/exports"
+@attribute [Authorize]
+@inherits MembershipPage
+@inject ExportService Export
+@* A35 ไฟล์ส่งออก (เก็บชั่วคราว ดาวน์โหลดได้จนหมดอายุ) *@
+<PageTitle>ไฟล์ส่งออก</PageTitle>
+
+<RequirePermission Permission="@P.ReportExport">
+    <ListTemplate TItem="ExportJobDTO" Title="ไฟล์ส่งออก" Description="ไฟล์ที่ส่งออกจากรายงาน เก็บไว้ชั่วคราวและลบอัตโนมัติเมื่อหมดอายุ ทุกการดาวน์โหลดถูกบันทึก audit"
+                  Breadcrumbs="_crumbs" Permissions="_perms" Items="_items" Loading="_loading" ErrorMessage="@LoadError" OnRetry="LoadAsync" PageSize="20">
+        <HeaderActions><AppButton Text="รีเฟรช" Variant="ButtonVariant.Secondary" OnClick="LoadAsync" /></HeaderActions>
+        <Columns>
+            <TableColumn TItem="ExportJobDTO" Title="ขอเมื่อ" Field="j => Text.DateTime(j.RequestedAt)" SortBy="j => j.RequestedAt" Sortable />
+            <TableColumn TItem="ExportJobDTO" Title="รายงาน" Field="j => j.Report" IsPrimary />
+            <TableColumn TItem="ExportJobDTO" Title="รูปแบบ" Field="j => j.Format" />
+            <TableColumn TItem="ExportJobDTO" Title="จำนวนแถว" Field="j => j.RowCount" Format="N0" Align="ColumnAlign.End" />
+            <TableColumn TItem="ExportJobDTO" Title="หมดอายุ" Field="j => Text.DateTime(j.ExpiresAt)" HideOnMobile />
+            <TableColumn TItem="ExportJobDTO" Title="สถานะ" SortBy="j => j.Status">
+                <Template>
+                    <Badge Text="@Text.Job(context.Status)" Level="@Text.Level(context.Status)" />
+                    @if (context.Status == JobStatus.Done)
+                    {
+                        <AppButton Text="ดาวน์โหลด" Size="ButtonSize.Small" Variant="ButtonVariant.Secondary" OnClick="@(() => DownloadAsync(context))" />
+                    }
+                    @if (context.Error is not null) { <span class="muted">@context.Error</span> }
+                </Template>
+            </TableColumn>
+        </Columns>
+    </ListTemplate>
+</RequirePermission>
+
+@code {
+    private readonly IReadOnlyList<Breadcrumb> _crumbs = [new("หน้าแรก", ""), new("รายงาน"), new("ไฟล์ส่งออก")];
+    private readonly ListPermissions _perms = new();
+    private IReadOnlyList<ExportJobDTO>? _items;
+    private bool _loading;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        await LoadSafeAsync(async () => _items = await Api.GetAsync<List<ExportJobDTO>>("api/v1/reports/exports"));
+        _loading = false;
+    }
+
+    private async Task DownloadAsync(ExportJobDTO j)
+    {
+        try
+        {
+            (byte[] content, string name, string type) = await Api.DownloadAsync($"api/v1/reports/exports/{j.Id}/file");
+            await Export.DownloadAsync(new ExportFile(name, type, content));
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Toasts.Error(Text.Error(ex));
+        }
+    }
+}

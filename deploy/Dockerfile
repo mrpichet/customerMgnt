@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1
 # =====================================================================================
-# Hardened multi-stage image ของ CustomerMgnt.Api (REST API + MCP /mcp + Blazor WASM UI)
+# Hardened multi-stage image ของ CustomerMgnt.Api (REST API + MCP /mcp + Blazor WASM UI + หน้าจอระบบสมาชิก /membership/)
+#   ต้อง clone พร้อม submodule: git submodule update --init --recursive (external/common, external/webcommon)
 #   docker build -f deploy/Dockerfile -t customermgnt-api .
 #   docker build -f deploy/Dockerfile --target test .                         ← รัน unit test ใน container
 #   DevExpress license (ไม่บังคับ — ไม่มีจะเป็น evaluation mode และแสดงแถบแจ้งเตือนบน UI):
@@ -23,17 +24,22 @@ COPY external/common/src/Common.Data/Common.Data.csproj external/common/src/Comm
 COPY external/common/src/Common.Logging/Common.Logging.csproj external/common/src/Common.Logging/
 COPY external/common/src/Common.AspNetCore/Common.AspNetCore.csproj external/common/src/Common.AspNetCore/
 COPY external/common/src/Common.AI/Common.AI.csproj external/common/src/Common.AI/
+COPY external/Directory.Packages.props external/
+COPY external/webcommon/Directory.Build.props external/webcommon/
+COPY external/webcommon/src/WebCommon.UI/WebCommon.UI.csproj external/webcommon/src/WebCommon.UI/
 COPY src/CustomerMgnt.Core/CustomerMgnt.Core.csproj src/CustomerMgnt.Core/
 COPY src/CustomerMgnt.Data/CustomerMgnt.Data.csproj src/CustomerMgnt.Data/
 COPY src/CustomerMgnt.Integrations/CustomerMgnt.Integrations.csproj src/CustomerMgnt.Integrations/
 COPY src/CustomerMgnt.AI/CustomerMgnt.AI.csproj src/CustomerMgnt.AI/
 COPY src/CustomerMgnt.Web/CustomerMgnt.Web.csproj src/CustomerMgnt.Web/
+COPY src/CustomerMgnt.Membership.Web/CustomerMgnt.Membership.Web.csproj src/CustomerMgnt.Membership.Web/
 COPY src/CustomerMgnt.Api/CustomerMgnt.Api.csproj src/CustomerMgnt.Api/
 COPY tests/CustomerMgnt.Tests/CustomerMgnt.Tests.csproj tests/CustomerMgnt.Tests/
 RUN dotnet restore src/CustomerMgnt.Api/CustomerMgnt.Api.csproj -p:IncludeWebUi=true \
  && dotnet restore tests/CustomerMgnt.Tests/CustomerMgnt.Tests.csproj
 # Step 2: copy source แล้ว publish API + UI (Release, ไม่มี debug symbol ใน image)
 COPY external/common/src/ external/common/src/
+COPY external/webcommon/src/WebCommon.UI/ external/webcommon/src/WebCommon.UI/
 COPY src/ src/
 COPY tests/ tests/
 RUN --mount=type=secret,id=devexpress_license,required=false \

@@ -1,0 +1,66 @@
+@page "/members/{Id:long}/status"
+@attribute [Authorize]
+@inherits MembershipPage
+@* A7 เปลี่ยนสถานะสมาชิก (ระงับ/ปิด/เปิดใช้) — ต้องระบุเหตุผล บันทึก audit *@
+<PageTitle>เปลี่ยนสถานะสมาชิก</PageTitle>
+
+<RequirePermission Permission="@P.MemberStatus">
+    @if (LoadError is not null)
+    {
+        <ErrorView Title="โหลดข้อมูลไม่สำเร็จ" Message="@LoadError" OnRetry="LoadAsync" />
+    }
+    else if (_m is null)
+    {
+        <LoadingState />
+    }
+    else
+    {
+        <FormTemplate Title="@($"เปลี่ยนสถานะ {_m.MemberNo} {_m.DisplayName}")" Description="สมาชิกที่ถูกระงับหรือปิดจะสะสม/ใช้คะแนนที่ POS ไม่ได้ การปิดบัญชีย้อนกลับไม่ได้"
+                      Breadcrumbs="Crumbs" Mode="FormMode.Edit" Model="_req" SavePermission="@P.MemberStatus" OnSave="SaveAsync" OnCancel="Back">
+            <StatusBadge><Badge Text="@Text.Member(_m.Status)" Level="@Text.Level(_m.Status)" /></StatusBadge>
+            <ChildContent>
+                <FormSection Title="สถานะใหม่">
+                    <FieldGrid Columns="2">
+                        <FormField Label="สถานะ" InputId="st" For="() => _req.Status" Required>
+                            <InputSelect id="st" @bind-Value="_req.Status">
+                                @foreach (MemberStatus s in Allowed) { <option value="@s">@Text.Member(s)</option> }
+                            </InputSelect>
+                        </FormField>
+                    </FieldGrid>
+                    <FormField Label="เหตุผล" InputId="rs" For="() => _req.Reason" Required Hint="แสดงใน audit และหน้ารายละเอียดสมาชิก">
+                        <InputTextArea id="rs" @bind-Value="_req.Reason" rows="3" maxlength="500" />
+                    </FormField>
+                    @if (_req.Status == MemberStatus.Closed)
+                    {
+                        <Alert Level="AlertLevel.Warning" Title="ปิดบัญชีถาวร">คะแนนคงเหลือจะไม่สามารถใช้ได้อีก และไม่สามารถเปิดบัญชีนี้กลับมาได้</Alert>
+                    }
+                </FormSection>
+            </ChildContent>
+        </FormTemplate>
+    }
+</RequirePermission>
+
+@code {
+    [Parameter] public long Id { get; set; }
+
+    private MemberDTO? _m;
+    private ChangeMemberStatusRequest _req = new();
+
+    private static readonly MemberStatus[] Allowed = [MemberStatus.Active, MemberStatus.Suspended, MemberStatus.Inactive, MemberStatus.Closed];
+
+    private IReadOnlyList<Breadcrumb> Crumbs => [new("หน้าแรก", ""), new("รายการสมาชิก", "members"), new(_m?.MemberNo ?? "สมาชิก", $"members/{Id}"), new("เปลี่ยนสถานะ")];
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private Task LoadAsync() => LoadSafeAsync(async () =>
+    {
+        _m = await Api.GetAsync<MemberDTO>($"api/v1/members/{Id}");
+        _req = new ChangeMemberStatusRequest { Version = _m.Version, Status = _m.Status == MemberStatus.Active ? MemberStatus.Suspended : MemberStatus.Active };
+    });
+
+    private Task<bool> SaveAsync() => SaveSafeAsync(
+        () => Api.PutAsync<MemberDTO>($"api/v1/members/{Id}/status", new ChangeMemberStatusRequest { Version = _req.Version, Status = _req.Status, Reason = _req.Reason.Trim() }),
+        "เปลี่ยนสถานะแล้ว", $"members/{Id}");
+
+    private void Back() => Nav.NavigateTo($"members/{Id}");
+}

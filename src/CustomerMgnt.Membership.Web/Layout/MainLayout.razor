@@ -1,0 +1,9 @@
+@inherits LayoutComponentBase
+@* Back Office: AppShell (Main Screen Template) ของ webcommon *@
+<AppShell ShowErrorDetails="@Env.IsDevelopment()">
+    @Body
+</AppShell>
+
+@code {
+    [Inject] private IWebAssemblyHostEnvironment Env { get; set; } = default!;
+}

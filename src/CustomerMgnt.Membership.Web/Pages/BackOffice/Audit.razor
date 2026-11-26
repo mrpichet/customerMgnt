@@ -1,0 +1,68 @@
+@page "/audit"
+@attribute [Authorize]
+@inherits MembershipPage
+@* A40 Audit log ของระบบสมาชิก (hash chain, ข้อมูลส่วนบุคคล mask) *@
+<PageTitle>Audit log</PageTitle>
+
+<RequirePermission Permission="@P.AuditRead">
+    <ListTemplate TItem="MembershipAuditDTO" Title="Audit log" Description="บันทึกทุกการเปลี่ยนแปลงพร้อมค่าก่อน/หลัง (ปิดบังข้อมูลส่วนบุคคล) แต่ละรายการต่อ hash กับรายการก่อนหน้า แก้ไขหรือลบไม่ได้"
+                  Breadcrumbs="_crumbs" Permissions="_perms" Items="_items" Loading="_loading" ErrorMessage="@LoadError" OnRetry="LoadAsync"
+                  CriteriaActiveCount="ActiveCount" OnSearch="LoadAsync" OnClear="ClearAsync" PageSize="50" ExportColumns="_export" ExportTitle="Audit log">
+        <Criteria>
+            <Field Label="ผู้ทำ" InputId="c-a"><input id="c-a" @bind="_c.Actor" maxlength="200" /></Field>
+            <Field Label="การกระทำ" InputId="c-ac"><input id="c-ac" @bind="_c.Action" maxlength="100" placeholder="เช่น member.update" /></Field>
+            <Field Label="เป้าหมาย" InputId="c-t"><input id="c-t" @bind="_c.Target" maxlength="200" placeholder="เช่น member:123" /></Field>
+            <Field Label="ตั้งแต่" InputId="c-f"><input id="c-f" type="date" @bind="_from" /></Field>
+            <Field Label="ถึง" InputId="c-to"><input id="c-to" type="date" @bind="_to" /></Field>
+        </Criteria>
+        <Columns>
+            <TableColumn TItem="MembershipAuditDTO" Title="เวลา" Field="a => Text.DateTime(a.At)" SortBy="a => a.At" Sortable />
+            <TableColumn TItem="MembershipAuditDTO" Title="ผู้ทำ" Field="a => a.Actor" />
+            <TableColumn TItem="MembershipAuditDTO" Title="ประเภท" Field="a => a.ActorType" HideOnMobile />
+            <TableColumn TItem="MembershipAuditDTO" Title="การกระทำ" Field="a => a.Action" IsPrimary />
+            <TableColumn TItem="MembershipAuditDTO" Title="เป้าหมาย" Field="a => a.Target" />
+            <TableColumn TItem="MembershipAuditDTO" Title="ก่อน" Field="a => a.BeforeMasked" HideOnMobile />
+            <TableColumn TItem="MembershipAuditDTO" Title="หลัง" Field="a => a.AfterMasked" HideOnMobile />
+            <TableColumn TItem="MembershipAuditDTO" Title="Request ID" Field="a => a.RequestId" HideOnMobile />
+        </Columns>
+    </ListTemplate>
+</RequirePermission>
+
+@code {
+    private readonly IReadOnlyList<Breadcrumb> _crumbs = [new("หน้าแรก", ""), new("Audit log")];
+    private readonly ListPermissions _perms = new() { Export = P.AuditRead };
+    private readonly IReadOnlyList<ExportColumn<MembershipAuditDTO>> _export =
+    [
+        new("เวลา", a => a.At), new("ผู้ทำ", a => a.Actor), new("ประเภท", a => a.ActorType.ToString()), new("การกระทำ", a => a.Action), new("เป้าหมาย", a => a.Target),
+        new("ก่อน", a => a.BeforeMasked), new("หลัง", a => a.AfterMasked), new("Request ID", a => a.RequestId), new("IP", a => a.Ip), new("Hash", a => a.Hash),
+    ];
+
+    private AuditSearchCriteria _c = new();
+    private DateTime? _from;
+    private DateTime? _to;
+    private IReadOnlyList<MembershipAuditDTO>? _items;
+    private bool _loading;
+
+    private int ActiveCount => new object?[] { _c.Actor, _c.Action, _c.Target, _from, _to }.Count(x => x is not null && x is not "");
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        await LoadSafeAsync(async () =>
+        {
+            DateTimeOffset? from = _from is null ? null : new DateTimeOffset(_from.Value);
+            DateTimeOffset? to = _to is null ? null : new DateTimeOffset(_to.Value.AddDays(1));
+            _items = (await Api.GetAsync<PagedResultDTO<MembershipAuditDTO>>("api/v1/audit", new { Actor = Clean(_c.Actor), Action = Clean(_c.Action), Target = Clean(_c.Target), From = from, To = to, pageSize = 500 })).Items;
+        });
+        _loading = false;
+    }
+
+    private Task ClearAsync()
+    {
+        _c = new AuditSearchCriteria();
+        _from = _to = null;
+        return LoadAsync();
+    }
+}

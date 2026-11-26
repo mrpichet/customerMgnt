@@ -1,0 +1,119 @@
+@page "/portal/register"
+@layout PortalLayout
+@attribute [Authorize]
+@inherits MembershipPage
+@* P2 สมัครสมาชิกด้วยตนเอง: กรอกข้อมูล + ยอมรับข้อตกลง → OTP ยืนยันเบอร์ → เป็นสมาชิก *@
+<PageTitle>สมัครสมาชิก</PageTitle>
+
+@if (_challenge is null)
+{
+    <FormTemplate Title="สมัครสมาชิก" Description="ถ้าเคยสมัครที่สาขาด้วยเบอร์นี้ ระบบจะผูกบัญชีเดิมให้ คะแนนเดิมยังอยู่ครบ" Mode="FormMode.New" Model="_req"
+                  SaveText="ส่งรหัส OTP" OnSave="StartAsync" OnCancel="@(() => Nav.NavigateTo("portal/login"))">
+        <ChildContent>
+            <FormSection Title="ข้อมูลของคุณ">
+                <FieldGrid Columns="2">
+                    <FormField Label="ชื่อ" InputId="fn" For="() => _req.FirstName" Required><InputText id="fn" @bind-Value="_req.FirstName" maxlength="100" autocomplete="given-name" /></FormField>
+                    <FormField Label="นามสกุล" InputId="ln" For="() => _req.LastName" Required><InputText id="ln" @bind-Value="_req.LastName" maxlength="100" autocomplete="family-name" /></FormField>
+                    <FormField Label="เบอร์โทรศัพท์มือถือ" InputId="ph" For="() => _req.Phone" Required Hint="ใช้รับรหัส OTP"><InputText id="ph" type="tel" @bind-Value="_req.Phone" maxlength="20" autocomplete="tel" /></FormField>
+                    <FormField Label="อีเมล" InputId="em" For="() => _req.Email"><InputText id="em" type="email" @bind-Value="_req.Email" maxlength="254" autocomplete="email" /></FormField>
+                    <Field Label="วันเกิด" InputId="bd"><input id="bd" type="date" @bind="_birth" autocomplete="bday" /></Field>
+                    <Field Label="เพศ" InputId="gd">
+                        <select id="gd" @bind="_req.Gender">@foreach (Gender g in Enum.GetValues<Gender>()) { <option value="@g">@Text.Gender(g)</option> }</select>
+                    </Field>
+                    <Field Label="จังหวัด" InputId="pv"><input id="pv" @bind="_req.Province" maxlength="100" /></Field>
+                </FieldGrid>
+            </FormSection>
+            <FormSection Title="ข้อตกลงและความยินยอม">
+                @if (_consent is null)
+                {
+                    <Alert Level="AlertLevel.Warning">ยังไม่มีข้อตกลงที่เผยแพร่ ไม่สามารถสมัครได้ในขณะนี้</Alert>
+                }
+                else
+                {
+                    <details>
+                        <summary>@_consent.Title (อ่านข้อตกลง)</summary>
+                        <div style="white-space:pre-wrap;max-height:300px;overflow:auto;margin-top:8px">@_consent.Body</div>
+                    </details>
+                    <label class="check-list" style="margin-top:8px"><input type="checkbox" @bind="_accepted" /> ฉันได้อ่านและยอมรับข้อตกลง (จำเป็น)</label>
+                    <label class="check-list"><InputCheckbox @bind-Value="_req.MarketingConsent" /> ยินยอมรับข่าวสารและโปรโมชัน (ไม่บังคับ)</label>
+                    @if (_req.MarketingConsent)
+                    {
+                        <div class="check-list">
+                            @foreach (MarketingChannel c in Enum.GetValues<MarketingChannel>())
+                            {
+                                <label><input type="checkbox" checked="@(_req.MarketingChannels?.Contains(c) == true)" @onchange="e => Toggle(c, e.Value is true)" /> @Text.Channel(c)</label>
+                            }
+                        </div>
+                    }
+                }
+            </FormSection>
+        </ChildContent>
+    </FormTemplate>
+}
+else
+{
+    <Card Title="ยืนยันเบอร์โทรศัพท์" Description="@($"กรอกรหัส OTP ที่ส่งไปยังเบอร์ {_req.Phone} (หมดอายุ {Text.DateTime(_challenge.ExpiresAt)})")">
+        <Field Label="รหัส OTP" InputId="otp"><input id="otp" @bind="_otp" maxlength="8" inputmode="numeric" autocomplete="one-time-code" /></Field>
+        <div class="row-actions" style="margin-top:12px">
+            <AppButton Text="ยืนยัน" Variant="ButtonVariant.Primary" Busy="Busy" Disabled="@string.IsNullOrWhiteSpace(_otp)" OnClick="VerifyAsync" />
+            <AppButton Text="แก้ไขข้อมูล / ขอรหัสใหม่" Variant="ButtonVariant.Secondary" OnClick="@(() => _challenge = null)" />
+        </div>
+    </Card>
+}
+
+@code {
+    private readonly RegisterMemberRequest _req = new() { MarketingChannels = [] };
+    private ConsentVersionDTO? _consent;
+    private PortalRegistrationDTO? _challenge;
+    private DateTime? _birth;
+    private bool _accepted;
+    private string? _otp;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            await Api.GetAsync<MemberDTO>("api/v1/me/member");
+            Nav.NavigateTo("portal", replace: true);
+            return;
+        }
+        catch (ApiException ex) when (ex.Code == "not_registered")
+        {
+            // ยังไม่สมัคร — แสดงฟอร์ม
+        }
+        catch (ApiException ex)
+        {
+            Toasts.Error(Text.Error(ex));
+        }
+
+        try { _consent = await Api.GetAsync<ConsentVersionDTO?>("api/v1/me/consents/current"); }
+        catch (ApiException ex) { Toasts.Error(Text.Error(ex)); }
+    }
+
+    private void Toggle(MarketingChannel c, bool on)
+    {
+        _req.MarketingChannels ??= [];
+        if (on && !_req.MarketingChannels.Contains(c)) _req.MarketingChannels.Add(c);
+        if (!on) _req.MarketingChannels.Remove(c);
+    }
+
+    private async Task<bool> StartAsync()
+    {
+        if (_consent is null || !_accepted)
+        {
+            Toasts.Error("กรุณายอมรับข้อตกลงก่อนสมัคร");
+            return false;
+        }
+
+        _req.ConsentVersionId = _consent.Id;
+        _req.Email = Clean(_req.Email);
+        _req.Province = Clean(_req.Province);
+        _req.BirthDate = _birth is null ? null : DateOnly.FromDateTime(_birth.Value);
+        if (!_req.MarketingConsent) _req.MarketingChannels = [];
+        return await SaveSafeAsync(async () => _challenge = await Api.PostAsync<PortalRegistrationDTO>("api/v1/me/registration", _req), "ส่งรหัส OTP แล้ว");
+    }
+
+    private Task VerifyAsync() => SaveSafeAsync(
+        () => Api.PostAsync<MemberDTO>("api/v1/me/registration/verify", new VerifyOtpRequest { ChallengeId = _challenge!.ChallengeId, Code = _otp!.Trim() }),
+        "สมัครสมาชิกเรียบร้อย ยินดีต้อนรับ", "portal");
+}

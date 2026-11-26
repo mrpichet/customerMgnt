@@ -114,6 +114,23 @@ public sealed class PrivacyService
         return _envelope.OpenString(env, TaxIdContext);
     }
 
+    /// <summary>เข้ารหัสข้อมูลส่วนบุคคลอื่น (เบอร์ อีเมล วันเกิดของสมาชิก) ผูกกับ context ของ field</summary>
+    /// <param name="value">ค่าที่ normalize แล้ว</param>
+    /// <param name="context">ชื่อ field เช่น <c>member.phone</c></param>
+    /// <returns>JSON ของ <see cref="EnvelopeDTO"/></returns>
+    public string Seal(string value, string context) =>
+        JsonSerializer.Serialize(_envelope.SealString(value, context));
+
+    /// <summary>ถอดรหัสค่าที่ได้จาก <see cref="Seal"/> (ควร audit ทุกครั้ง)</summary>
+    /// <param name="envelopeJson">JSON ของ envelope</param>
+    /// <param name="context">ชื่อ field เดียวกับตอนเข้ารหัส</param>
+    /// <returns>ค่าเดิม</returns>
+    public string Open(string envelopeJson, string context)
+    {
+        EnvelopeDTO env = JsonSerializer.Deserialize<EnvelopeDTO>(envelopeJson) ?? throw new CryptographicException("Invalid envelope.");
+        return _envelope.OpenString(env, context);
+    }
+
     /// <summary>Blind index ของค่า (HMAC-SHA256 hex) — ค่าเดียวกันได้ผลเดียวกันเสมอ แต่ย้อนกลับไม่ได้</summary>
     /// <param name="normalizedValue">ค่าที่ normalize แล้ว</param>
     /// <returns>hex 64 ตัว</returns>

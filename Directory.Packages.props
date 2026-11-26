@@ -37,6 +37,7 @@
     <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="$(MicrosoftExtensionsVersion)" />
     <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="$(MicrosoftExtensionsVersion)" />
     <PackageVersion Include="DevExpress.Blazor" Version="26.1.6" />
+    <PackageVersion Include="QRCoder" Version="1.6.0" />
     <!-- Testing (Microsoft) -->
     <PackageVersion Include="MSTest" Version="4.5.3" />
     <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.11.1" />

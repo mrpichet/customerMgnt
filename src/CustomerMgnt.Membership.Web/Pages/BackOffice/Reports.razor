@@ -1,0 +1,128 @@
+@page "/reports/{Report}"
+@attribute [Authorize]
+@inherits MembershipPage
+@* A32-A34 รายงานสมาชิก / คะแนน / โปรโมชัน (+ รายการขาย) — ส่งออกทำเบื้องหลังที่ server แล้วดาวน์โหลดที่หน้าไฟล์ส่งออก *@
+<PageTitle>@Title</PageTitle>
+
+<RequirePermission Permission="@P.ReportRead">
+    @if (!Known)
+    {
+        <ErrorView Title="ไม่พบรายงาน" Message="รายงานที่มี: สมาชิก คะแนน โปรโมชัน รายการขาย" />
+    }
+    else
+    {
+        <ReportTemplate Title="@Title" Description="ข้อมูลส่วนบุคคลในรายงานแสดงแบบปิดบางส่วน ผลบนหน้าจอแสดงไม่เกิน 1,000 แถว — ส่งออกเพื่อได้ข้อมูลทั้งหมด"
+                        Breadcrumbs="Crumbs" CriteriaActiveCount="ActiveCount" OnGenerate="GenerateAsync" OnClear="ClearAsync" Busy="Busy"
+                        HasResult="@(_r is not null)" ReportTitle="@_r?.Title" CriteriaSummary="@Summary" GeneratedAt="_at" ErrorMessage="@LoadError"
+                        ExportPermission="@P.ReportExport" ExportFormats="_formats" OnExport="ExportAsync">
+            <Criteria>
+                <Field Label="ตั้งแต่" InputId="f"><input id="f" type="date" @bind="_from" /></Field>
+                <Field Label="ถึง" InputId="t"><input id="t" type="date" @bind="_to" /></Field>
+                @if (Report == "members")
+                {
+                    <Field Label="Tier" InputId="tier">
+                        <select id="tier" @bind="_f.TierCode"><option value="">ทั้งหมด</option>@foreach (TierDTO t in _tiers) { <option value="@t.Code">@t.Name</option> }</select>
+                    </Field>
+                    <Field Label="สถานะ" InputId="st">
+                        <select id="st" @bind="_f.Status"><option value="">ทั้งหมด</option>@foreach (MemberStatus s in Enum.GetValues<MemberStatus>()) { <option value="@s">@Text.Member(s)</option> }</select>
+                    </Field>
+                }
+                @if (Report is "promotions" or "transactions")
+                {
+                    <Field Label="แคมเปญ (id)" InputId="cid"><input id="cid" type="number" min="1" @bind="_f.CampaignId" /></Field>
+                }
+                @if (Report is "transactions" or "points")
+                {
+                    <Field Label="สาขา" InputId="br"><input id="br" @bind="_f.BranchCode" maxlength="30" /></Field>
+                }
+            </Criteria>
+            <Result>
+                @if (_r is not null)
+                {
+                    @if (_r.Truncated) { <Alert Level="AlertLevel.Warning">แสดงเพียงบางส่วน — ส่งออกเพื่อดูข้อมูลทั้งหมด</Alert> }
+                    @if (_r.Totals.Count > 0)
+                    {
+                        <div class="kpi-grid">
+                            @foreach (KeyValuePair<string, decimal> t in _r.Totals) { <Card><div class="muted">@t.Key</div><div class="kpi">@t.Value.ToString("N2", CultureInfo.InvariantCulture)</div></Card> }
+                        </div>
+                    }
+                    <div style="overflow-x:auto">
+                        <table class="simple-table">
+                            <thead><tr>@foreach (string c in _r.Columns) { <th>@c</th> }</tr></thead>
+                            <tbody>
+                                @foreach (List<string> row in _r.Rows) { <tr>@foreach (string cell in row) { <td>@cell</td> }</tr> }
+                                @if (_r.Rows.Count == 0) { <tr><td colspan="@_r.Columns.Count" class="muted">ไม่มีข้อมูล</td></tr> }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </Result>
+        </ReportTemplate>
+    }
+</RequirePermission>
+
+@code {
+    [Parameter] public string Report { get; set; } = string.Empty;
+
+    private static readonly Dictionary<string, string> Titles = new(StringComparer.Ordinal)
+    {
+        ["members"] = "รายงานสมาชิก", ["points"] = "รายงานคะแนน", ["promotions"] = "รายงานโปรโมชัน", ["transactions"] = "รายงานรายการขาย",
+    };
+
+    private readonly ExportFormat[] _formats = [ExportFormat.Excel, ExportFormat.Csv];
+    private ReportFilter _f = new();
+    private DateTime? _from = DateTime.Today.AddDays(-30);
+    private DateTime? _to = DateTime.Today;
+    private ReportDTO? _r;
+    private DateTimeOffset? _at;
+    private IReadOnlyList<TierDTO> _tiers = [];
+    private string? _loaded;
+
+    private bool Known => Titles.ContainsKey(Report);
+    private string Title => Titles.GetValueOrDefault(Report, "รายงาน");
+    private IReadOnlyList<Breadcrumb> Crumbs => [new("หน้าแรก", ""), new("รายงาน"), new(Title)];
+    private int ActiveCount => new object?[] { _from, _to, _f.TierCode, _f.Status, _f.CampaignId, _f.BranchCode }.Count(x => x is not null && x is not "");
+    private string Summary => $"{(_from is null ? "-" : _from.Value.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture))} ถึง {(_to is null ? "-" : _to.Value.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture))}";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loaded == Report) return;
+        _loaded = Report;
+        _r = null;
+        _f = new ReportFilter();
+        if (Report == "members" && _tiers.Count == 0) _tiers = await OptionalAsync(() => Api.GetAsync<List<TierDTO>>("api/v1/tiers"));
+    }
+
+    private ReportFilter Filter()
+    {
+        _f.From = _from is null ? null : new DateTimeOffset(_from.Value);
+        _f.To = _to is null ? null : new DateTimeOffset(_to.Value.AddDays(1));
+        _f.TierCode = Clean(_f.TierCode);
+        _f.BranchCode = Clean(_f.BranchCode);
+        return _f;
+    }
+
+    private async Task GenerateAsync()
+    {
+        Busy = true;
+        ReportFilter f = Filter();
+        if (await LoadSafeAsync(async () => _r = await Api.GetAsync<ReportDTO>($"api/v1/reports/{Report}", new { f.From, f.To, f.TierCode, f.Status, f.CampaignId, f.BranchCode })))
+        {
+            _at = DateTimeOffset.Now;
+        }
+
+        Busy = false;
+    }
+
+    private Task ClearAsync()
+    {
+        _f = new ReportFilter();
+        _from = _to = null;
+        _r = null;
+        return Task.CompletedTask;
+    }
+
+    private Task ExportAsync(ExportFormat format) => SaveSafeAsync(
+        () => Api.PostAsync<ExportJobDTO>("api/v1/reports/exports", new ExportRequest { Report = Report, Filters = Filter(), Format = format == ExportFormat.Excel ? "Xlsx" : "Csv" }),
+        "ส่งคำขอส่งออกแล้ว ดาวน์โหลดได้ที่หน้าไฟล์ส่งออกเมื่อเสร็จ", "reports/exports");
+}

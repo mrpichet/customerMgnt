@@ -1,5 +1,6 @@
 using Common.Core;
 using CustomerMgnt.Core.Analytics;
+using CustomerMgnt.Core.Membership;
 using CustomerMgnt.Core.Security;
 using CustomerMgnt.Core.Services;
 using Microsoft.Extensions.Configuration;
@@ -58,7 +59,10 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<NextBestActionService>();
         services.TryAddSingleton<CustomerRiskService>();
 
-        // Step 5: background workers
+        // Step 5: ระบบสมาชิกและโปรโมชัน
+        services.AddMembershipCore(configuration, enableBackgroundWorkers);
+
+        // Step 6: background workers
         if (enableBackgroundWorkers)
         {
             services.AddHostedService<NotificationDispatcher>();

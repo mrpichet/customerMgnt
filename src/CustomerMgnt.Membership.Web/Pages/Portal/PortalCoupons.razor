@@ -1,0 +1,53 @@
+@page "/portal/coupons"
+@layout PortalLayout
+@attribute [Authorize]
+@inherits PortalPage
+@* P6 คูปองของฉัน + QR สำหรับพนักงานสแกนที่ POS *@
+<PageTitle>คูปองของฉัน</PageTitle>
+
+<PageHeader Title="คูปองของฉัน" Description="แสดง QR หรือรหัสคูปองให้พนักงานที่จุดชำระเงิน" />
+<Tabs Items="_tabs" @bind-SelectedKey="_tab" @bind-SelectedKey:after="LoadAsync" AriaLabel="สถานะคูปอง">
+    @if (LoadError is not null)
+    {
+        <ErrorView Title="โหลดข้อมูลไม่สำเร็จ" Message="@LoadError" OnRetry="LoadAsync" />
+    }
+    else if (_items is null)
+    {
+        <LoadingState />
+    }
+    else if (_items.Count == 0)
+    {
+        <Alert Level="AlertLevel.Info">ไม่มีคูปองในหมวดนี้</Alert>
+    }
+    else
+    {
+        <div class="card-grid">
+            @foreach (CouponDTO c in _items)
+            {
+                <Card Title="@(c.CampaignName ?? "คูปอง")">
+                    @if (c.Status == CouponStatus.Available)
+                    {
+                        <QrCode Value="@(c.QrPayload ?? c.Code)" Label="@($"QR คูปอง {c.Code}")" />
+                    }
+                    <div class="coupon-code" style="margin-top:8px">@c.Code</div>
+                    <div class="muted">หมดอายุ @Text.Date(c.ExpiresAt)</div>
+                    <Badge Text="@Text.Coupon(c.Status)" Level="@Text.Level(c.Status)" />
+                </Card>
+            }
+        </div>
+    }
+</Tabs>
+
+@code {
+    private readonly IReadOnlyList<TabItem> _tabs = [new("Available", "ใช้ได้"), new("Redeemed", "ใช้แล้ว"), new("Expired", "หมดอายุ")];
+    private string _tab = "Available";
+    private IReadOnlyList<CouponDTO>? _items;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private Task LoadAsync()
+    {
+        _items = null;
+        return PortalLoadAsync(async () => _items = await Api.GetAsync<List<CouponDTO>>("api/v1/me/coupons", new { status = Enum.Parse<CouponStatus>(_tab) }));
+    }
+}

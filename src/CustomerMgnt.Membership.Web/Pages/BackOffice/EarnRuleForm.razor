@@ -1,0 +1,118 @@
+@page "/points/rules/new"
+@page "/points/rules/{Id:long}/edit"
+@attribute [Authorize]
+@inherits MembershipPage
+@* A13 เพิ่ม/แก้ไขกติกาสะสมคะแนน — ส่งอนุมัติเมื่อบันทึก (หรือเก็บเป็นร่าง) *@
+<PageTitle>@Title</PageTitle>
+
+<RequirePermission Permission="@P.PointsRuleManage">
+    @if (LoadError is not null)
+    {
+        <ErrorView Title="โหลดข้อมูลไม่สำเร็จ" Message="@LoadError" OnRetry="LoadAsync" />
+    }
+    else if (_req is null)
+    {
+        <LoadingState />
+    }
+    else
+    {
+        <FormTemplate Title="@Title" Description="คะแนน = floor(ยอดที่นับได้ ÷ บาทต่อ 1 คะแนน) × ตัวคูณ Tier — ยอดที่นับได้คือยอดหลังส่วนลด ไม่รวมส่วนที่จ่ายด้วยคะแนน และสินค้าที่ไม่ร่วมรายการ"
+                      Breadcrumbs="Crumbs" Mode="@(Id is null ? FormMode.New : FormMode.Edit)" Model="_req" SavePermission="@P.PointsRuleManage"
+                      SaveText="@(_req.Submit ? "บันทึกและส่งอนุมัติ" : "บันทึกร่าง")" OnSave="SaveAsync" OnCancel="Back">
+            <ChildContent>
+                <FormSection Title="กติกา">
+                    <FieldGrid Columns="2">
+                        <FormField Label="รหัส" InputId="code" For="() => _req.Code" Required><InputText id="code" @bind-Value="_req.Code" maxlength="30" disabled="@(Id is not null)" /></FormField>
+                        <FormField Label="ชื่อ" InputId="name" For="() => _req.Name" Required><InputText id="name" @bind-Value="_req.Name" maxlength="200" /></FormField>
+                        <FormField Label="บาทต่อ 1 คะแนน" InputId="spp" For="() => _req.SpendPerPoint" Required><InputNumber id="spp" @bind-Value="_req.SpendPerPoint" step="0.01" min="0.01" /></FormField>
+                        <FormField Label="ยอดขั้นต่ำต่อบิล (บาท)" InputId="min" For="() => _req.MinSpend"><InputNumber id="min" @bind-Value="_req.MinSpend" step="0.01" min="0" /></FormField>
+                        <FormField Label="คะแนนสูงสุดต่อบิล" InputId="max" For="() => _req.MaxPointsPerTransaction" Hint="เว้นว่าง = ไม่จำกัด"><InputNumber id="max" @bind-Value="_req.MaxPointsPerTransaction" min="1" /></FormField>
+                    </FieldGrid>
+                </FormSection>
+                <FormSection Title="ขอบเขต">
+                    <FieldGrid Columns="2">
+                        <Field Label="หมวดสินค้าที่นับ (คั่นด้วย ,) — ว่าง = ทุกหมวด" InputId="cat"><input id="cat" @bind="_cats" maxlength="1000" /></Field>
+                        <Field Label="รหัสสินค้าที่ไม่นับ (คั่นด้วย ,)" InputId="exc"><input id="exc" @bind="_excl" maxlength="1000" /></Field>
+                        <Field Label="สาขา (คั่นด้วย ,) — ว่าง = ทุกสาขา" InputId="br"><input id="br" @bind="_branches" maxlength="1000" /></Field>
+                        <Field Label="ช่องทางขาย — ไม่เลือก = ทุกช่องทาง" InputId="ch">
+                            <div class="check-list" id="ch">
+                                @foreach (SalesChannel c in Enum.GetValues<SalesChannel>())
+                                {
+                                    <label><input type="checkbox" checked="@_req.Channels.Contains(c)" @onchange="e => ToggleChannel(c, e.Value is true)" /> @c</label>
+                                }
+                            </div>
+                        </Field>
+                    </FieldGrid>
+                </FormSection>
+                <FormSection Title="ช่วงเวลาและการส่งอนุมัติ">
+                    <FieldGrid Columns="2">
+                        <Field Label="เริ่ม" InputId="start"><input id="start" type="datetime-local" @bind="_start" /></Field>
+                        <Field Label="สิ้นสุด (ไม่บังคับ)" InputId="end"><input id="end" type="datetime-local" @bind="_end" /></Field>
+                    </FieldGrid>
+                    <label class="check-list"><InputCheckbox @bind-Value="_req.Submit" /> ส่งอนุมัติทันทีหลังบันทึก</label>
+                </FormSection>
+            </ChildContent>
+        </FormTemplate>
+    }
+</RequirePermission>
+
+@code {
+    [Parameter] public long? Id { get; set; }
+
+    private EarnRuleRequest? _req;
+    private string? _cats;
+    private string? _excl;
+    private string? _branches;
+    private DateTime? _start;
+    private DateTime? _end;
+
+    private string Title => Id is null ? "เพิ่มกติกาสะสมคะแนน" : $"แก้ไขกติกา {_req?.Code}";
+    private IReadOnlyList<Breadcrumb> Crumbs => [new("หน้าแรก", ""), new("กติกาสะสมคะแนน", "points/rules"), new(Title)];
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private Task LoadAsync() => LoadSafeAsync(async () =>
+    {
+        if (Id is null)
+        {
+            _req = new EarnRuleRequest();
+            _start = DateTime.Today;
+            return;
+        }
+
+        EarnRuleDTO r = (await Api.GetAsync<List<EarnRuleDTO>>("api/v1/points/rules")).FirstOrDefault(x => x.Id == Id) ?? throw new ApiException(404, "not_found", "ไม่พบกติกา");
+        _req = new EarnRuleRequest
+        {
+            Code = r.Code, Name = r.Name, SpendPerPoint = r.SpendPerPoint, MinSpend = r.MinSpend, MaxPointsPerTransaction = r.MaxPointsPerTransaction,
+            IncludeCategories = r.IncludeCategories, ExcludeItemCodes = r.ExcludeItemCodes, Branches = r.Branches, Channels = [.. r.Channels],
+            StartAt = r.StartAt, EndAt = r.EndAt, Version = r.Version,
+        };
+        _cats = Text.JoinList(r.IncludeCategories);
+        _excl = Text.JoinList(r.ExcludeItemCodes);
+        _branches = Text.JoinList(r.Branches);
+        _start = r.StartAt.ToLocalTime().DateTime;
+        _end = r.EndAt?.ToLocalTime().DateTime;
+    });
+
+    private void ToggleChannel(SalesChannel c, bool on)
+    {
+        if (on && !_req!.Channels.Contains(c)) _req.Channels.Add(c);
+        if (!on) _req!.Channels.Remove(c);
+    }
+
+    private Task<bool> SaveAsync()
+    {
+        _req!.IncludeCategories = Text.SplitList(_cats);
+        _req.ExcludeItemCodes = Text.SplitList(_excl);
+        _req.Branches = Text.SplitList(_branches);
+        _req.StartAt = _start is null ? DateTimeOffset.Now : new DateTimeOffset(_start.Value);
+        _req.EndAt = _end is null ? null : new DateTimeOffset(_end.Value);
+        return SaveSafeAsync(async () =>
+        {
+            if (Id is null) await Api.PostAsync<EarnRuleDTO>("api/v1/points/rules", _req);
+            else await Api.PutAsync<EarnRuleDTO>($"api/v1/points/rules/{Id}", _req);
+        }, _req.Submit ? "บันทึกและส่งอนุมัติแล้ว" : "บันทึกร่างแล้ว", "points/rules");
+    }
+
+    private void Back() => Nav.NavigateTo("points/rules");
+}

@@ -11,6 +11,12 @@
         <DxFormLayoutItem Caption="รหัสผ่าน" ColSpanMd="12">
             <DxTextBox @bind-Text="_password" Password="true" />
         </DxFormLayoutItem>
+        @if (_mfa)
+        {
+            <DxFormLayoutItem Caption="รหัส OTP (6 หลัก)" ColSpanMd="12">
+                <DxTextBox @bind-Text="_otp" InputId="otp" />
+            </DxFormLayoutItem>
+        }
         <DxFormLayoutItem ColSpanMd="12">
             <DxButton Text="เข้าสู่ระบบ" Enabled="@(!_busy)" Click="SubmitAsync" RenderStyle="ButtonRenderStyle.Primary" />
         </DxFormLayoutItem>
@@ -20,8 +26,10 @@
 @code {
     private string _login = "";
     private string _password = "";
+    private string _otp = "";
     private string? _error;
     private bool _busy;
+    private bool _mfa;
 
     private async Task SubmitAsync()
     {
@@ -31,9 +39,22 @@
             return;
         }
 
+        if (_mfa && string.IsNullOrWhiteSpace(_otp))
+        {
+            _error = "กรุณากรอกรหัส OTP";
+            return;
+        }
+
         _busy = true;
-        _error = await Auth.LoginAsync(_login.Trim(), _password);
-        _password = "";
+        LoginResult result = await Auth.LoginAsync(_login.Trim(), _password, _mfa ? _otp.Trim() : null);
+        _error = result.Error;
+        _mfa = result.MfaRequired;
+        _otp = "";
+        if (!_mfa)
+        {
+            _password = ""; // ขั้น OTP ต้องส่งรหัสผ่านเดิมซ้ำ จึงล้างเมื่อจบขั้นตอนเท่านั้น
+        }
+
         _busy = false;
     }
 }

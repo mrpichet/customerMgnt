@@ -1,0 +1,79 @@
+@page "/settings/consents"
+@attribute [Authorize]
+@inherits MembershipPage
+@* A38 ฉบับข้อตกลง/ความยินยอม (PDPA) — สร้างร่าง แล้วเผยแพร่ เผยแพร่แล้วแก้ไม่ได้ *@
+<PageTitle>ข้อตกลงและความยินยอม</PageTitle>
+
+<RequirePermission Permission="@P.SettingsManage">
+    <PageHeader Title="ข้อตกลงและความยินยอม (PDPA)" Description="ฉบับที่เผยแพร่แล้วแก้ไขไม่ได้ ถ้าต้องการเปลี่ยนให้สร้างฉบับใหม่ สมาชิกจะถูกขอให้ยอมรับฉบับล่าสุดเมื่อเข้า Portal" Breadcrumbs="_crumbs" />
+
+    @if (LoadError is not null)
+    {
+        <ErrorView Title="โหลดข้อมูลไม่สำเร็จ" Message="@LoadError" OnRetry="LoadAsync" />
+    }
+    <DataTable TItem="ConsentVersionDTO" Items="_items" Caption="ฉบับทั้งหมด" PageSize="20">
+        <Columns>
+            <TableColumn TItem="ConsentVersionDTO" Title="#" Field="c => c.Id" />
+            <TableColumn TItem="ConsentVersionDTO" Title="ชื่อ" Field="c => c.Title" />
+            <TableColumn TItem="ConsentVersionDTO" Title="มีผล" Field="c => Text.DateTime(c.EffectiveAt)" />
+            <TableColumn TItem="ConsentVersionDTO" Title="สถานะ">
+                <Template><Badge Text="@(context.IsPublished ? "เผยแพร่แล้ว" : "ร่าง")" Level="@(context.IsPublished ? AlertLevel.Success : AlertLevel.Info)" /></Template>
+            </TableColumn>
+        </Columns>
+        <RowActions>
+            <AppButton Text="ดู" Size="ButtonSize.Small" Variant="ButtonVariant.Secondary" OnClick="@(() => _view = context)" />
+            @if (!context.IsPublished)
+            {
+                <AppButton Text="เผยแพร่" Size="ButtonSize.Small" Variant="ButtonVariant.Primary" Busy="Busy" OnClick="@(() => PublishAsync(context))" />
+            }
+        </RowActions>
+    </DataTable>
+
+    @if (_view is not null)
+    {
+        <Card Title="@($"#{_view.Id} {_view.Title}")" Description="@($"มีผล {Text.DateTime(_view.EffectiveAt)}")">
+            <div style="white-space:pre-wrap">@_view.Body</div>
+        </Card>
+    }
+
+    <Card Title="สร้างฉบับใหม่ (ร่าง)">
+        <FieldGrid Columns="2">
+            <Field Label="ชื่อ" InputId="ct"><input id="ct" @bind="_new.Title" maxlength="200" /></Field>
+            <Field Label="วันที่มีผล" InputId="ce"><input id="ce" type="datetime-local" @bind="_effective" /></Field>
+        </FieldGrid>
+        <Field Label="เนื้อหา" InputId="cb"><textarea id="cb" @bind="_new.Body" rows="10" maxlength="50000"></textarea></Field>
+        <div class="row-actions" style="margin-top:12px">
+            <AppButton Text="บันทึกร่าง" Variant="ButtonVariant.Primary" Busy="Busy" Disabled="@(string.IsNullOrWhiteSpace(_new.Title) || string.IsNullOrWhiteSpace(_new.Body))" OnClick="CreateAsync" />
+        </div>
+    </Card>
+</RequirePermission>
+
+@code {
+    private readonly IReadOnlyList<Breadcrumb> _crumbs = [new("หน้าแรก", ""), new("ตั้งค่า"), new("ข้อตกลงและความยินยอม")];
+    private IReadOnlyList<ConsentVersionDTO> _items = [];
+    private ConsentVersionDTO? _view;
+    private ConsentVersionRequest _new = new();
+    private DateTime? _effective = DateTime.Today.AddDays(1);
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private Task LoadAsync() => LoadSafeAsync(async () => _items = [.. (await Api.GetAsync<List<ConsentVersionDTO>>("api/v1/settings/consents")).OrderByDescending(c => c.Id)]);
+
+    private async Task CreateAsync()
+    {
+        _new.EffectiveAt = _effective is null ? DateTimeOffset.Now : new DateTimeOffset(_effective.Value);
+        if (await SaveSafeAsync(() => Api.PostAsync<ConsentVersionDTO>("api/v1/settings/consents", _new), "บันทึกร่างแล้ว"))
+        {
+            _new = new ConsentVersionRequest();
+            await LoadAsync();
+        }
+    }
+
+    private async Task PublishAsync(ConsentVersionDTO c)
+    {
+        if (await SaveSafeAsync(() => Api.PostAsync<ConsentVersionDTO>($"api/v1/settings/consents/{c.Id}/publish", null), "เผยแพร่แล้ว"))
+        {
+            await LoadAsync();
+        }
+    }
+}

@@ -1,0 +1,86 @@
+@* ตัวแก้ไขเงื่อนไข Segment แบบกลุ่มซ้อนกันได้ (ไม่เกิน 5 ชั้น / 50 เงื่อนไข ตรวจที่ API) *@
+<div class="rule-group">
+    <div class="rule-row">
+        <label for="op-@_id">เงื่อนไขในกลุ่มนี้ต้อง</label>
+        <select id="op-@_id" @bind="Node.Op" @bind:after="Changed">
+            <option value="And">ตรงทุกข้อ (AND)</option>
+            <option value="Or">ตรงอย่างน้อย 1 ข้อ (OR)</option>
+        </select>
+        @if (OnRemove.HasDelegate)
+        {
+            <AppButton Text="ลบกลุ่ม" Size="ButtonSize.Small" Variant="ButtonVariant.Secondary" OnClick="OnRemove" />
+        }
+    </div>
+    @foreach (SegmentRuleModel item in Node.Items)
+    {
+        @if (item.IsGroup)
+        {
+            <SegmentRuleEditor Node="item" Depth="Depth + 1" OnChanged="OnChanged" OnRemove="@(() => Remove(item))" />
+        }
+        else
+        {
+            <div class="rule-row">
+                <select aria-label="ข้อมูล" @bind="item.Field" @bind:after="Changed">
+                    @foreach ((string f, string label, string _) in SegmentRuleModel.Fields) { <option value="@f">@label</option> }
+                </select>
+                <select aria-label="ตัวดำเนินการ" @bind="item.Operator" @bind:after="Changed">
+                    @foreach ((string o, string label) in SegmentRuleModel.Operators) { <option value="@o">@label</option> }
+                </select>
+                <input aria-label="ค่า" @bind="item.ValueText" @bind:after="Changed" maxlength="500" placeholder="@Hint(item)" />
+                <AppButton Text="ลบ" Size="ButtonSize.Small" Variant="ButtonVariant.Secondary" OnClick="@(() => Remove(item))" />
+            </div>
+        }
+    }
+    <div class="rule-row">
+        <AppButton Text="เพิ่มเงื่อนไข" Size="ButtonSize.Small" Variant="ButtonVariant.Secondary" OnClick="AddCondition" />
+        @if (Depth < 4)
+        {
+            <AppButton Text="เพิ่มกลุ่มย่อย" Size="ButtonSize.Small" Variant="ButtonVariant.Secondary" OnClick="AddGroup" />
+        }
+    </div>
+</div>
+
+@code {
+    private readonly string _id = Guid.NewGuid().ToString("N")[..8];
+
+    /// <summary>กลุ่มที่แก้ไข</summary>
+    [Parameter, EditorRequired] public SegmentRuleModel Node { get; set; } = default!;
+
+    /// <summary>ความลึก (ราก = 0)</summary>
+    [Parameter] public int Depth { get; set; }
+
+    /// <summary>แจ้งเมื่อเปลี่ยน</summary>
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    /// <summary>ลบกลุ่มนี้ (ไม่มีสำหรับราก)</summary>
+    [Parameter] public EventCallback OnRemove { get; set; }
+
+    private static string Hint(SegmentRuleModel m) =>
+        m.Field switch
+        {
+            "status" => "Active, Suspended",
+            "gender" => "Male, Female, Other",
+            "marketingConsent" => "true / false",
+            _ => m.Operator == "Between" ? "จาก, ถึง" : string.Empty,
+        };
+
+    private Task Changed() => OnChanged.InvokeAsync();
+
+    private Task AddCondition()
+    {
+        Node.Items.Add(new SegmentRuleModel());
+        return Changed();
+    }
+
+    private Task AddGroup()
+    {
+        Node.Items.Add(SegmentRuleModel.NewGroup());
+        return Changed();
+    }
+
+    private Task Remove(SegmentRuleModel item)
+    {
+        Node.Items.Remove(item);
+        return Changed();
+    }
+}

@@ -1,0 +1,93 @@
+@page "/points/adjustments/new"
+@attribute [Authorize]
+@inherits MembershipPage
+@* A15 ขอปรับคะแนน — เกินเพดานต่อครั้ง/ต่อวันต้องได้รับอนุมัติ *@
+<PageTitle>ปรับคะแนน</PageTitle>
+
+<RequirePermission Permission="@P.PointsAdjust">
+    <FormTemplate Title="ปรับคะแนนสมาชิก" Description="ใส่ค่าบวกเพื่อเพิ่ม ค่าลบเพื่อหัก ถ้าเกินเพดานที่ตั้งไว้ รายการจะรออนุมัติก่อนมีผล"
+                  Breadcrumbs="_crumbs" Mode="FormMode.New" Model="_req" SavePermission="@P.PointsAdjust" SaveText="บันทึก" OnSave="SaveAsync" OnCancel="Back">
+        <Notice>
+            @if (_member is not null)
+            {
+                <Alert Level="AlertLevel.Info">@_member.MemberNo @_member.DisplayName — คะแนนใช้ได้ @Text.Int(_member.Points?.Available ?? 0)</Alert>
+            }
+        </Notice>
+        <ChildContent>
+            <FormSection Title="รายละเอียด">
+                <FieldGrid Columns="2">
+                    <Field Label="เลขสมาชิก" InputId="no">
+                        <input id="no" @bind="_memberNo" maxlength="30" @onblur="FindAsync" />
+                    </Field>
+                    <FormField Label="คะแนน (+/-)" InputId="pts" For="() => _req.Points" Required><InputNumber id="pts" @bind-Value="_req.Points" /></FormField>
+                </FieldGrid>
+                <FormField Label="เหตุผล" InputId="rs" For="() => _req.Reason" Required><InputTextArea id="rs" @bind-Value="_req.Reason" rows="3" maxlength="500" /></FormField>
+                <FormField Label="เอกสารอ้างอิง" InputId="att" For="() => _req.AttachmentRef" Hint="เช่น เลขที่ใบร้องเรียน"><InputText id="att" @bind-Value="_req.AttachmentRef" maxlength="200" /></FormField>
+            </FormSection>
+        </ChildContent>
+    </FormTemplate>
+</RequirePermission>
+
+@code {
+    [SupplyParameterFromQuery(Name = "memberId")] public long? MemberIdQuery { get; set; }
+
+    private readonly IReadOnlyList<Breadcrumb> _crumbs = [new("หน้าแรก", ""), new("รายการปรับคะแนน", "points/adjustments"), new("ปรับคะแนน")];
+    private readonly AdjustmentRequest _req = new();
+    private MemberDTO? _member;
+    private string? _memberNo;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (MemberIdQuery is long id)
+        {
+            try
+            {
+                _member = await Api.GetAsync<MemberDTO>($"api/v1/members/{id}");
+                _memberNo = _member.MemberNo;
+                _req.MemberId = id;
+            }
+            catch (ApiException ex)
+            {
+                Toasts.Error(Text.Error(ex));
+            }
+        }
+    }
+
+    private async Task FindAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_memberNo) || _member?.MemberNo == _memberNo.Trim()) return;
+        try
+        {
+            _member = await Api.GetAsync<MemberDTO>($"api/v1/members/by-no/{Uri.EscapeDataString(_memberNo.Trim())}");
+            _req.MemberId = _member.Id;
+        }
+        catch (ApiException ex)
+        {
+            _member = null;
+            _req.MemberId = 0;
+            Toasts.Error(Text.Error(ex));
+        }
+    }
+
+    private async Task<bool> SaveAsync()
+    {
+        await FindAsync();
+        if (_req.MemberId == 0)
+        {
+            Toasts.Error("กรุณาระบุเลขสมาชิกที่ถูกต้อง");
+            return false;
+        }
+
+        AdjustmentDTO? r = null;
+        bool ok = await SaveSafeAsync(async () => r = await Api.PostAsync<AdjustmentDTO>("api/v1/points/adjustments", _req), "บันทึกรายการปรับคะแนนแล้ว");
+        if (ok && r is not null)
+        {
+            if (r.Status == AdjustmentStatus.PendingApproval) Toasts.Info("รายการเกินเพดาน — รออนุมัติก่อนมีผล");
+            Nav.NavigateTo($"points/adjustments?memberId={_req.MemberId}");
+        }
+
+        return ok;
+    }
+
+    private void Back() => Nav.NavigateTo(MemberIdQuery is null ? "points/adjustments" : $"members/{MemberIdQuery}");
+}

@@ -1,0 +1,132 @@
+@page "/approvals/{Id:long}"
+@attribute [Authorize]
+@inherits MembershipPage
+@* A31 รายละเอียดคำขออนุมัติ: เปรียบเทียบก่อน/หลัง แล้วอนุมัติ/ปฏิเสธ (ผู้ยื่นยกเลิกได้) *@
+<PageTitle>คำขออนุมัติ #@Id</PageTitle>
+
+@if (LoadError is not null)
+{
+    <ErrorView Title="โหลดข้อมูลไม่สำเร็จ" Message="@LoadError" OnRetry="LoadAsync" />
+}
+else if (_a is null)
+{
+    <LoadingState />
+}
+else
+{
+    <PageHeader Title="@($"#{_a.Id} {_a.Summary}")" Description="@Text.ApprovalType(_a.Type)" Breadcrumbs="Crumbs">
+        <Badge><Badge Text="@Text.Approval(_a.Status)" Level="@Text.Level(_a.Status)" /></Badge>
+        <Actions>
+            @if (EntityLink is string link) { <AppButton Text="เปิดข้อมูลที่เกี่ยวข้อง" Variant="ButtonVariant.Secondary" Href="@link" /> }
+        </Actions>
+    </PageHeader>
+    <Card>
+        <dl class="kv">
+            <dt>ผู้ยื่น</dt><dd>@(_a.RequestedByName ?? _a.RequestedBy) เมื่อ @Text.DateTime(_a.RequestedAt)</dd>
+            <dt>เหตุผลที่ยื่น</dt><dd>@(_a.RequestComment ?? "-")</dd>
+            <dt>สิทธิ์ที่ใช้อนุมัติ</dt><dd>@_a.RequiredPermission</dd>
+            <dt>ขั้นอนุมัติ</dt><dd>@_a.LevelsApproved / @_a.LevelsRequired</dd>
+        </dl>
+    </Card>
+    <div class="kpi-grid compare-grid">
+        <Card Title="ก่อนเปลี่ยน"><div class="mono">@Pretty(_a.BeforeJson)</div></Card>
+        <Card Title="หลังเปลี่ยน"><div class="mono">@Pretty(_a.AfterJson ?? _a.PayloadJson)</div></Card>
+    </div>
+    @if (_a.Steps.Count > 0)
+    {
+        <DataTable TItem="ApprovalStepDTO" Items="_a.Steps" Caption="ประวัติการพิจารณา" ShowPager="false">
+            <Columns>
+                <TableColumn TItem="ApprovalStepDTO" Title="ขั้น" Field="s => s.Level" />
+                <TableColumn TItem="ApprovalStepDTO" Title="ผู้พิจารณา" Field="s => s.DecidedByName ?? s.DecidedBy" />
+                <TableColumn TItem="ApprovalStepDTO" Title="ผล" Field="s => DecisionText(s.Decision)" />
+                <TableColumn TItem="ApprovalStepDTO" Title="ความเห็น" Field="s => s.Comment" />
+                <TableColumn TItem="ApprovalStepDTO" Title="เวลา" Field="s => Text.DateTime(s.DecidedAt)" />
+            </Columns>
+        </DataTable>
+    }
+    @if (_a.Status == MApprovalStatus.Pending)
+    {
+        <Card Title="@(IsMine ? "คำขอของคุณ" : "พิจารณา")">
+            <Field Label="@(IsMine ? "เหตุผลที่ยกเลิก" : "ความเห็น (บังคับเมื่อปฏิเสธ)")" InputId="cm"><textarea id="cm" @bind="_comment" rows="3" maxlength="1000"></textarea></Field>
+            <div class="row-actions" style="margin-top:12px">
+                @if (IsMine)
+                {
+                    <AppButton Text="ยกเลิกคำขอ" Variant="ButtonVariant.Secondary" Busy="Busy" OnClick="CancelAsync" />
+                }
+                else
+                {
+                    <AppButton Text="อนุมัติ" Variant="ButtonVariant.Primary" Permission="@_a.RequiredPermission" Busy="Busy" OnClick="@(() => DecideAsync(ApprovalDecision.Approve))" />
+                    <AppButton Text="ปฏิเสธ" Variant="ButtonVariant.Danger" Permission="@_a.RequiredPermission" Busy="Busy" Disabled="@string.IsNullOrWhiteSpace(_comment)" OnClick="@(() => DecideAsync(ApprovalDecision.Reject))" />
+                }
+            </div>
+        </Card>
+    }
+}
+
+@code {
+    [Parameter] public long Id { get; set; }
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    private ApprovalRequestDTO? _a;
+    private string? _comment;
+    private string? _me;
+
+    private bool IsMine => _a is not null && _me is not null && string.Equals(_a.RequestedBy, _me, StringComparison.Ordinal);
+
+    private IReadOnlyList<Breadcrumb> Crumbs => [new("หน้าแรก", ""), new("รายการอนุมัติ", "approvals"), new($"#{Id}")];
+
+    private string? EntityLink => _a?.Type switch
+    {
+        ApprovalType.Campaign => $"promotions/{_a.EntityId}",
+        ApprovalType.EarnRule => $"points/rules/{_a.EntityId}/edit",
+        ApprovalType.Merge => $"members/{_a.EntityId}",
+        ApprovalType.Adjustment => "points/adjustments",
+        _ => null,
+    };
+
+    private static string DecisionText(ApprovalDecision? d) => d switch { ApprovalDecision.Approve => "อนุมัติ", ApprovalDecision.Reject => "ปฏิเสธ", _ => "-" };
+
+    private static string Pretty(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return "-";
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            return System.Text.Json.JsonSerializer.Serialize(doc.RootElement, new System.Text.Json.JsonSerializerOptions { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping });
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return json;
+        }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (AuthState is not null)
+        {
+            ClaimsPrincipal user = (await AuthState).User;
+            _me = user.FindFirst("sub")?.Value ?? user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        }
+
+        await LoadAsync();
+    }
+
+    private Task LoadAsync() => LoadSafeAsync(async () => _a = await Api.GetAsync<ApprovalRequestDTO>($"api/v1/approvals/{Id}"));
+
+    private async Task DecideAsync(ApprovalDecision d)
+    {
+        if (await SaveSafeAsync(async () => _a = await Api.PostAsync<ApprovalRequestDTO>($"api/v1/approvals/{Id}/decision", new ApprovalDecisionRequest { Decision = d, Comment = Clean(_comment) }),
+            d == ApprovalDecision.Approve ? "อนุมัติแล้ว" : "ปฏิเสธแล้ว"))
+        {
+            _comment = null;
+        }
+    }
+
+    private async Task CancelAsync()
+    {
+        if (await SaveSafeAsync(async () => _a = await Api.PostAsync<ApprovalRequestDTO>($"api/v1/approvals/{Id}/cancel", new ApprovalCancelRequest { Comment = Clean(_comment) }), "ยกเลิกคำขอแล้ว"))
+        {
+            _comment = null;
+        }
+    }
+}

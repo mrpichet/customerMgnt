@@ -1,0 +1,58 @@
+@page "/portal/privacy"
+@layout PortalLayout
+@attribute [Authorize]
+@inherits PortalPage
+@* P11 ใช้สิทธิ์เจ้าของข้อมูล (PDPA): ขอดู / แก้ไข / ลบ / ปิดบัญชี *@
+<PageTitle>สิทธิข้อมูลส่วนบุคคล</PageTitle>
+
+<PageHeader Title="สิทธิข้อมูลส่วนบุคคล" Description="ยื่นคำขอตาม พ.ร.บ.คุ้มครองข้อมูลส่วนบุคคล เจ้าหน้าที่จะดำเนินการภายใน 30 วัน" />
+<Card Title="ยื่นคำขอ">
+    <FieldGrid Columns="2">
+        <Field Label="ประเภทคำขอ" InputId="tp">
+            <select id="tp" @bind="_req.Type">@foreach (PrivacyRequestType t in Enum.GetValues<PrivacyRequestType>()) { <option value="@t">@Text.Privacy(t)</option> }</select>
+        </Field>
+    </FieldGrid>
+    <Field Label="รายละเอียด" InputId="dt"><textarea id="dt" @bind="_req.Detail" rows="3" maxlength="1000"></textarea></Field>
+    @if (_req.Type is PrivacyRequestType.Erase or PrivacyRequestType.Close)
+    {
+        <Alert Level="AlertLevel.Warning">เมื่อดำเนินการแล้ว บัญชีจะถูกปิด คะแนนและคูปองที่เหลือจะใช้ไม่ได้ และย้อนกลับไม่ได้</Alert>
+    }
+    <div class="row-actions" style="margin-top:12px">
+        <AppButton Text="ยื่นคำขอ" Variant="ButtonVariant.Primary" Busy="Busy" OnClick="SubmitAsync" />
+    </div>
+</Card>
+@if (LoadError is not null)
+{
+    <ErrorView Title="โหลดข้อมูลไม่สำเร็จ" Message="@LoadError" OnRetry="LoadAsync" />
+}
+else
+{
+    <DataTable TItem="PrivacyRequestDTO" Items="_items" Loading="@(_items is null)" Caption="คำขอของฉัน" PageSize="10">
+        <Columns>
+            <TableColumn TItem="PrivacyRequestDTO" Title="ยื่นเมื่อ" Field="r => Text.DateTime(r.RequestedAt)" />
+            <TableColumn TItem="PrivacyRequestDTO" Title="ประเภท" Field="r => Text.Privacy(r.Type)" />
+            <TableColumn TItem="PrivacyRequestDTO" Title="ครบกำหนด" Field="r => Text.Date(r.DueAt)" HideOnMobile />
+            <TableColumn TItem="PrivacyRequestDTO" Title="สถานะ" Field="r => Text.Privacy(r.Status)" />
+            <TableColumn TItem="PrivacyRequestDTO" Title="ผล" Field="r => r.Note" HideOnMobile />
+        </Columns>
+    </DataTable>
+}
+
+@code {
+    private CreatePrivacyRequest _req = new() { Type = PrivacyRequestType.Access };
+    private IReadOnlyList<PrivacyRequestDTO>? _items;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private Task LoadAsync() => PortalLoadAsync(async () => _items = await Api.GetAsync<List<PrivacyRequestDTO>>("api/v1/me/privacy-requests"));
+
+    private async Task SubmitAsync()
+    {
+        _req.Detail = Clean(_req.Detail);
+        if (await SaveSafeAsync(() => Api.PostAsync<PrivacyRequestDTO>("api/v1/me/privacy-requests", _req), "ยื่นคำขอแล้ว"))
+        {
+            _req = new CreatePrivacyRequest { Type = PrivacyRequestType.Access };
+            await LoadAsync();
+        }
+    }
+}

@@ -9,6 +9,7 @@ using System.Text.Json.Serialization;
 using Common.AspNetCore.Authentication;
 using Common.AspNetCore.Catalog;
 using Common.AspNetCore.Hosting;
+using Common.AspNetCore.Versioning;
 using CustomerMgnt.AI;
 using CustomerMgnt.Api.Controllers;
 using CustomerMgnt.Api.Infrastructure;
@@ -28,7 +29,15 @@ bool exportCatalog = args.Contains("--export-catalog");
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
 // ---- Step 1: ค่าเริ่มต้นของ Common (secrets, Kestrel hardening, LogServer, ProblemDetails, rate limit, health) ----
+// Membership API ลงทะเบียนก่อน: exception handler ของระบบสมาชิกต้องทำงานก่อน CommonExceptionHandler
+builder.Services.AddMembershipApi();
 builder.AddCommonWebDefaults(maxRequestBodyBytes: 16 * 1024 * 1024);
+
+// OTP แบบรหัสคงที่ใช้ได้เฉพาะ Development (กันลืมค่าไว้ใน production)
+if (!builder.Environment.IsDevelopment() && !string.IsNullOrEmpty(builder.Configuration["Membership:OtpFixedCodeForDevelopment"]))
+{
+    throw new InvalidOperationException("Membership:OtpFixedCodeForDevelopment is allowed in Development only.");
+}
 
 // ---- Step 2: ฐานข้อมูล — in-memory อนุญาตเฉพาะ Development / export catalog (กัน deploy ผิดพลาดแล้วข้อมูลหาย) ----
 bool allowInMemory = builder.Environment.IsDevelopment() || exportCatalog;
@@ -71,6 +80,7 @@ builder.Services.AddAuthServerAuthentication(builder.Configuration);
 
 // ---- Step 7: MVC controllers, JSON (enum เป็น string เหมือนระบบอื่นใน ecosystem), OpenAPI ----
 builder.Services.AddControllers().AddJsonOptions(o => o.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
+builder.Services.AddCommonApiVersioning(builder.Configuration); // api/x มี api/v1/x ด้วย; route ของระบบสมาชิกเป็น api/v1 ตั้งแต่แรก
 builder.Services.AddOpenApi();
 
 // ---- Step 8: AI tools (Microsoft.Extensions.AI AIFunction) → MCP over HTTP (/mcp) -------
@@ -96,14 +106,48 @@ if (exportCatalog)
 // UiSecurityHeaders ต้องอยู่ก่อน UseCommonWebDefaults: OnStarting callback ทำงานแบบ LIFO → ของเราทำงานหลังสุดและกำหนด CSP ของหน้า UI ได้
 // ใช้ WebRootFileProvider (รวม static web assets ของโปรเจกต์ UI ตอน Development) แทนการเช็กไฟล์บนดิสก์
 bool hasUi = app.Environment.WebRootFileProvider.GetFileInfo("index.html").Exists;
-if (hasUi)
+bool hasMembershipUi = app.Environment.WebRootFileProvider.GetFileInfo("membership/index.html").Exists;
+if (hasUi || hasMembershipUi)
 {
     app.UseMiddleware<UiSecurityHeadersMiddleware>();
+}
+
+if (hasMembershipUi)
+{
+    // หน้าจอระบบสมาชิก (Back Office + Portal) ที่ /membership/ — ต้องมาก่อน UseBlazorFrameworkFiles() ของ UI หลัก
+    // /membership → /membership/ (base href) และ /membership/_content/* → /_content/* (ไฟล์ของ RCL เช่น webcommon อยู่ที่ราก)
+    app.Use((ctx, next) =>
+    {
+        PathString path = ctx.Request.Path;
+        if (path.Value is "/membership")
+        {
+            ctx.Response.Redirect("/membership/");
+            return Task.CompletedTask;
+        }
+
+        if (path.StartsWithSegments("/membership/_content", out PathString rest))
+        {
+            ctx.Request.Path = new PathString("/_content").Add(rest);
+        }
+
+        return next(ctx);
+    });
+    app.UseBlazorFrameworkFiles("/membership");
+}
+
+if (hasUi)
+{
     app.UseBlazorFrameworkFiles();
+}
+
+if (hasUi || hasMembershipUi)
+{
     app.UseStaticFiles();
 }
 
+app.UseMembershipRequestId();
 app.UseCommonWebDefaults();
+app.UseCommonApiVersioning();
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi().AllowAnonymous(); // /openapi/v1.json
@@ -111,6 +155,12 @@ if (app.Environment.IsDevelopment())
 
 app.MapControllers();
 app.MapMcp("/mcp").RequireAuthorization(PermissionPolicyProvider.Prefix + Permissions.AnalyticsRead);
+if (hasMembershipUi)
+{
+    // SPA fallback ของระบบสมาชิก (route เฉพาะกว่า fallback ของ UI หลัก จึงชนะ)
+    app.MapFallbackToFile("membership/{*path:nonfile}", "membership/index.html").AllowAnonymous();
+}
+
 if (hasUi)
 {
     // SPA fallback เฉพาะเส้นทางที่ไม่ใช่ API (path ของ API ที่ไม่มีจริงต้องได้ 404 ไม่ใช่หน้า HTML)
