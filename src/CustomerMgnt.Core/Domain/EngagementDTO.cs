@@ -141,6 +141,9 @@ public sealed class ContractDTO
     public int RenewalCount { get; set; }
     /// <summary>SLA policy ที่ผูกกับสัญญานี้</summary>
     public long? SlaPolicyId { get; set; }
+
+    /// <summary>รหัสผลิตภัณฑ์ใน ProductMgnt ที่สัญญานี้ครอบคลุม (ตัวพิมพ์ใหญ่; null = ไม่ผูกผลิตภัณฑ์)</summary>
+    public string? ProductCode { get; set; }
 }
 
 /// <summary>รายการในแคตตาล็อก (สินค้า/บริการ/บทความ/โปรโมชัน) สำหรับระบบแนะนำ</summary>

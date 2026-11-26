@@ -417,4 +417,7 @@ public sealed class ContractRequest
     [Range(0, 1_000_000_000_000)] public decimal AnnualValue { get; set; }
     /// <summary>SLA policy</summary>
     public long? SlaPolicyId { get; set; }
+
+    /// <summary>รหัสผลิตภัณฑ์ใน ProductMgnt (ไม่บังคับ) — ใช้ตอบ "ลูกค้าที่ใช้ผลิตภัณฑ์นี้" ให้การตรวจผลกระทบของ ProductMgnt</summary>
+    [StringLength(50)] public string? ProductCode { get; set; }
 }

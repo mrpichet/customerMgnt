@@ -365,6 +365,14 @@
     },
     {
       "method": "GET",
+      "route": "/api/products/{code}/customers",
+      "controller": "ProductCustomersController",
+      "action": "Customers",
+      "summary": "ลูกค้าที่มีสัญญา Active ของผลิตภัณฑ์",
+      "auth": "perm:customer.read"
+    },
+    {
+      "method": "GET",
       "route": "/api/me/profile",
       "controller": "ProfileController",
       "action": "Mine",

@@ -407,6 +407,13 @@ public interface IEngagementDAO
     /// <returns>รายการ</returns>
     Task<IReadOnlyList<ContractDTO>> ListContractsAsync(long customerId, CancellationToken ct);
 
+    /// <summary>ลูกค้าที่มีสัญญา Active และยังไม่สิ้นสุด ณ วันที่กำหนด ของผลิตภัณฑ์ (หนึ่งแถวต่อสัญญา)</summary>
+    /// <param name="productCode">รหัสผลิตภัณฑ์ (ตัวพิมพ์ใหญ่)</param>
+    /// <param name="today">วันที่ตรวจ</param>
+    /// <param name="ct">ยกเลิก</param>
+    /// <returns>รายการ เรียงตามรหัสลูกค้า</returns>
+    Task<IReadOnlyList<ProductCustomerDTO>> ListActiveCustomersByProductAsync(string productCode, DateOnly today, CancellationToken ct);
+
     /// <summary>แคตตาล็อกที่ใช้งานอยู่</summary>
     /// <param name="ct">ยกเลิก</param>
     /// <returns>รายการ</returns>

@@ -110,9 +110,43 @@ public sealed class DataIngestionService
             AnnualValue = request.AnnualValue,
             Status = ContractStatus.Active,
             SlaPolicyId = request.SlaPolicyId,
+            ProductCode = NormalizeProductCode(request.ProductCode, required: false),
         };
         contract.Id = await _engagement.InsertContractAsync(contract, ct).ConfigureAwait(false);
         return contract;
+    }
+
+    /// <summary>ลูกค้าที่มีสัญญา Active ของผลิตภัณฑ์ (ProductMgnt เรียกตอนตรวจผลกระทบก่อนเปลี่ยนสถานะเป็น Sunset/Retired)</summary>
+    /// <param name="user">ผู้เรียก (customer.read — token ของบริการ ProductMgnt หรือผู้ใช้)</param>
+    /// <param name="productCode">รหัสผลิตภัณฑ์ใน ProductMgnt</param>
+    /// <param name="ct">ยกเลิก</param>
+    /// <returns>ลูกค้า + สัญญา (เฉพาะรหัส ชื่อ เลขที่สัญญา วันสิ้นสุด)</returns>
+    public Task<IReadOnlyList<ProductCustomerDTO>> ListCustomersByProductAsync(UserContextDTO user, string productCode, CancellationToken ct = default)
+    {
+        // Step 1: สิทธิ์ + รหัสผลิตภัณฑ์
+        AccessGuard.Require(user, Permissions.CustomerRead);
+        string code = NormalizeProductCode(productCode, required: true)!;
+
+        // Step 2: "วันนี้" ตามเวลาไทย — สัญญาที่สิ้นสุดวันนี้ยังนับว่ามีผล
+        DateOnly today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(_clock.GetUtcNow(), BusinessCalendar.ResolveZone("Asia/Bangkok")).DateTime);
+        return _engagement.ListActiveCustomersByProductAsync(code, today, ct);
+    }
+
+    /// <summary>ตรวจและทำรหัสผลิตภัณฑ์ให้เป็นตัวพิมพ์ใหญ่ (เทียบได้ทั้ง SQL Server และ PostgreSQL)</summary>
+    /// <param name="value">รหัส</param>
+    /// <param name="required">บังคับกรอก</param>
+    /// <returns>รหัสตัวพิมพ์ใหญ่ หรือ null เมื่อไม่บังคับและว่าง</returns>
+    private static string? NormalizeProductCode(string? value, bool required)
+    {
+        // Step 1: ว่าง
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            ValidationException.ThrowIf(required, "productCode", "Product code is required.");
+            return null;
+        }
+
+        // Step 2: อักขระที่ปลอดภัยเท่านั้น
+        return InputGuard.RequireIdentifier(value.Trim().ToUpperInvariant(), "productCode", 50);
     }
 
     /// <summary>สัญญาของลูกค้า</summary>

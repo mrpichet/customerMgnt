@@ -52,6 +52,7 @@ Authentication: `Authorization: Bearer <AuthServer access token>`
 | GET | `/api/opportunities` | perm:sales.read | รายการ opportunity |
 | POST | `/api/opportunities/{id:long}/stage` | perm:sales.write | ย้าย stage (ต้องส่ง version ล่าสุด; Won/Lost ปิดดีล) |
 | GET | `/api/opportunities/summary` | perm:sales.read | สรุป pipeline ตาม stage (มูลค่า, มูลค่าถ่วงน้ำหนัก, win rate) |
+| GET | `/api/products/{code}/customers` | perm:customer.read | ลูกค้าที่มีสัญญา Active ของผลิตภัณฑ์ |
 | GET | `/api/me/profile` | perm:customer.read | โปรไฟล์ของฉัน |
 | PUT | `/api/me/profile` | perm:customer.read | แก้โปรไฟล์ของฉัน |
 | PUT | `/api/users/{subject}/profile` | perm:customer.write | ตั้งโปรไฟล์ของผู้ใช้อื่น (ผู้ดูแลระบบเท่านั้น — ตรวจใน service) |

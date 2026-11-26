@@ -778,6 +778,20 @@ public sealed class InMemoryEngagementADO(InMemoryDatabase db) : IEngagementDAO
         Contracts(c => c.CustomerId == customerId, ascending: false);
 
     /// <inheritdoc />
+    public Task<IReadOnlyList<ProductCustomerDTO>> ListActiveCustomersByProductAsync(string productCode, DateOnly today, CancellationToken ct)
+    {
+        lock (db.Sync)
+        {
+            // Step 1: สัญญา Active ที่ยังไม่สิ้นสุด + ลูกค้า (เหมือน SQL)
+            List<ProductCustomerDTO> rows = [.. db.Contracts
+                .Where(c => c.ProductCode == productCode && c.Status == ContractStatus.Active && c.EndDate >= today)
+                .Join(db.Customers, c => c.CustomerId, cu => cu.Id, (c, cu) => new ProductCustomerDTO(cu.Code, cu.DisplayName, c.ContractNo, c.EndDate))
+                .OrderBy(r => r.CustomerCode, StringComparer.Ordinal).ThenBy(r => r.ContractEnd)];
+            return Task.FromResult<IReadOnlyList<ProductCustomerDTO>>(rows);
+        }
+    }
+
+    /// <inheritdoc />
     public Task<IReadOnlyList<CatalogItemDTO>> ListCatalogAsync(CancellationToken ct)
     {
         lock (db.Sync)
