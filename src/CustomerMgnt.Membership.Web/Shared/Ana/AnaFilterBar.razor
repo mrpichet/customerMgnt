@@ -48,7 +48,7 @@
             @foreach (RegisteredChannel c in Enum.GetValues<RegisteredChannel>())
             {
                 RegisteredChannel ch = c;
-                <label><input type="checkbox" checked="@_f.RegisteredChannel.Contains(ch)" @onchange="e => Toggle(_f.RegisteredChannel, ch, e.Value)" /> @ch</label>
+                <label><input type="checkbox" checked="@_f.RegisteredChannel.Contains(ch)" @onchange="e => Toggle(_f.RegisteredChannel, ch, e.Value)" /> @AnaText.Registered(ch)</label>
             }
         </div>
     }

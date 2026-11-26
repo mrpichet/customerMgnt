@@ -57,7 +57,7 @@
                 </table>
                 <div class="row-actions">
                     <AppButton Text="ก่อนหน้า" Disabled="@(_issues.Page <= 1)" OnClick="() => IssuesAsync(_issues.Page - 1)" />
-                    <span class="muted">หน้า @_issues.Page / @Math.Max(1, (_issues.Total + _issues.PageSize - 1) / _issues.PageSize)</span>
+                    <span class="muted">หน้า @_issues.Page / @Math.Max(1, (_issues.Total + Math.Max(1, _issues.PageSize) - 1) / Math.Max(1, _issues.PageSize))</span>
                     <AppButton Text="ถัดไป" Disabled="@((long)_issues.Page * _issues.PageSize >= _issues.Total)" OnClick="() => IssuesAsync(_issues.Page + 1)" />
                 </div>
             }

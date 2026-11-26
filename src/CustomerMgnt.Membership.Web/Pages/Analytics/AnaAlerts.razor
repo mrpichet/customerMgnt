@@ -81,7 +81,7 @@
                     </table>
                     <div class="row-actions">
                         <AppButton Text="ก่อนหน้า" Disabled="@(_events.Page <= 1)" OnClick="() => Go(_events.Page - 1)" />
-                        <span class="muted">หน้า @_events.Page / @Math.Max(1, (_events.Total + _events.PageSize - 1) / _events.PageSize)</span>
+                        <span class="muted">หน้า @_events.Page / @Math.Max(1, (_events.Total + Math.Max(1, _events.PageSize) - 1) / Math.Max(1, _events.PageSize))</span>
                         <AppButton Text="ถัดไป" Disabled="@((long)_events.Page * _events.PageSize >= _events.Total)" OnClick="() => Go(_events.Page + 1)" />
                     </div>
                 </Card>

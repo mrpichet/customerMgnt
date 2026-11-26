@@ -7,6 +7,14 @@ namespace CustomerMgnt.Membership.Web.Services;
 /// <summary>ข้อความและรูปแบบตัวเลขของหน้าจอวิเคราะห์ข้อมูล (AN-01..AN-28)</summary>
 public static class AnaText
 {
+    /// <summary>สีของกราฟ (กำหนดเองเพราะไม่ได้ใช้ธีมเต็มของ DevExpress)</summary>
+    public static string[] ChartPalette { get; } = ["#2563eb", "#16a34a", "#d97706", "#9333ea", "#0891b2", "#dc2626", "#4b5563", "#db2777"];
+
+    /// <summary>สีเส้นช่วงเปรียบเทียบ</summary>
+    public static System.Drawing.Color CompareColor { get; } = System.Drawing.Color.FromArgb(0x9c, 0xa3, 0xaf);
+
+    private static readonly CultureInfo Th = CultureInfo.GetCultureInfo("th-TH");
+
     private static readonly Dictionary<string, string> Labels = new(StringComparer.Ordinal)
     {
         ["membersTotal"] = "สมาชิกทั้งหมด", ["membersNew"] = "สมาชิกใหม่", ["membersActive"] = "สมาชิกที่ใช้งาน", ["memberSales"] = "ยอดขายสมาชิก",
@@ -58,7 +66,7 @@ public static class AnaText
 
     public static string Pct(decimal? v) => v is decimal d ? d.ToString("N1", CultureInfo.InvariantCulture) + "%" : "-";
 
-    public static string Date(DateOnly d) => d.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture);
+    public static string Date(DateOnly d) => d.ToString("dd/MM/yyyy", Th);
 
     /// <summary>ค่าในตาราง drill-down / รายงานตามชนิดคอลัมน์</summary>
     public static string Cell(object? v, string type) => v switch
@@ -71,7 +79,7 @@ public static class AnaText
         System.Text.Json.JsonElement { ValueKind: System.Text.Json.JsonValueKind.Number } n when type is "Percent" => n.GetDecimal().ToString("N1", CultureInfo.InvariantCulture) + "%",
         System.Text.Json.JsonElement { ValueKind: System.Text.Json.JsonValueKind.Number } n => n.GetDecimal().ToString("#,0.##", CultureInfo.InvariantCulture),
         System.Text.Json.JsonElement { ValueKind: System.Text.Json.JsonValueKind.String } s when type is "DateTime" or "Date" && DateTimeOffset.TryParse(s.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTimeOffset dt)
-            => type == "Date" ? dt.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture) : dt.ToLocalTime().ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture),
+            => type == "Date" ? dt.ToString("dd/MM/yyyy", Th) : dt.ToLocalTime().ToString("dd/MM/yyyy HH:mm", Th),
         System.Text.Json.JsonElement { ValueKind: System.Text.Json.JsonValueKind.Null } => "-",
         System.Text.Json.JsonElement e => e.ValueKind == System.Text.Json.JsonValueKind.String ? e.GetString() ?? "-" : e.ToString(),
         _ => Convert.ToString(v, CultureInfo.InvariantCulture) ?? "-",
@@ -88,6 +96,17 @@ public static class AnaText
     {
         SalesChannel.Pos => "หน้าร้าน",
         SalesChannel.Online => "ออนไลน์",
+        SalesChannel.App => "แอป",
+        SalesChannel.Other => "อื่น ๆ",
+        _ => c.ToString(),
+    };
+
+    public static string Registered(RegisteredChannel c) => c switch
+    {
+        RegisteredChannel.Portal => "Portal",
+        RegisteredChannel.BackOffice => "เจ้าหน้าที่",
+        RegisteredChannel.Pos => "หน้าร้าน (POS)",
+        RegisteredChannel.Import => "นำเข้า",
         _ => c.ToString(),
     };
 

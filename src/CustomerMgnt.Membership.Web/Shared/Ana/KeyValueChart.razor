@@ -6,7 +6,7 @@
 }
 else if (Pie)
 {
-    <DxPieChart Data="Items" Height="@Height" CssClass="ana-chart">
+    <DxPieChart Data="Items" Height="@Height" CssClass="ana-chart" Palette="AnaText.ChartPalette">
         <DxPieChartSeries T="KeyValueDTO" TArgument="string" TValue="decimal" ArgumentField="k => k.Label ?? k.Key" ValueField="k => k.Value">
             <DxChartSeriesLabel Visible="true" />
         </DxPieChartSeries>
@@ -16,7 +16,7 @@ else if (Pie)
 }
 else
 {
-    <DxChart Data="Items" Height="@Height" CssClass="ana-chart" Rotated="@Horizontal">
+    <DxChart Data="Items" Height="@Height" CssClass="ana-chart" Rotated="@Horizontal" Palette="AnaText.ChartPalette">
         <DxChartBarSeries Name="@Name" T="KeyValueDTO" TArgument="string" TValue="decimal" ArgumentField="k => k.Label ?? k.Key" ValueField="k => k.Value" />
         <DxChartLegend Visible="false" />
         <DxChartTooltip Enabled="true" />

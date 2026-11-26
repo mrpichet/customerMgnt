@@ -3,7 +3,7 @@
 @inject ToastService Toasts
 @inject NavigationManager Nav
 <PermissionView Permission="@A.Export">
-    <div class="row-actions">
+    <div class="ana-export">
         <select aria-label="รูปแบบไฟล์" @bind="_format"><option value="Xlsx">Excel</option><option value="Csv">CSV</option></select>
         <AppButton Text="ส่งออก" Icon="download" Busy="_busy" OnClick="ExportAsync" />
     </div>

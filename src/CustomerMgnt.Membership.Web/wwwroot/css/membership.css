@@ -59,3 +59,7 @@
 .ana-sub { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-bottom: 12px; }
 .ana-sub a { text-decoration: none; padding: 4px 0; color: var(--color-text, #101828); }
 .ana-sub a.active { font-weight: 600; border-bottom: 2px solid var(--color-primary, #1d4ed8); }
+
+/* ปุ่มส่งออก: เลือกรูปแบบ + ปุ่ม อยู่บรรทัดเดียวกัน */
+.ana-export { display: inline-flex; gap: 8px; align-items: center; }
+.ana-export select { width: auto; }

@@ -6,7 +6,7 @@
 }
 else
 {
-    <DxChart Data="_points" Height="@Height" CssClass="ana-chart">
+    <DxChart Data="_points" Height="@Height" CssClass="ana-chart" Palette="AnaText.ChartPalette">
         @foreach (string name in _names)
         {
             string n = name;
@@ -21,7 +21,7 @@ else
         }
         @if (_hasCompare)
         {
-            <DxChartLineSeries Name="ช่วงเปรียบเทียบ" T="ChartPoint" TArgument="string" TValue="double" Filter="p => p.Series == CompareName" ArgumentField="p => p.Label" ValueField="p => p.Value" DashStyle="ChartDashStyle.Dash" />
+            <DxChartLineSeries Name="ช่วงเปรียบเทียบ" T="ChartPoint" TArgument="string" TValue="double" Filter="p => p.Series == CompareName" ArgumentField="p => p.Label" ValueField="p => p.Value" DashStyle="ChartDashStyle.Dash" Color="AnaText.CompareColor" />
         }
         <DxChartLegend Position="RelativePosition.Outside" HorizontalAlignment="HorizontalAlignment.Center" VerticalAlignment="VerticalEdge.Bottom" Visible="@(_names.Count > 1 || _hasCompare)" />
         <DxChartTooltip Enabled="true" />
