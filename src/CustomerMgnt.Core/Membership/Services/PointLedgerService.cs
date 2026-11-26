@@ -161,6 +161,23 @@ public sealed class PointLedgerService
         p.Account.Reserved = Math.Max(p.Account.Reserved - Math.Max(points, 0), 0);
     }
 
+    /// <summary>ตัดคะแนนของ lot ที่หมดอายุ (idempotency key <c>expire:{lotId}</c>)</summary>
+    public static void ExpireLot(PointPosting p, MembershipChangeSet cs, PointLotDTO lot, DateTimeOffset now)
+    {
+        ArgumentNullException.ThrowIfNull(p);
+        ArgumentNullException.ThrowIfNull(cs);
+        ArgumentNullException.ThrowIfNull(lot);
+        if (lot.Remaining <= 0)
+        {
+            return;
+        }
+
+        cs.LotChanges.Add(new LotChange(lot.Id, lot.Remaining, 0));
+        p.Account.LotBalance -= lot.Remaining;
+        AddLedger(p, cs, new LedgerContext(LedgerType.Expire, $"expire:{lot.Id}", "system") { Reference = $"lot:{lot.Id}" }, -lot.Remaining, now);
+        lot.Remaining = 0;
+    }
+
     /// <summary>ใส่ยอดและ lot ที่เปลี่ยนลง change set (เรียกครั้งเดียวต่อ posting)</summary>
     public static void Finish(PointPosting p, MembershipChangeSet cs)
     {

@@ -1,6 +1,7 @@
 using System.Globalization;
 using Common.Core.Domain;
 using Common.Core.Exceptions;
+using CustomerMgnt.Core.Domain;
 using CustomerMgnt.Core.Membership.DataAccess;
 using CustomerMgnt.Core.Membership.Domain;
 using CustomerMgnt.Core.Membership.Engine;
@@ -695,6 +696,43 @@ public sealed class MemberService : IApprovalHandler
         await _uow.CommitAsync(cs, ct).ConfigureAwait(false);
         m.Version++;
         return m;
+    }
+
+    /// <summary>สร้าง Customer (บุคคล) ใน CustomerMgnt ให้สมาชิกที่ยังไม่ผูก — เรียกจาก outbox <c>customer.create</c></summary>
+    /// <returns>รหัสลูกค้า หรือ null เมื่อไม่ต้องทำ</returns>
+    internal async Task<string?> CreateCustomerForMemberAsync(long memberId, CancellationToken ct)
+    {
+        MemberEntity? m = await _members.GetAsync(memberId, ct).ConfigureAwait(false);
+        if (m is null || m.CustomerCode is not null || m.Status == MemberStatus.Closed)
+        {
+            return null;
+        }
+
+        CustomerDTO customer = await _customers.RegisterAsync(UserContextDTO.System, new RegisterCustomerRequest
+        {
+            Kind = CustomerKind.Person,
+            FirstName = m.FirstName,
+            LastName = m.LastName,
+            Phone = m.PhoneEnvelope is null ? null : _privacy.Open(m.PhoneEnvelope, PhoneContext),
+            Email = m.EmailEnvelope is null ? null : _privacy.Open(m.EmailEnvelope, EmailContext),
+        }, ct).ConfigureAwait(false);
+        for (int attempt = 0; attempt < 3; attempt++)
+        {
+            m.CustomerCode = customer.Code;
+            if (await _members.UpdateAsync(m, ct).ConfigureAwait(false))
+            {
+                await _audit.AppendAsync([MembershipEvents.Audit(MembershipCaller.System, "member.link_customer", $"member:{m.Id}", null, new { customer.Code, auto = true }, _clock.GetUtcNow())], ct).ConfigureAwait(false);
+                return customer.Code;
+            }
+
+            m = await _members.GetAsync(memberId, ct).ConfigureAwait(false);
+            if (m is null || m.CustomerCode is not null)
+            {
+                return m?.CustomerCode;
+            }
+        }
+
+        throw new MembershipConcurrencyException("Member changed while linking customer.");
     }
 
     /// <summary>Customer ต้องมีอยู่ใน CustomerMgnt</summary>
