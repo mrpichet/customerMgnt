@@ -1,0 +1,65 @@
+@page "/analytics/reports"
+@attribute [Authorize]
+@inherits MembershipPage
+@* AN-18 รายงาน (ANA-REPORT-001/002) — รายงานมาตรฐาน + ของฉัน + ที่แชร์ให้ฉัน *@
+<PageTitle>รายงานวิเคราะห์</PageTitle>
+
+<RequirePermission Permission="@A.DashboardRead">
+    <ListTemplate TItem="ReportSummaryDTO" Title="รายงาน" Description="รายงานมาตรฐานของระบบ รายงานที่คุณสร้าง และรายงานที่ผู้อื่นแชร์ให้ กดชื่อเพื่อเรียกดู รายงานมาตรฐานแก้ไขไม่ได้แต่คัดลอกไปปรับได้"
+                  Breadcrumbs="_crumbs" Permissions="_perms" Items="Shown" Loading="_loading" ErrorMessage="@LoadError" OnRetry="LoadAsync"
+                  NewText="สร้างรายงาน" OnNew="@(() => Nav.NavigateTo("analytics/reports/new"))"
+                  OnView="@(r => Nav.NavigateTo($"analytics/reports/{r.Id}"))" OnEdit="@(r => Nav.NavigateTo($"analytics/reports/{r.Id}/edit"))" OnDelete="DeleteAsync"
+                  CanEdit="@(r => r.Mine && !r.Standard)" CanDelete="@(r => r.Mine && !r.Standard)" ItemName="@(r => r.Name)">
+        <HeaderActions>
+            <select aria-label="แสดง" @bind="_show">
+                <option value="">ทั้งหมด</option><option value="standard">รายงานมาตรฐาน</option><option value="mine">ของฉัน</option><option value="shared">แชร์ให้ฉัน</option>
+            </select>
+        </HeaderActions>
+        <ExtraRowActions>
+            <AppButton Text="คัดลอก" Size="ButtonSize.Small" Variant="ButtonVariant.Secondary" Permission="@A.ReportBuild" OnClick="@(() => Nav.NavigateTo($"analytics/reports/new?copy={context.Id}"))" />
+        </ExtraRowActions>
+        <Columns>
+            <TableColumn TItem="ReportSummaryDTO" Title="ชื่อ" Field="r => r.Name" IsPrimary Sortable />
+            <TableColumn TItem="ReportSummaryDTO" Title="คำอธิบาย" Field="r => r.Description" HideOnMobile />
+            <TableColumn TItem="ReportSummaryDTO" Title="ประเภท" SortBy="r => r.Standard">
+                <Template><Badge Text="@Kind(context)" Level="@(context.Standard ? AlertLevel.Info : AlertLevel.Success)" /></Template>
+            </TableColumn>
+            <TableColumn TItem="ReportSummaryDTO" Title="แก้ไขล่าสุด" Field="r => Text.DateTime(r.UpdatedAt)" SortBy="r => r.UpdatedAt" Sortable HideOnMobile />
+        </Columns>
+    </ListTemplate>
+</RequirePermission>
+
+@code {
+    private readonly IReadOnlyList<Breadcrumb> _crumbs = [new("หน้าแรก", ""), new("วิเคราะห์ข้อมูล", "analytics"), new("รายงาน")];
+    private readonly ListPermissions _perms = new() { Create = A.ReportBuild, View = A.DashboardRead, Edit = A.ReportBuild, Delete = A.ReportBuild };
+    private IReadOnlyList<ReportSummaryDTO>? _items;
+    private bool _loading;
+    private string _show = string.Empty;
+
+    private IReadOnlyList<ReportSummaryDTO>? Shown => _show switch
+    {
+        "standard" => _items?.Where(r => r.Standard).ToList(),
+        "mine" => _items?.Where(r => r.Mine && !r.Standard).ToList(),
+        "shared" => _items?.Where(r => r.Shared && !r.Mine).ToList(),
+        _ => _items,
+    };
+
+    private static string Kind(ReportSummaryDTO r) => r.Standard ? "มาตรฐาน" : r.Mine ? "ของฉัน" : "แชร์ให้ฉัน";
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        await LoadSafeAsync(async () => _items = await Api.GetAsync<List<ReportSummaryDTO>>("api/v1/analytics/reports"));
+        _loading = false;
+    }
+
+    private async Task DeleteAsync(ReportSummaryDTO r)
+    {
+        if (await SaveSafeAsync(() => Api.DeleteAsync($"api/v1/analytics/reports/{r.Id}"), "ลบรายงานแล้ว"))
+        {
+            await LoadAsync();
+        }
+    }
+}

@@ -294,6 +294,7 @@ public sealed partial class CheckoutService
             // Step 5: รายการขาย + สมาชิก + Tier
             SalesTransactionEntity txn = NewTransaction(r.SourceSystem, request.TransactionId, request.ReceiptNo, m, qr.BranchCode, qr.Channel, request.PaidAt ?? now, quote, offline: false, now);
             txn.ReservationId = r.Id;
+            txn.IsTest = request.IsTest;
             txn.CouponCodes = codes.Count == 0 ? null : string.Join(',', codes);
             txn.ConsumedLotsJson = MembershipJson.Write(consumed);
             cs.NewTransaction = txn;

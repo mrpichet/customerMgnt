@@ -1,0 +1,157 @@
+@page "/analytics/alerts/new"
+@page "/analytics/alerts/{Id:guid}/edit"
+@attribute [Authorize]
+@inherits MembershipPage
+@inject DialogService Dialogs
+@* AN-24 สร้าง/แก้ไขกฎแจ้งเตือน (ANA-ALERT-001) — พารามิเตอร์ตามชนิด, ผู้รับ 1–20 (อีเมลต้องอยู่ในโดเมนที่อนุญาต), ทดสอบได้หลังบันทึก *@
+<PageTitle>@Title</PageTitle>
+
+<RequirePermission Permission="@A.AlertManage">
+    @if (LoadError is not null) { <ErrorView Title="โหลดข้อมูลไม่สำเร็จ" Message="@LoadError" OnRetry="LoadAsync" /> }
+    else if (_m is null) { <LoadingState /> }
+    else
+    {
+        <FormTemplate Title="@Title" Description="ระบบตรวจกฎทุกรอบการปรับปรุงข้อมูล และส่งแจ้งเตือนเมื่อเกินเกณฑ์ แจ้งซ้ำของขอบเขตเดียวกันจะเว้นช่วงตาม cooldown"
+                      Breadcrumbs="Crumbs" Mode="@(Id is null ? FormMode.New : FormMode.Edit)" Model="_m" SavePermission="@A.AlertManage" OnSave="SaveAsync" OnCancel="Back">
+            <ChildContent>
+                <FormSection Title="กฎ">
+                    <FieldGrid Columns="2">
+                        <FormField Label="ชื่อ" InputId="nm" For="() => _m.Name" Required><InputText id="nm" @bind-Value="_m.Name" maxlength="200" /></FormField>
+                        <Field Label="ชนิด" InputId="tp">
+                            <select id="tp" value="@_m.Type" @onchange="ChangeType" disabled="@(Id is not null)">
+                                @foreach (AlertType t in Enum.GetValues<AlertType>()) { <option value="@t">@AnaText.Alert(t)</option> }
+                            </select>
+                        </Field>
+                        @foreach (string k in Defaults.Keys)
+                        {
+                            string key = k;
+                            <Field Label="@AnaAlertText.ParamLabel(key)" InputId="@($"p-{key}")">
+                                <input id="@($"p-{key}")" value="@_m.Params.GetValueOrDefault(key)" @onchange="e => _m.Params[key] = e.Value?.ToString()?.Trim() ?? string.Empty"
+                                       inputmode="@(key == "campaign" ? "text" : "decimal")" maxlength="30" />
+                            </Field>
+                        }
+                        <FormField Label="Cooldown (นาที)" InputId="cd" For="() => _m.CooldownMinutes" Hint="0–43,200"><InputNumber id="cd" @bind-Value="_m.CooldownMinutes" min="0" max="43200" /></FormField>
+                    </FieldGrid>
+                    <label class="check-list"><InputCheckbox @bind-Value="_m.Enabled" /> ใช้งาน</label>
+                </FormSection>
+                <FormSection Title="ขอบเขต (เว้นว่าง = ทั้งหมดในขอบเขตข้อมูลของคุณ, คั่นด้วยจุลภาค)">
+                    <FieldGrid Columns="2">
+                        <Field Label="สาขา" InputId="sb"><input id="sb" @bind="_branches" /></Field>
+                        <Field Label="แบรนด์" InputId="sbr"><input id="sbr" @bind="_brands" /></Field>
+                    </FieldGrid>
+                    <Field Label="ช่องทางขาย" InputId="sch">
+                        <div class="check-list">
+                            @foreach (SalesChannel c in Enum.GetValues<SalesChannel>())
+                            {
+                                <label><input type="checkbox" checked="@_m.Scope.Channels.Contains(c)" @onchange="e => { if (e.Value is true) _m.Scope.Channels.Add(c); else _m.Scope.Channels.Remove(c); }" /> @AnaText.Channel(c)</label>
+                            }
+                        </div>
+                    </Field>
+                </FormSection>
+                <FormSection Title="ผู้รับ (1–20)">
+                    <FieldGrid Columns="2">
+                        <Field Label="อีเมล (บรรทัดละ 1 รายการ)" InputId="re"><textarea id="re" @bind="_emails" rows="4"></textarea></Field>
+                        <Field Label="แจ้งในระบบ — รหัสผู้ใช้ (บรรทัดละ 1 รายการ)" InputId="ri"><textarea id="ri" @bind="_inApp" rows="4"></textarea></Field>
+                    </FieldGrid>
+                </FormSection>
+                @if (Id is not null)
+                {
+                    <FormSection Title="ทดสอบกฎ (ใช้ค่าที่บันทึกแล้ว ไม่ส่งแจ้งเตือนจริง)">
+                        <AppButton Text="ทดสอบตอนนี้" Variant="ButtonVariant.Secondary" Busy="_testing" OnClick="TestAsync" />
+                        @if (_test is not null) { <AlertTestTable Result="_test" /> }
+                    </FormSection>
+                    <FormSection Title="ลบกฎ">
+                        <AppButton Text="ลบกฎนี้" Variant="ButtonVariant.Secondary" Permission="@A.AlertManage" OnClick="DeleteAsync" />
+                    </FormSection>
+                }
+            </ChildContent>
+        </FormTemplate>
+    }
+</RequirePermission>
+
+@code {
+    [Parameter] public Guid? Id { get; set; }
+
+    private AlertRuleDTO? _m;
+    private AlertTestResultDTO? _test;
+    private string? _branches, _brands, _emails, _inApp;
+    private bool _testing;
+
+    private string Title => Id is null ? "สร้างกฎแจ้งเตือน" : $"แก้ไขกฎ {_m?.Name}";
+    private IReadOnlyList<Breadcrumb> Crumbs => [new("หน้าแรก", ""), new("วิเคราะห์ข้อมูล", "analytics"), new("แจ้งเตือน", "analytics/alerts?tab=rules"), new(Title)];
+
+    private IReadOnlyDictionary<string, string> Defaults => CustomerMgnt.Core.MemberAnalytics.Services.AnaAlertService.DefaultParams(_m!.Type);
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private Task LoadAsync() => LoadSafeAsync(async () =>
+    {
+        _m = Id is null ? new AlertRuleDTO { Type = AlertType.NoPosData } : await Api.GetAsync<AlertRuleDTO>($"api/v1/analytics/alerts/rules/{Id}");
+        foreach ((string k, string v) in Defaults)
+        {
+            _m.Params.TryAdd(k, v);
+        }
+
+        _branches = string.Join(", ", _m.Scope.Branches);
+        _brands = string.Join(", ", _m.Scope.Brands);
+        _emails = string.Join('\n', _m.Recipients.Where(r => r.Channel == AlertChannel.Email).Select(r => r.To));
+        _inApp = string.Join('\n', _m.Recipients.Where(r => r.Channel == AlertChannel.InApp).Select(r => r.To));
+    });
+
+    private void ChangeType(ChangeEventArgs e)
+    {
+        if (!Enum.TryParse(e.Value?.ToString(), out AlertType t)) return;
+        _m!.Type = t;
+        _m.Params = new Dictionary<string, string>(Defaults);
+    }
+
+    private static IEnumerable<string> Lines(string? s) => (s ?? string.Empty).Split('\n', ',', ';').Select(x => x.Trim()).Where(x => x.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase);
+
+    private Task<bool> SaveAsync()
+    {
+        AlertRuleDTO m = _m!;
+        m.Scope.Branches = Text.SplitList(_branches);
+        m.Scope.Brands = Text.SplitList(_brands);
+        m.Recipients = [.. Lines(_emails).Select(x => new AlertRecipientDTO { Channel = AlertChannel.Email, To = x }), .. Lines(_inApp).Select(x => new AlertRecipientDTO { Channel = AlertChannel.InApp, To = x })];
+        m.Params = m.Params.Where(p => Defaults.ContainsKey(p.Key)).ToDictionary(p => p.Key, p => p.Value);
+        if (m.Recipients.Count is 0 or > 20)
+        {
+            Toasts.Warning("ระบุผู้รับ 1–20 รายการ");
+            return Task.FromResult(false);
+        }
+
+        return SaveSafeAsync(async () =>
+        {
+            if (Id is null) await Api.PostAsync<AlertRuleDTO>("api/v1/analytics/alerts/rules", m);
+            else await Api.PutAsync<AlertRuleDTO>($"api/v1/analytics/alerts/rules/{Id}", m);
+        }, "บันทึกกฎแจ้งเตือนแล้ว", "analytics/alerts?tab=rules");
+    }
+
+    private async Task TestAsync()
+    {
+        _testing = true;
+        try
+        {
+            _test = await Api.PostAsync<AlertTestResultDTO>($"api/v1/analytics/alerts/rules/{Id}/test", new { });
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Toasts.Error(Text.Error(ex));
+        }
+        finally
+        {
+            _testing = false;
+        }
+    }
+
+    private async Task DeleteAsync()
+    {
+        var r = await Dialogs.ConfirmAsync(new ConfirmRequest { Title = "ยืนยันการลบ", Message = $"ลบกฎ {_m?.Name} และหยุดการแจ้งเตือนของกฎนี้ การลบย้อนกลับไม่ได้", ConfirmText = "ลบกฎ", IsDestructive = true });
+        if (r.Confirmed)
+        {
+            await SaveSafeAsync(() => Api.DeleteAsync($"api/v1/analytics/alerts/rules/{Id}"), "ลบกฎแล้ว", "analytics/alerts?tab=rules");
+        }
+    }
+
+    private void Back() => Nav.NavigateTo("analytics/alerts?tab=rules");
+}

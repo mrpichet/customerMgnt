@@ -1,0 +1,62 @@
+@page "/analytics/members/value"
+@attribute [Authorize]
+@inherits AnaPage
+@* AN-08 มูลค่าการซื้อ (ANA-MEM-005) *@
+<PageTitle>มูลค่าการซื้อ</PageTitle>
+
+<RequirePermission Permission="@A.MemberRead">
+    <PageHeader Title="วิเคราะห์สมาชิก: มูลค่าการซื้อ" Description="ยอดเฉลี่ยต่อสมาชิก ต่อบิล การกระจายตามช่วงยอดซื้อ และแยกตามมิติ" Breadcrumbs="_crumbs" />
+    <AnaSubNav Links="AnaSubNav.MemberPages" Label="วิเคราะห์สมาชิก" />
+    <AnaFilterBar PageCode="AN-08" Value="Filter" OnApply="f => Apply(f, Extra())" ShowMember />
+    <Card>
+        <Field Label="แยกตาม" InputId="bd">
+            <select id="bd" @bind="_by"><option value="Tier">Tier</option><option value="Branch">สาขา</option><option value="Channel">ช่องทางขาย</option><option value="Category">หมวดสินค้า</option><option value="Brand">แบรนด์</option></select>
+        </Field>
+        <AppButton Text="แสดง" Variant="ButtonVariant.Primary" OnClick="() => Apply(Filter, Extra())" />
+    </Card>
+    @if (LoadError is not null) { <ErrorView Title="โหลดข้อมูลไม่สำเร็จ" Message="@LoadError" OnRetry="LoadAsync" /> }
+    else if (_r is null) { <LoadingState /> }
+    else
+    {
+        PurchaseValueDTO d = _r.Data;
+        <AnaBanner Meta="Meta(_r)" />
+        <div class="kpi-grid">
+            <MetricCard Metric="d.AvgSalesPerMember" Label="ยอดเฉลี่ยต่อสมาชิก" OnDrill="Drill" />
+            <MetricCard Metric="d.AvgTicket" Label="ยอดเฉลี่ยต่อบิล" OnDrill="Drill" />
+            <MetricCard Metric="d.ItemsPerTicket" Label="ชิ้นต่อบิล" />
+        </div>
+        <div class="ana-two">
+            <Card Title="สมาชิกตามช่วงยอดซื้อ"><KeyValueChart Items="_dist" Name="สมาชิก" /></Card>
+            <Card Title="แยกตามมิติ">
+                <table class="simple-table">
+                    <thead><tr><th>@_by</th><th class="num">สมาชิก</th><th class="num">ยอดขาย</th><th class="num">ยอดเฉลี่ยต่อบิล</th></tr></thead>
+                    <tbody>
+                        @foreach (ValueBreakdownRowDTO r in d.Breakdown) { <tr><td>@r.Label</td><td class="num">@AnaText.Int(r.Members)</td><td class="num">@AnaText.Num(r.Sales)</td><td class="num">@AnaText.Num(r.AvgTicket)</td></tr> }
+                        @if (d.Breakdown.Count == 0) { <tr><td colspan="4" class="muted">ไม่มีข้อมูล</td></tr> }
+                    </tbody>
+                </table>
+            </Card>
+        </div>
+    }
+</RequirePermission>
+
+@code {
+    private readonly IReadOnlyList<Breadcrumb> _crumbs = [new("หน้าแรก", ""), new("วิเคราะห์ข้อมูล", "analytics"), new("มูลค่าการซื้อ")];
+    private AnalyticsResultDTO<PurchaseValueDTO>? _r;
+    private ValueBreakdown _by = ValueBreakdown.Tier;
+    private List<KeyValueDTO> _dist = [];
+
+    protected override string PageCode => "AN-08";
+
+    private (string, object?)[] Extra() => [("breakdown", _by)];
+
+    protected override Task LoadAsync()
+    {
+        _by = Enum.TryParse(Param("breakdown"), out ValueBreakdown b) ? b : ValueBreakdown.Tier;
+        return LoadSafeAsync(async () =>
+        {
+            _r = await Api.GetAsync<AnalyticsResultDTO<PurchaseValueDTO>>($"api/v1/analytics/members/purchase-value?{Q(Extra())}");
+            _dist = [.. _r.Data.Distribution.Select(x => new KeyValueDTO { Key = x.Key, Label = x.Key, Value = x.Members })];
+        });
+    }
+}

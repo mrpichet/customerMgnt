@@ -1,0 +1,62 @@
+@page "/analytics/funnels/{Id:guid}"
+@attribute [Authorize]
+@inherits AnaPage
+@* AN-16 ผล Funnel — จำนวนสมาชิกแต่ละขั้น อัตราผ่าน/หลุด และเวลากลางระหว่างขั้น *@
+<PageTitle>ผล Funnel</PageTitle>
+
+<RequirePermission Permission="@A.PromotionRead">
+    <PageHeader Title="@($"ผล Funnel: {_funnel?.Name}")" Description="@($"นับเฉพาะสมาชิกที่ทำขั้นถัดไปภายใน {_funnel?.MaxGapHours ?? 0:N0} ชั่วโมงหลังขั้นก่อนหน้า ตามลำดับ")" Breadcrumbs="_crumbs">
+        <Actions>
+            <AppButton Text="แก้ไข Funnel" Variant="ButtonVariant.Secondary" Permission="@A.SettingsManage" OnClick="@(() => Nav.NavigateTo($"analytics/funnels/{Id}/edit"))" />
+        </Actions>
+    </PageHeader>
+    <AnaFilterBar PageCode="AN-16" Value="Filter" OnApply="f => Apply(f)" ShowCompare="false" ShowProduct="false" ShowCampaign />
+    @if (LoadError is not null) { <ErrorView Title="โหลดข้อมูลไม่สำเร็จ" Message="@LoadError" OnRetry="LoadAsync" /> }
+    else if (_r is null) { <LoadingState /> }
+    else
+    {
+        FunnelResultDTO d = _r.Data;
+        <AnaBanner Meta="Meta(_r)" />
+        <div class="kpi-grid"><MetricCard Metric="d.OverallConversion" Label="อัตราผ่านตลอด Funnel" /></div>
+        <Card Title="จำนวนสมาชิกแต่ละขั้น"><KeyValueChart Items="Chart" Horizontal Name="สมาชิก" /></Card>
+        <Card>
+            <table class="simple-table">
+                <thead><tr><th>ขั้น</th><th class="num">สมาชิก</th><th class="num">ผ่านจากขั้นก่อน</th><th class="num">หลุด</th><th class="num">เวลากลางจากขั้นก่อน (ชม.)</th></tr></thead>
+                <tbody>
+                    @foreach (FunnelStepResultDTO s in d.Steps)
+                    {
+                        <tr>
+                            <td>@AnaText.Step(s.Step)</td>
+                            @if (s.InsufficientReason is not null)
+                            {
+                                <td colspan="4" class="muted">ข้อมูลไม่เพียงพอ: @AnaText.Reason(s.InsufficientReason)</td>
+                            }
+                            else
+                            {
+                                <td class="num">@AnaText.Int(s.Members)</td><td class="num">@AnaText.Pct(s.ConversionFromPrev)</td><td class="num">@AnaText.Pct(s.DropOff)</td><td class="num">@AnaText.Num(s.MedianHoursFromPrev)</td>
+                            }
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </Card>
+    }
+</RequirePermission>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private readonly IReadOnlyList<Breadcrumb> _crumbs = [new("หน้าแรก", ""), new("วิเคราะห์ข้อมูล", "analytics"), new("Funnel", "analytics/funnels"), new("ผล")];
+    private FunnelDTO? _funnel;
+    private AnalyticsResultDTO<FunnelResultDTO>? _r;
+
+    protected override string PageCode => "AN-16";
+
+    private List<KeyValueDTO> Chart => [.. (_r?.Data.Steps ?? []).Select(s => new KeyValueDTO { Key = s.Step.ToString(), Label = AnaText.Step(s.Step), Value = s.Members ?? 0 })];
+
+    protected override Task LoadAsync() => LoadSafeAsync(async () =>
+    {
+        _funnel ??= await Api.GetAsync<FunnelDTO>($"api/v1/analytics/funnels/{Id}");
+        _r = await Api.GetAsync<AnalyticsResultDTO<FunnelResultDTO>>($"api/v1/analytics/funnels/{Id}/result?{Q()}");
+    });
+}

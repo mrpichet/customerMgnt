@@ -121,8 +121,8 @@ public sealed partial class MembershipADO : IMembershipUnitOfWork
         {
             nt.Version = 1;
             nt.Id = await c.ExecuteScalarAsync<long>(Cmd(Dialect.InsertReturningId("mbr_transaction",
-                "source_system, transaction_id, member_id, branch_code, occurred_at, status, net_paid, eligible, returned_eligible, version, data",
-                "@SourceSystem, @TransactionId, @MemberId, @BranchCode, @OccurredAt, @Status, @NetPaid, @Eligible, @ReturnedEligible, 1, @Data"), TxnArgs(nt), ct, tx)).ConfigureAwait(false);
+                "source_system, transaction_id, member_id, branch_code, occurred_at, status, net_paid, eligible, returned_eligible, is_test, version, data",
+                "@SourceSystem, @TransactionId, @MemberId, @BranchCode, @OccurredAt, @Status, @NetPaid, @Eligible, @ReturnedEligible, @IsTest, 1, @Data"), TxnArgs(nt), ct, tx)).ConfigureAwait(false);
             await c.ExecuteAsync(Cmd("UPDATE mbr_transaction SET data = @Data WHERE id = @Id", new { nt.Id, Data = J(nt) }, ct, tx)).ConfigureAwait(false);
         }
 
@@ -173,7 +173,7 @@ public sealed partial class MembershipADO : IMembershipUnitOfWork
 
     private static object TxnArgs(SalesTransactionEntity t) => new
     {
-        t.Id, t.SourceSystem, t.TransactionId, t.MemberId, t.BranchCode, t.OccurredAt, Status = t.Status.ToString(), t.NetPaid, t.Eligible, t.ReturnedEligible, t.Version, Data = J(t),
+        t.Id, t.SourceSystem, t.TransactionId, t.MemberId, t.BranchCode, t.OccurredAt, Status = t.Status.ToString(), t.NetPaid, t.Eligible, t.ReturnedEligible, t.IsTest, t.Version, Data = J(t),
     };
 
     /// <summary>รวม delta ต่อ (campaign, scope) แล้วล็อกแถว ตรวจจำกัด และบันทึก</summary>

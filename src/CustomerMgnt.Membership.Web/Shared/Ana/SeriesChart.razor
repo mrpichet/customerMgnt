@@ -1,0 +1,55 @@
+@using DevExpress.Blazor
+@* กราฟเส้น/แท่งจาก SeriesDTO (DevExpress ใช้เฉพาะกราฟ) — มีค่าเปรียบเทียบ = เส้นประช่วงก่อน *@
+@if (_points.Count == 0)
+{
+    <EmptyState Title="ไม่มีข้อมูล" />
+}
+else
+{
+    <DxChart Data="_points" Height="@Height" CssClass="ana-chart" Palette="AnaText.ChartPalette">
+        @foreach (string name in _names)
+        {
+            string n = name;
+            @if (Bar)
+            {
+                <DxChartBarSeries Name="@n" T="ChartPoint" TArgument="string" TValue="double" Filter="p => p.Series == n" ArgumentField="p => p.Label" ValueField="p => p.Value" />
+            }
+            else
+            {
+                <DxChartLineSeries Name="@n" T="ChartPoint" TArgument="string" TValue="double" Filter="p => p.Series == n" ArgumentField="p => p.Label" ValueField="p => p.Value" />
+            }
+        }
+        @if (_hasCompare)
+        {
+            <DxChartLineSeries Name="ช่วงเปรียบเทียบ" T="ChartPoint" TArgument="string" TValue="double" Filter="p => p.Series == CompareName" ArgumentField="p => p.Label" ValueField="p => p.Value" DashStyle="ChartDashStyle.Dash" Color="AnaText.CompareColor" />
+        }
+        <DxChartLegend Position="RelativePosition.Outside" HorizontalAlignment="HorizontalAlignment.Center" VerticalAlignment="VerticalEdge.Bottom" Visible="@(_names.Count > 1 || _hasCompare)" />
+        <DxChartTooltip Enabled="true" />
+    </DxChart>
+}
+
+@code {
+    private const string CompareName = "__compare";
+
+    [Parameter] public IEnumerable<SeriesDTO>? Series { get; set; }
+    [Parameter] public SeriesDTO? One { get; set; }
+    [Parameter] public bool Bar { get; set; }
+    [Parameter] public string Height { get; set; } = "280px";
+
+    private List<ChartPoint> _points = [];
+    private List<string> _names = [];
+    private bool _hasCompare;
+
+    protected override void OnParametersSet()
+    {
+        List<SeriesDTO> all = [.. (Series ?? []), .. (One is null ? Array.Empty<SeriesDTO>() : [One])];
+        _points = [.. all.SelectMany(s => s.Points.Where(p => p.Value is not null).Select(p => new ChartPoint(s.Label ?? AnaText.Label(s.Metric), p.Label, (double)p.Value!.Value)))];
+        _names = [.. _points.Select(p => p.Series).Distinct()];
+        List<ChartPoint> cmp = all.Count == 1 ? [.. all[0].Points.Where(p => p.CompareValue is not null).Select(p => new ChartPoint(CompareName, p.Label, (double)p.CompareValue!.Value))] : [];
+        _hasCompare = cmp.Count > 0;
+        _points.AddRange(cmp);
+    }
+
+    /// <summary>จุดข้อมูลของกราฟ</summary>
+    public sealed record ChartPoint(string Series, string Label, double Value);
+}

@@ -1,0 +1,75 @@
+@page "/analytics/schedules"
+@attribute [Authorize]
+@inherits MembershipPage
+@* AN-21 ตั้งเวลาส่งรายงาน (ANA-REPORT-004) — ล้มเหลวติดกัน 3 ครั้งระบบปิดให้อัตโนมัติ *@
+<PageTitle>ตั้งเวลาส่งรายงาน</PageTitle>
+
+<RequirePermission Permission="@A.ReportBuild">
+    <ListTemplate TItem="ReportScheduleDTO" Title="ตั้งเวลาส่งรายงาน" Description="ส่งไฟล์รายงานทางอีเมลตามรอบเวลา ผู้รับต้องอยู่ในโดเมนที่อนุญาต หากส่งไม่สำเร็จติดกัน 3 ครั้งระบบจะปิดการตั้งเวลาและแจ้งผู้รับเมื่อผิดพลาด"
+                  Breadcrumbs="_crumbs" Permissions="_perms" Items="_items" Loading="_loading" ErrorMessage="@LoadError" OnRetry="LoadAsync"
+                  NewText="ตั้งเวลาใหม่" OnNew="@(() => Nav.NavigateTo("analytics/schedules/new"))" OnEdit="@(s => Nav.NavigateTo($"analytics/schedules/{s.Id}/edit"))" OnDelete="DeleteAsync"
+                  ItemName="ReportName">
+        <ExtraRowActions>
+            <AppButton Text="ส่งตอนนี้" Size="ButtonSize.Small" Variant="ButtonVariant.Secondary" Busy="Busy" OnClick="@(() => RunNowAsync(context))" />
+        </ExtraRowActions>
+        <Columns>
+            <TableColumn TItem="ReportScheduleDTO" Title="รายงาน" Field="ReportName" IsPrimary />
+            <TableColumn TItem="ReportScheduleDTO" Title="รอบเวลา" Field="s => AnaSchedule.Describe(s.Cron)" />
+            <TableColumn TItem="ReportScheduleDTO" Title="ช่วงข้อมูล" Field="s => AnaText.Range(s.Range)" HideOnMobile />
+            <TableColumn TItem="ReportScheduleDTO" Title="ผู้รับ" Field="s => s.Recipients.Count" Format="N0" Align="ColumnAlign.End" HideOnMobile />
+            <TableColumn TItem="ReportScheduleDTO" Title="รอบถัดไป" Field="s => Text.DateTime(s.NextRunAt)" SortBy="s => s.NextRunAt" Sortable />
+            <TableColumn TItem="ReportScheduleDTO" Title="ครั้งล่าสุด">
+                <Template>
+                    @if (context.LastRun is ScheduleRunDTO r)
+                    {
+                        <Badge Text="@Text.Job(r.Status)" Level="@Text.Level(r.Status)" /> <span class="small">@Text.DateTime(r.At)</span>
+                        @if (r.Error is not null) { <div class="small muted">@r.Error</div> }
+                    }
+                    else { <span class="muted">-</span> }
+                </Template>
+            </TableColumn>
+            <TableColumn TItem="ReportScheduleDTO" Title="สถานะ" SortBy="s => s.Enabled">
+                <Template>
+                    <Badge Text="@(context.Enabled ? "ใช้งาน" : "ปิด")" Level="@(context.Enabled ? AlertLevel.Success : AlertLevel.Warning)" />
+                    @if (context.ConsecutiveFailures > 0) { <span class="small muted">ล้มเหลวติดกัน @context.ConsecutiveFailures ครั้ง</span> }
+                </Template>
+            </TableColumn>
+        </Columns>
+    </ListTemplate>
+</RequirePermission>
+
+@code {
+    private readonly IReadOnlyList<Breadcrumb> _crumbs = [new("หน้าแรก", ""), new("วิเคราะห์ข้อมูล", "analytics"), new("ตั้งเวลาส่งรายงาน")];
+    private readonly ListPermissions _perms = new() { Create = A.ReportBuild, Edit = A.ReportBuild, Delete = A.ReportBuild };
+    private IReadOnlyList<ReportScheduleDTO>? _items;
+    private Dictionary<Guid, string> _reports = [];
+    private bool _loading;
+
+    private string ReportName(ReportScheduleDTO s) => _reports.GetValueOrDefault(s.ReportId) ?? s.ReportId.ToString();
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        await LoadSafeAsync(async () =>
+        {
+            _reports = (await Api.GetAsync<List<ReportSummaryDTO>>("api/v1/analytics/reports")).ToDictionary(r => r.Id, r => r.Name);
+            _items = await Api.GetAsync<List<ReportScheduleDTO>>("api/v1/analytics/schedules");
+        });
+        _loading = false;
+    }
+
+    private Task RunNowAsync(ReportScheduleDTO s) => SaveSafeAsync(async () =>
+    {
+        await Api.PostAsync<AnaExportJobDTO>($"api/v1/analytics/schedules/{s.Id}/run-now", new { });
+    }, "สั่งส่งรายงานแล้ว ดูไฟล์ได้ที่หน้าไฟล์ส่งออก");
+
+    private async Task DeleteAsync(ReportScheduleDTO s)
+    {
+        if (await SaveSafeAsync(() => Api.DeleteAsync($"api/v1/analytics/schedules/{s.Id}"), "ลบการตั้งเวลาแล้ว"))
+        {
+            await LoadAsync();
+        }
+    }
+}

@@ -168,6 +168,8 @@ public sealed class CommitRequest
     [StringLength(100)] public string? ReceiptNo { get; set; }
     public DateTimeOffset? PaidAt { get; set; }
     [Range(0, 100_000_000)] public decimal PaidAmount { get; set; }
+    /// <summary>รายการทดสอบ — บันทึกตามปกติแต่ไม่นับในการวิเคราะห์</summary>
+    public bool IsTest { get; set; }
 }
 
 /// <summary>ปล่อยการจอง</summary>
@@ -203,6 +205,8 @@ public sealed class SalesTransactionRequest
     public DateTimeOffset PaidAt { get; set; }
     [Range(0, 100_000_000)] public decimal PaidAmount { get; set; }
     public bool Offline { get; set; } = true;
+    /// <summary>รายการทดสอบ — บันทึกตามปกติแต่ไม่นับในการวิเคราะห์</summary>
+    public bool IsTest { get; set; }
 }
 
 /// <summary>บรรทัดของรายการขายที่เก็บไว้ (ใช้คำนวณการคืน)</summary>
@@ -259,6 +263,8 @@ public sealed class SalesTransactionEntity
     public string BenefitsJson { get; set; } = "[]";
     public string? CouponCodes { get; set; }
     public string ConsumedLotsJson { get; set; } = "[]";
+    /// <summary>รายการทดสอบ (ไม่นับในการวิเคราะห์)</summary>
+    public bool IsTest { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public long Version { get; set; }
 
@@ -300,6 +306,7 @@ public sealed class TransactionSummaryDTO
     public int PointsRedeemed { get; set; }
     public TransactionStatus Status { get; set; }
     public bool Offline { get; set; }
+    public bool IsTest { get; set; }
 }
 
 /// <summary>รายละเอียดรายการขาย</summary>

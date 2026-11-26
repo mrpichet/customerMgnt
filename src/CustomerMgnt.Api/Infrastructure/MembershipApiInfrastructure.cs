@@ -25,6 +25,12 @@ public static class MembershipApi
     /// <summary>rate limit ของ Portal สมาชิก (ต่อผู้ใช้)</summary>
     public const string PortalRateLimit = "member-portal";
 
+    /// <summary>rate limit ของ Analytics API (120 คำขอ/นาที ต่อผู้ใช้)</summary>
+    public const string AnalyticsRateLimit = "analytics";
+
+    /// <summary>rate limit ของ ingest (20 คำขอ/วินาที ต่อ client)</summary>
+    public const string IngestRateLimit = "analytics-ingest";
+
     /// <summary>key ใน HttpContext.Items ของ request id</summary>
     public const string RequestIdItem = "membership.requestId";
 
@@ -44,6 +50,14 @@ public static class MembershipApi
             o.AddPolicy(PortalRateLimit, ctx => RateLimitPartition.GetFixedWindowLimiter("portal:" + CallerKey(ctx), _ => new FixedWindowRateLimiterOptions
             {
                 PermitLimit = 60, Window = TimeSpan.FromMinutes(1), QueueLimit = 0,
+            }));
+            o.AddPolicy(AnalyticsRateLimit, ctx => RateLimitPartition.GetFixedWindowLimiter("ana:" + CallerKey(ctx), _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 120, Window = TimeSpan.FromMinutes(1), QueueLimit = 0,
+            }));
+            o.AddPolicy(IngestRateLimit, ctx => RateLimitPartition.GetTokenBucketLimiter("ana-ingest:" + CallerKey(ctx), _ => new TokenBucketRateLimiterOptions
+            {
+                TokenLimit = 20, TokensPerPeriod = 20, ReplenishmentPeriod = TimeSpan.FromSeconds(1), QueueLimit = 0, AutoReplenishment = true,
             }));
         });
         return services;

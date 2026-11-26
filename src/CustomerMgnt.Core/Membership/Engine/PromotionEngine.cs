@@ -336,6 +336,12 @@ public static class PromotionEngine
             return false;
         }
 
+        // กลุ่มควบคุมของแคมเปญไม่ได้รับสิทธิ์ (สูตรข้อ 4)
+        if (MemberAnalytics.Engine.HoldoutAssigner.IsControl(c.Code, ctx.Member.MemberNo, c.HoldoutPct))
+        {
+            return false;
+        }
+
         CampaignTargetsDTO t = c.Targets;
         if (!t.AllMembers)
         {

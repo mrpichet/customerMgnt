@@ -1,0 +1,107 @@
+@page "/analytics/members/rfm"
+@attribute [Authorize]
+@inherits AnaPage
+@* AN-05 RFM (ANA-MEM-002) — เลือกช่อง/กลุ่มแล้วบันทึกเป็น Segment แบบ snapshot ได้ *@
+<PageTitle>RFM</PageTitle>
+
+<RequirePermission Permission="@A.MemberRead">
+    <PageHeader Title="วิเคราะห์สมาชิก: RFM" Description="คะแนน Recency (ซื้อล่าสุด) × Frequency (ความถี่) 1–5 จากสมาชิกที่ซื้อในช่วง; ช่องเข้ม = สมาชิกมาก" Breadcrumbs="_crumbs" />
+    <AnaSubNav Links="AnaSubNav.MemberPages" Label="วิเคราะห์สมาชิก" />
+    <AnaFilterBar PageCode="AN-05" Value="Filter" OnApply="f => Apply(f)" ShowMember ShowCompare="false" />
+    @if (LoadError is not null) { <ErrorView Title="โหลดข้อมูลไม่สำเร็จ" Message="@LoadError" OnRetry="LoadAsync" /> }
+    else if (_r is null) { <LoadingState /> }
+    else
+    {
+        RfmDTO d = _r.Data;
+        <AnaBanner Meta="Meta(_r)" />
+        @if (d.InsufficientReason is not null)
+        {
+            <Alert Level="AlertLevel.Info">ข้อมูลไม่เพียงพอ: @AnaText.Reason(d.InsufficientReason)</Alert>
+        }
+        else
+        {
+            <div class="ana-two">
+                <Card Title="@($"ตาราง R × F (สมาชิกที่ให้คะแนน {AnaText.Int(d.MembersScored)} คน)")">
+                    <table class="simple-table ana-heat">
+                        <thead><tr><th>F \ R</th>@for (int r = 1; r <= 5; r++) { <th class="num">R@(r)</th> }</tr></thead>
+                        <tbody>
+                            @for (int f = 5; f >= 1; f--)
+                            {
+                                int ff = f;
+                                <tr>
+                                    <th>F@(ff)</th>
+                                    @for (int r = 1; r <= 5; r++)
+                                    {
+                                        int rr = r;
+                                        RfmCellDTO? c = d.Cells.FirstOrDefault(x => x.R == rr && x.F == ff);
+                                        string key = $"{rr}-{ff}";
+                                        <td class="num" style="@Heat(c?.Members ?? 0)" title="@(c is null ? "" : $"{c.Group} · เฉลี่ย {AnaText.Num(c.AvgMonetary)} บาท")">
+                                            <label><input type="checkbox" checked="@_cells.Contains(key)" @onchange="e => Toggle(_cells, key, e.Value)" aria-label="@($"R{rr} F{ff}")" /> @AnaText.Int(c?.Members ?? 0)</label>
+                                        </td>
+                                    }
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </Card>
+                <Card Title="กลุ่มลูกค้า">
+                    <table class="simple-table">
+                        <thead><tr><th></th><th>กลุ่ม</th><th class="num">สมาชิก</th><th class="num">สัดส่วนยอดขาย</th></tr></thead>
+                        <tbody>
+                            @foreach (RfmGroupDTO g in d.Groups)
+                            {
+                                string code = g.Code;
+                                <tr>
+                                    <td><input type="checkbox" checked="@_groups.Contains(code)" @onchange="e => Toggle(_groups, code, e.Value)" aria-label="@g.Label" /></td>
+                                    <td>@g.Label<div class="muted small">@g.Rule</div></td>
+                                    <td class="num">@AnaText.Int(g.Members)</td><td class="num">@AnaText.Pct(g.SalesShare)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </Card>
+            </div>
+            <PermissionView Permission="segment.write">
+                <Card Title="บันทึกสมาชิกที่เลือกเป็น Segment (snapshot)">
+                    <FieldGrid Columns="2">
+                        <Field Label="ชื่อ Segment" InputId="sname"><input id="sname" @bind="_name" maxlength="200" /></Field>
+                        <Field Label="คำอธิบาย" InputId="sdesc"><input id="sdesc" @bind="_desc" maxlength="500" /></Field>
+                    </FieldGrid>
+                    <p class="muted small">เลือกแล้ว @_cells.Count ช่อง และ @_groups.Count กลุ่ม — Segment ไม่คำนวณใหม่อัตโนมัติ</p>
+                    <AppButton Text="บันทึก Segment" Variant="ButtonVariant.Primary" Busy="Busy" Disabled="@(string.IsNullOrWhiteSpace(_name) || (_cells.Count == 0 && _groups.Count == 0))" OnClick="SaveAsync" />
+                </Card>
+            </PermissionView>
+        }
+    }
+</RequirePermission>
+
+@code {
+    private readonly IReadOnlyList<Breadcrumb> _crumbs = [new("หน้าแรก", ""), new("วิเคราะห์ข้อมูล", "analytics"), new("RFM")];
+    private AnalyticsResultDTO<RfmDTO>? _r;
+    private readonly HashSet<string> _cells = [];
+    private readonly HashSet<string> _groups = [];
+    private string? _name, _desc;
+    private int _max = 1;
+
+    protected override string PageCode => "AN-05";
+
+    protected override Task LoadAsync() => LoadSafeAsync(async () =>
+    {
+        _r = await Api.GetAsync<AnalyticsResultDTO<RfmDTO>>($"api/v1/analytics/members/rfm?{Q()}");
+        _max = Math.Max(1, _r.Data.Cells.Select(c => c.Members).DefaultIfEmpty(0).Max());
+    });
+
+    private string Heat(int n) => $"background: color-mix(in srgb, var(--color-primary, #1d4ed8) {(int)(70.0 * n / _max)}%, transparent)";
+
+    private static void Toggle(HashSet<string> set, string key, object? on)
+    {
+        if (on is true) set.Add(key); else set.Remove(key);
+    }
+
+    private Task SaveAsync() => SaveSafeAsync(async () =>
+    {
+        SegmentSnapshotResultDTO r = await Api.PostAsync<SegmentSnapshotResultDTO>("api/v1/analytics/members/rfm/segments",
+            new RfmSegmentRequest { Name = _name!.Trim(), Description = Clean(_desc), Cells = [.. _cells], Groups = [.. _groups], Filter = Filter });
+        Toasts.Info($"Segment มีสมาชิก {r.MemberCount:N0} คน");
+    }, "บันทึก Segment แล้ว");
+}

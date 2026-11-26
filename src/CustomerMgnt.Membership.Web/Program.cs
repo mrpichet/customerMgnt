@@ -25,6 +25,9 @@ builder.Services.AddScoped<IAuthClient>(sp => AuthServerV1Client.Create(sp, buil
 builder.Services.AddScoped<ExternalLoginService>();
 builder.Services.Configure<PortalOptions>(builder.Configuration.GetSection(PortalOptions.SectionName));
 
+// Step 3.1: DevExpress Blazor (ใช้เฉพาะกราฟของหน้าวิเคราะห์ข้อมูล)
+builder.Services.AddDevExpressBlazor();
+
 // Step 4: เมนูของ Back Office
 builder.Services.AddScoped<IAppMenuProvider, MembershipMenuProvider>();
 

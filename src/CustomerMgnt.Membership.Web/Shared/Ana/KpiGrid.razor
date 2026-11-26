@@ -1,0 +1,19 @@
+@* KPI หลายตัวจาก dictionary (เรียงตาม Keys ถ้าระบุ) *@
+@if (Kpis is not null)
+{
+    <div class="kpi-grid">
+        @foreach (string k in Keys ?? Kpis.Keys)
+        {
+            @if (Kpis.TryGetValue(k, out MetricValueDTO? m))
+            {
+                <MetricCard Metric="m" Label="@AnaText.Label(k)" OnDrill="OnDrill" />
+            }
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public IReadOnlyDictionary<string, MetricValueDTO>? Kpis { get; set; }
+    [Parameter] public IEnumerable<string>? Keys { get; set; }
+    [Parameter] public EventCallback<string> OnDrill { get; set; }
+}

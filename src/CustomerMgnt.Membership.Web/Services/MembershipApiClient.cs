@@ -47,6 +47,9 @@ public sealed class MembershipApiClient(HttpClient http)
     public Task<T> PutAsync<T>(string url, object? body, CancellationToken ct = default) => SendAsync<T>(HttpMethod.Put, url, body, null, ct);
 
     /// <summary>ดาวน์โหลดไฟล์</summary>
+    /// <summary>DELETE (204)</summary>
+    public Task DeleteAsync(string url, CancellationToken ct = default) => SendAsync<JsonElement?>(HttpMethod.Delete, url, null, null, ct);
+
     public async Task<(byte[] Content, string FileName, string ContentType)> DownloadAsync(string url, CancellationToken ct = default)
     {
         using HttpResponseMessage res = await http.GetAsync(url, ct);

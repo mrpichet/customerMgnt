@@ -1,0 +1,113 @@
+@page "/analytics/campaigns"
+@attribute [Authorize]
+@inherits AnaPage
+@* AN-12 รายการแคมเปญ (ANA-PROMO-001) — เลือก 2–5 แคมเปญเพื่อเปรียบเทียบ *@
+<PageTitle>ผลแคมเปญ</PageTitle>
+
+<RequirePermission Permission="@A.PromotionRead">
+    <PageHeader Title="ผลแคมเปญ" Description="แคมเปญที่คุณมีสิทธิ์ดู พร้อมผลรวมในช่วงที่เลือก (นับแบบใช้สิทธิ์แคมเปญ) เลือก 2–5 แคมเปญเพื่อเปรียบเทียบ" Breadcrumbs="_crumbs">
+        <Actions>
+            <AppButton Text="@($"เปรียบเทียบ ({_selected.Count})")" Variant="ButtonVariant.Primary" Disabled="@(_selected.Count is < 2 or > 5)" OnClick="Compare" />
+        </Actions>
+    </PageHeader>
+    <AnaFilterBar PageCode="AN-12" Value="Filter" OnApply="f => Apply(f, Extra(1))" ShowCompare="false" ShowProduct="false" />
+    <Card Title="ค้นหาแคมเปญ">
+        <FieldGrid Columns="3">
+            <Field Label="รหัสหรือชื่อ" InputId="tx"><input id="tx" @bind="_text" maxlength="100" /></Field>
+            <Field Label="สถานะ" InputId="st">
+                <div class="check-list">
+                    @foreach (CampaignStatus s in Statuses)
+                    {
+                        <label><input type="checkbox" checked="@_status.Contains(s)" @onchange="e => Toggle(_status, s, e)" /> @Text.Campaign(s)</label>
+                    }
+                </div>
+            </Field>
+            <Field Label="ประเภทสิทธิ์" InputId="rw">
+                <div class="check-list">
+                    @foreach (RewardType r in Enum.GetValues<RewardType>())
+                    {
+                        <label><input type="checkbox" checked="@_reward.Contains(r)" @onchange="e => Toggle(_reward, r, e)" /> @Text.Reward(r)</label>
+                    }
+                </div>
+            </Field>
+        </FieldGrid>
+        <div class="row-actions"><AppButton Text="ค้นหา" Variant="ButtonVariant.Secondary" OnClick="() => Apply(Filter, Extra(1))" /></div>
+    </Card>
+    @if (LoadError is not null) { <ErrorView Title="โหลดข้อมูลไม่สำเร็จ" Message="@LoadError" OnRetry="LoadAsync" /> }
+    else if (_r is null) { <LoadingState /> }
+    else
+    {
+        PagedResultDTO<CampaignAnalyticsSummaryDTO> d = _r.Data;
+        <AnaBanner Meta="Meta(_r)" />
+        <Card Title="@($"แคมเปญ {AnaText.Int(d.Total)} รายการ")">
+            <div style="overflow-x:auto">
+                <table class="simple-table">
+                    <thead><tr><th>เลือก</th><th>แคมเปญ</th><th>สถานะ</th><th>ประเภท</th><th>ช่วงเวลา</th><th class="num">ผู้เข้าร่วม</th><th class="num">ยอดขายแคมเปญ</th><th class="num">ส่วนลด</th><th>กลุ่มควบคุม</th></tr></thead>
+                    <tbody>
+                        @foreach (CampaignAnalyticsSummaryDTO c in d.Items)
+                        {
+                            <tr>
+                                <td><input type="checkbox" aria-label="@($"เลือก {c.CampaignCode}")" checked="@_selected.Contains(c.CampaignCode)" @onchange="e => Select(c.CampaignCode, e)" /></td>
+                                <td><a href="analytics/campaigns/@Uri.EscapeDataString(c.CampaignCode)?@Q()">@c.CampaignCode — @c.Name</a></td>
+                                <td><Badge Text="@Text.Campaign(c.Status)" Level="@Text.Level(c.Status)" /></td>
+                                <td>@Text.Reward(c.RewardType)</td>
+                                <td>@Text.Date(c.StartAt) – @Text.Date(c.EndAt)</td>
+                                <td class="num">@AnaText.Int(c.Participants)</td>
+                                <td class="num">@AnaText.Num(c.CampaignSales)</td>
+                                <td class="num">@AnaText.Num(c.Discount)</td>
+                                <td>@(c.HoldoutPct > 0 ? $"{c.HoldoutPct}%" : "-")</td>
+                            </tr>
+                        }
+                        @if (d.Items.Count == 0) { <tr><td colspan="9" class="muted">ไม่พบแคมเปญ</td></tr> }
+                    </tbody>
+                </table>
+            </div>
+            <div class="row-actions">
+                <AppButton Text="ก่อนหน้า" Disabled="@(d.Page <= 1)" OnClick="() => Apply(Filter, Extra(d.Page - 1))" />
+                <span class="muted">หน้า @d.Page / @Math.Max(1, (d.Total + Math.Max(1, d.PageSize) - 1) / Math.Max(1, d.PageSize))</span>
+                <AppButton Text="ถัดไป" Disabled="@((long)d.Page * d.PageSize >= d.Total)" OnClick="() => Apply(Filter, Extra(d.Page + 1))" />
+            </div>
+        </Card>
+    }
+</RequirePermission>
+
+@code {
+    private static readonly CampaignStatus[] Statuses = [CampaignStatus.Scheduled, CampaignStatus.Active, CampaignStatus.Paused, CampaignStatus.Ended, CampaignStatus.Cancelled];
+    private readonly IReadOnlyList<Breadcrumb> _crumbs = [new("หน้าแรก", ""), new("วิเคราะห์ข้อมูล", "analytics"), new("ผลแคมเปญ")];
+    private AnalyticsResultDTO<PagedResultDTO<CampaignAnalyticsSummaryDTO>>? _r;
+    private readonly HashSet<CampaignStatus> _status = [];
+    private readonly HashSet<RewardType> _reward = [];
+    private readonly List<string> _selected = [];
+    private string? _text;
+    private int _page = 1;
+
+    protected override string PageCode => "AN-12";
+
+    private (string, object?)[] Extra(int page) =>
+        [("status", _status.Select(s => s.ToString()).ToList()), ("rewardType", _reward.Select(r => r.ToString()).ToList()), ("text", Clean(_text)), ("page", page > 1 ? page : null)];
+
+    protected override Task LoadAsync()
+    {
+        _text = Param("text");
+        _page = int.TryParse(Param("page"), out int p) ? Math.Max(1, p) : 1;
+        _status.Clear();
+        _reward.Clear();
+        foreach (string s in AnaQuery.Params(Nav.Uri, "status")) { if (Enum.TryParse(s, out CampaignStatus v)) _status.Add(v); }
+        foreach (string s in AnaQuery.Params(Nav.Uri, "rewardType")) { if (Enum.TryParse(s, out RewardType v)) _reward.Add(v); }
+        return LoadSafeAsync(async () => _r = await Api.GetAsync<AnalyticsResultDTO<PagedResultDTO<CampaignAnalyticsSummaryDTO>>>(
+            $"api/v1/analytics/campaigns?{Q([.. Extra(_page), ("pageSize", 20)])}"));
+    }
+
+    private static void Toggle<T>(HashSet<T> set, T v, ChangeEventArgs e)
+    {
+        if (e.Value is true) set.Add(v); else set.Remove(v);
+    }
+
+    private void Select(string code, ChangeEventArgs e)
+    {
+        if (e.Value is true) { if (!_selected.Contains(code)) _selected.Add(code); }
+        else _selected.Remove(code);
+    }
+
+    private void Compare() => Nav.NavigateTo($"analytics/campaigns/compare?{Q(("codes", _selected.ToList()))}");
+}

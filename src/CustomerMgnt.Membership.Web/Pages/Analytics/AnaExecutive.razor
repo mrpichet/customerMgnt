@@ -1,0 +1,59 @@
+@page "/analytics"
+@attribute [Authorize]
+@inherits AnaPage
+@* AN-01 Dashboard ผู้บริหาร (ANA-DASH-001) *@
+<PageTitle>ภาพรวมผู้บริหาร</PageTitle>
+
+<RequirePermission Permission="@A.DashboardRead">
+    <PageHeader Title="ภาพรวมผู้บริหาร" Description="ตัวเลขหลักของสมาชิก ยอดขาย คะแนน และโปรโมชัน ตามช่วงและขอบเขตข้อมูลของคุณ" Breadcrumbs="_crumbs">
+        <Actions><ExportButton Source="ExportSource.Dashboard" Page="AN-01" Filter="Filter" /></Actions>
+    </PageHeader>
+    <AnaFilterBar PageCode="AN-01" Value="Filter" OnApply="f => Apply(f)" />
+    @if (LoadError is not null)
+    {
+        <ErrorView Title="โหลดข้อมูลไม่สำเร็จ" Message="@LoadError" OnRetry="LoadAsync" />
+    }
+    else if (_r is null)
+    {
+        <LoadingState />
+    }
+    else
+    {
+        <AnaBanner Meta="Meta(_r)" />
+        <KpiGrid Kpis="_r.Data.Kpis" OnDrill="Drill" />
+        <div class="ana-two">
+            <Card Title="ยอดขายสมาชิก"><SeriesChart One="_r.Data.SalesTrend" /></Card>
+            <Card Title="สมาชิกใหม่"><SeriesChart One="_r.Data.MembersTrend" Bar /></Card>
+        </div>
+        <div class="ana-two">
+            <Card Title="สาขายอดขายสูงสุด"><KeyValueChart Items="_r.Data.TopBranches" Horizontal Name="ยอดขาย" /></Card>
+            <Card Title="แจ้งเตือนล่าสุด">
+                @if (_r.Data.Alerts.Count == 0)
+                {
+                    <EmptyState Title="ไม่มีแจ้งเตือน" />
+                }
+                else
+                {
+                    <table class="simple-table">
+                        <thead><tr><th>เวลา</th><th>กฎ</th><th>ขอบเขต</th><th class="num">ค่า</th></tr></thead>
+                        <tbody>
+                            @foreach (AlertEventDTO e in _r.Data.Alerts)
+                            {
+                                <tr><td>@Text.DateTime(e.OccurredAt)</td><td>@e.RuleName</td><td>@e.ScopeKey</td><td class="num">@AnaText.Num(e.Value)</td></tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </Card>
+        </div>
+    }
+</RequirePermission>
+
+@code {
+    private readonly IReadOnlyList<Breadcrumb> _crumbs = [new("หน้าแรก", ""), new("วิเคราะห์ข้อมูล"), new("ภาพรวมผู้บริหาร")];
+    private AnalyticsResultDTO<ExecutiveDashboardDTO>? _r;
+
+    protected override string PageCode => "AN-01";
+
+    protected override Task LoadAsync() => LoadSafeAsync(async () => _r = await Api.GetAsync<AnalyticsResultDTO<ExecutiveDashboardDTO>>($"api/v1/analytics/dashboards/executive?{Q()}"));
+}

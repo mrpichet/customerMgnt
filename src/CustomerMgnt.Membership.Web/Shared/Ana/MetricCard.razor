@@ -1,0 +1,38 @@
+@* KPI 1 ตัว: ค่า, % เปลี่ยนแปลงเทียบช่วงก่อน, "ข้อมูลไม่เพียงพอ" พร้อมเหตุผล และลิงก์ drill-down *@
+<div class="kpi">
+    <div class="kpi__label">
+        @(Label ?? AnaText.Label(Metric.Metric))
+        @if (Metric.Kind == MetricKind.Estimate) { <Badge Text="ประมาณการ" Level="AlertLevel.Info" /> }
+    </div>
+    @if (Metric.InsufficientReason is not null && Metric.Value is null)
+    {
+        <div class="kpi__value muted">ข้อมูลไม่เพียงพอ</div>
+        <div class="muted small">@AnaText.Reason(Metric.InsufficientReason)</div>
+    }
+    else
+    {
+        <div class="kpi__value">@AnaText.Value(Metric.Value, Metric.Unit)</div>
+        @if (Metric.ChangePct is decimal c)
+        {
+            <div class="small @(c >= 0 ? "ana-up" : "ana-down")">@(c >= 0 ? "▲" : "▼") @Math.Abs(c).ToString("N1", System.Globalization.CultureInfo.InvariantCulture)% <span class="muted">(เดิม @AnaText.Value(Metric.CompareValue, Metric.Unit))</span></div>
+        }
+        else if (Metric.InsufficientReason is not null)
+        {
+            <div class="muted small">@AnaText.Reason(Metric.InsufficientReason)</div>
+        }
+        @if (Metric.CiLow is not null)
+        {
+            <div class="muted small">ช่วงเชื่อมั่น 95%: @AnaText.Value(Metric.CiLow, Metric.Unit) ถึง @AnaText.Value(Metric.CiHigh, Metric.Unit) @(Metric.Significant == true ? "(มีนัยสำคัญ)" : "(ไม่มีนัยสำคัญ)")</div>
+        }
+    }
+    @if (OnDrill.HasDelegate && !string.IsNullOrEmpty(Metric.Drilldown) && Metric.Value is not null)
+    {
+        <button type="button" class="link-button small" @onclick="() => OnDrill.InvokeAsync(Metric.Drilldown)">ดูรายละเอียด</button>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public MetricValueDTO Metric { get; set; } = new();
+    [Parameter] public string? Label { get; set; }
+    [Parameter] public EventCallback<string> OnDrill { get; set; }
+}

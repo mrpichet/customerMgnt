@@ -22,13 +22,17 @@ public sealed class CampaignMessageService
     private readonly ISegmentDAO _segments;
     private readonly IMembershipAuditDAO _audit;
     private readonly IMessageHubGateway _messageHub;
+    private readonly ICampaignDAO _campaigns;
+    private readonly MemberAnalytics.DataAccess.IAnaMessageDAO _recipients;
     private readonly PrivacyService _privacy;
     private readonly TimeProvider _clock;
 
     /// <summary>สร้าง</summary>
     public CampaignMessageService(IMembershipJobDAO jobs, IMemberDAO members, ISegmentDAO segments, IMembershipAuditDAO audit, IMessageHubGateway messageHub,
-        PrivacyService privacy, TimeProvider clock)
+        PrivacyService privacy, TimeProvider clock, ICampaignDAO campaigns, MemberAnalytics.DataAccess.IAnaMessageDAO recipients)
     {
+        _campaigns = campaigns;
+        _recipients = recipients;
         _jobs = jobs;
         _members = members;
         _segments = segments;
@@ -52,10 +56,13 @@ public sealed class CampaignMessageService
             _ = await _segments.GetAsync(sid, ct).ConfigureAwait(false) ?? throw new NotFoundException("Segment not found.");
         }
 
+        string? campaignCode = string.IsNullOrWhiteSpace(request.CampaignCode) ? null : request.CampaignCode.Trim().ToUpperInvariant();
+        ValidationException.ThrowIf(campaignCode is not null && await _campaigns.GetByCodeAsync(campaignCode, ct).ConfigureAwait(false) is null, "campaignCode", "Unknown campaign code.");
+
         DateTimeOffset now = _clock.GetUtcNow();
         var job = new MessageJobDTO
         {
-            SegmentId = request.SegmentId, Channel = request.Channel, TemplateCode = request.TemplateCode, VariablesJson = MembershipJson.Write(request.Variables),
+            SegmentId = request.SegmentId, Channel = request.Channel, CampaignCode = campaignCode, TemplateCode = request.TemplateCode, VariablesJson = MembershipJson.Write(request.Variables),
             MemberIdsJson = request.MemberIds is { Count: > 0 } ids ? MembershipJson.Write(ids.Distinct()) : null, Status = JobStatus.Queued,
             ScheduledAt = request.ScheduledAt, RequestedBy = caller.Actor, RequestedAt = now,
         };
@@ -84,17 +91,22 @@ public sealed class CampaignMessageService
             try
             {
                 Dictionary<string, string> vars = MembershipJson.Read<Dictionary<string, string>>(job.VariablesJson);
+                CampaignDTO? campaign = job.CampaignCode is null ? null : await _campaigns.GetByCodeAsync(job.CampaignCode, ct).ConfigureAwait(false);
                 foreach (long id in await RecipientsAsync(job, ct).ConfigureAwait(false))
                 {
                     MemberEntity? m = await _members.GetAsync(id, ct).ConfigureAwait(false);
-                    string? to = m is null ? null : Address(m, job.Channel);
-                    if (to is null || !await _messageHub.SendToCustomerAsync(Kind(job.Channel), to, vars.GetValueOrDefault("subject"), Render(vars["body"], m!), ct).ConfigureAwait(false))
+                    // กลุ่มควบคุมของแคมเปญไม่ได้รับข้อความ (สูตรข้อ 4)
+                    bool control = m is not null && campaign is not null && MemberAnalytics.Engine.HoldoutAssigner.IsControl(campaign.Code, m.MemberNo, campaign.HoldoutPct);
+                    string? to = m is null || control ? null : Address(m, job.Channel);
+                    string messageId = $"cm{job.Id}-{id}";
+                    if (to is null || !await _messageHub.SendToCustomerAsync(Kind(job.Channel), to, vars.GetValueOrDefault("subject"), Render(vars["body"], m!), messageId, ct).ConfigureAwait(false))
                     {
                         job.Skipped++;
                         continue;
                     }
 
                     job.Recipients++;
+                    await _recipients.InsertRecipientsAsync([new MemberAnalytics.Domain.MessageRecipientDTO { MessageId = messageId, CampaignCode = campaign?.Code, MemberId = id, SentAt = _clock.GetUtcNow() }], ct).ConfigureAwait(false);
                 }
 
                 job.Status = JobStatus.Done;

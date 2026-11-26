@@ -97,6 +97,11 @@ public sealed class CampaignService : IApprovalHandler
         }
 
         ValidationException.ThrowIf(!string.Equals(before.Code, request.Code, StringComparison.Ordinal), "code", "Campaign code cannot be changed.");
+        if (before.HoldoutPct != request.HoldoutPct && before.Status is not (CampaignStatus.Draft or CampaignStatus.Rejected))
+        {
+            throw MembershipException.Conflict("invalid_transition", "The holdout percentage can be changed only while the campaign is a draft.");
+        }
+
         MembershipRulesDTO rules = await _rules.GetAsync(ct).ConfigureAwait(false);
         CampaignDTO c = Build(request, rules);
         await ValidateAsync(c, ct).ConfigureAwait(false);
@@ -328,6 +333,7 @@ public sealed class CampaignService : IApprovalHandler
         StackMode = r.StackMode,
         ExclusionGroup = string.IsNullOrWhiteSpace(r.ExclusionGroup) ? null : r.ExclusionGroup.Trim(),
         Priority = r.Priority,
+        HoldoutPct = r.HoldoutPct,
         Limits = r.Limits?.Clone() ?? new CampaignLimitsDTO { PerMemberPerDay = rules.DefaultPerMemberPerDay > 0 ? rules.DefaultPerMemberPerDay : null },
     };
 }

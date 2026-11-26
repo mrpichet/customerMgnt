@@ -1,0 +1,77 @@
+@page "/analytics/coupons"
+@attribute [Authorize]
+@inherits AnaPage
+@* AN-11 คูปอง (ANA-PROMO-004) — ออก/ใช้/อัตราการใช้ แยกแคมเปญ (กรองแคมเปญ / ชุดคูปองได้) *@
+<PageTitle>วิเคราะห์คูปอง</PageTitle>
+
+<RequirePermission Permission="@A.DashboardRead">
+    <PageHeader Title="คูปอง" Description="คูปองที่ออกและถูกใช้ในช่วงที่เลือก แยกตามแคมเปญ แถวที่มีเครื่องหมายคืออัตราการใช้ผิดปกติ" Breadcrumbs="_crumbs">
+        <Actions><ExportButton Source="ExportSource.Dashboard" Page="AN-11" Filter="Filter" /></Actions>
+    </PageHeader>
+    <AnaFilterBar PageCode="AN-11" Value="Filter" OnApply="f => Apply(f, Extra)" ShowProduct="false" />
+    <Card>
+        <FieldGrid Columns="3">
+            <Field Label="รหัสแคมเปญ" InputId="cc"><input id="cc" @bind="_campaignInput" maxlength="30" placeholder="ทั้งหมด" /></Field>
+            <Field Label="เลขชุดคูปอง" InputId="bi"><input id="bi" type="number" min="1" @bind="_batchInput" placeholder="ทั้งหมด" /></Field>
+            <Field Label="&nbsp;" InputId="go"><AppButton Text="แสดง" Variant="ButtonVariant.Secondary" OnClick="Narrow" /></Field>
+        </FieldGrid>
+    </Card>
+    @if (LoadError is not null) { <ErrorView Title="โหลดข้อมูลไม่สำเร็จ" Message="@LoadError" OnRetry="LoadAsync" /> }
+    else if (_r is null) { <LoadingState /> }
+    else
+    {
+        CouponAnalyticsDTO d = _r.Data;
+        <AnaBanner Meta="Meta(_r)" />
+        <KpiGrid Kpis="d.Kpis" OnDrill="Drill" />
+        <Card Title="แนวโน้มคูปอง"><SeriesChart Series="d.Trend" /></Card>
+        <Card Title="แยกตามแคมเปญ">
+            <table class="simple-table">
+                <thead><tr><th>แคมเปญ</th><th class="num">ออก</th><th class="num">ใช้</th><th class="num">อัตราการใช้</th><th>หมายเหตุ</th></tr></thead>
+                <tbody>
+                    @foreach (CouponCampaignRowDTO c in d.ByCampaign)
+                    {
+                        <tr>
+                            <td><a href="analytics/campaigns/@Uri.EscapeDataString(c.CampaignCode)?@Q()">@c.CampaignCode</a></td>
+                            <td class="num">@AnaText.Int(c.Issued)</td><td class="num">@AnaText.Int(c.Redeemed)</td><td class="num">@AnaText.Pct(c.UsageRate)</td>
+                            <td>@if (c.Flag is not null) { <Badge Text="@Flag(c.Flag)" Level="AlertLevel.Warning" /> }</td>
+                        </tr>
+                    }
+                    @if (d.ByCampaign.Count == 0) { <tr><td colspan="5" class="muted">ไม่มีข้อมูล</td></tr> }
+                </tbody>
+            </table>
+        </Card>
+    }
+</RequirePermission>
+
+@code {
+    private readonly IReadOnlyList<Breadcrumb> _crumbs = [new("หน้าแรก", ""), new("วิเคราะห์ข้อมูล", "analytics"), new("คูปอง")];
+    private AnalyticsResultDTO<CouponAnalyticsDTO>? _r;
+    private string? _campaignInput;
+    private long? _batch, _batchInput;
+
+    protected override string PageCode => "AN-11";
+
+    // รหัสแคมเปญใช้พารามิเตอร์ campaign ของตัวกรองร่วม (API อ่านค่าแรก)
+    private (string, object?)[] Extra => [("batchId", _batch)];
+
+    protected override Task LoadAsync()
+    {
+        _campaignInput = Filter.Campaign.FirstOrDefault();
+        _batch = _batchInput = long.TryParse(Param("batchId"), out long b) ? b : null;
+        return LoadSafeAsync(async () => _r = await Api.GetAsync<AnalyticsResultDTO<CouponAnalyticsDTO>>($"api/v1/analytics/coupons?{Q(Extra)}"));
+    }
+
+    private void Narrow()
+    {
+        string? code = Clean(_campaignInput);
+        Filter.Campaign = code is null ? [] : [code];
+        Apply(Filter, ("batchId", _batchInput));
+    }
+
+    private static string Flag(string f) => f switch
+    {
+        "LowUsage" => "ใช้น้อยผิดปกติ",
+        "Abnormal" => "ใช้มากผิดปกติ",
+        _ => f,
+    };
+}

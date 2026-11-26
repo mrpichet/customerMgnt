@@ -794,3 +794,555 @@ MCP over HTTP (ModelContextProtocol SDK) ใช้ Bearer token ของ AuthSe
 | OTP ตอนพัฒนา | `Membership:OtpFixedCodeForDevelopment` (เช่น `123456`) = ไม่ส่ง SMS ใช้รหัสคงที่ — ตั้งได้เฉพาะ Development (environment อื่น API ไม่ start) |
 | ภาษา / วันที่ | ข้อความ webcommon เป็นภาษาไทย (`UiText.Override = Thai`) วันที่แสดงเป็นปีพุทธศักราช |
 | Library ใหม่ | `QRCoder` 1.6.0 (MIT) สร้าง QR ของคูปองเป็น SVG ฝั่ง client |
+
+---
+
+# ส่วนที่ 3 — ระบบวิเคราะห์ข้อมูลสมาชิกและโปรโมชัน (Member & Promotion Analytics)
+
+> **สถานะ: ออกแบบ (ยังไม่ implement)** (2026-11-26) — สัญญา API ของ requirement ANA-\* ทั้งหมด ใช้เป็นแบบตอน implement ขั้นที่ 5
+> ที่มา: [สถาปัตยกรรม](https://claude.ai/artifact/KYkyzpEzhVNnbSPU5Pn6ts) · [รายการหน้าจอ AN-01..AN-28](https://claude.ai/artifact/6pZRpqXEdF32pysLjytEe9) · [สูตรคำนวณและ diagram](https://claude.ai/artifact/AR8QyQ5tiWwgrkKA9Hhktc) (ยืนยันแล้วทั้ง 3 ฉบับ)
+> ไม่เกี่ยวกับ §10 (`api/analytics`, `api/ingest` ของ ML เดิม) — path ใหม่ทั้งหมดอยู่ใต้ `api/v1/analytics/*` และ `api/v1/ingest/*`
+> โค้ดที่จะเพิ่ม: `AnalyticsController`, `AnalyticsIngestController`, `AnalyticsAdminController` (Api) · `AnalyticsQueryService`, `DataScopeService`, `MetricCatalog`, `AnalyticsIngestService`, `ReportService`, `AlertService`, `CouponUsageProjector`, `HoldoutAssigner` (Core) · `IAnaReadModelDAO`, `IAnaIngestDAO`, `IAnaConfigDAO` → `AnaADO` / `InMemoryAnaDAO` (Data) · migration `004_member_analytics.sql`
+
+## 28. หลักการร่วมของ Analytics API
+
+| หัวข้อ | รายละเอียด |
+|---|---|
+| Version / error / PII / tolerant reader | เหมือน §16 ทุกข้อ (`api/v1`, ProblemDetails + `code`, mask PII เว้นแต่มี `member.pii`, ignore field/enum ที่ไม่รู้จัก) |
+| ผู้เรียก | (1) เจ้าหน้าที่: token ผู้ใช้ AuthServer + permission `ana.*` (§29) (2) ระบบต้นทาง (POS, ERP, MessageHub, Portal): `client_credentials` scope `analytics.ingest` เรียกได้เฉพาะ `api/v1/ingest/*` |
+| แหล่งข้อมูล | หน้าจอ รายงาน และ alert อ่านจาก read model (`ana_*_daily`, `ana_member_snapshot`, `ana_cohort_monthly`) — ยกเว้น drill-down (§34) อ่าน `mbr_*` ตรงแบบแบ่งหน้า |
+| วันที่ | ตัวกรองเป็น **วันที่** (`yyyy-MM-dd`) ตามเวลา `Asia/Bangkok` ทั้งช่วงรวมวันสุดท้าย; ช่วงยาวสุด 731 วัน (เกิน = 400 `range_too_large`) |
+| ขอบเขตข้อมูล (data scope) | server ตัดตัวกรองให้อยู่ในขอบเขตของผู้เรียกเสมอ (สาขา / ช่องทาง / แบรนด์ จาก `ana_data_scope` ของผู้ใช้ + ทุก role, ไม่มีขอบเขต = ไม่เห็นข้อมูล ยกเว้นมี `ana.scope.all`) — ส่งค่านอกขอบเขตไม่ error แต่ถูกตัดออก และ response บอกตัวกรองที่ใช้จริงใน `appliedFilter` |
+| ขอบเขตว่าง | มี permission แต่ไม่มีขอบเขต = **200** `scopeEmpty: true` และค่าทุกตัวเป็น `null` (ไม่ใช่ 403) — ไม่มี permission = 403 `access_denied` |
+| ข้อมูลไม่พอ | ตัวเลขที่คำนวณไม่ได้คืน `value: null` + `insufficientReason` (`zero_denominator` · `group_too_small` (กลุ่ม < `minGroupSize` = 100) · `missing_source` · `cost_coverage_low` (ต้นทุนครอบคลุม < 95%) · `period_incomplete`) — client แสดง "ข้อมูลไม่เพียงพอ" ห้ามแสดงเป็น 0 |
+| ความสดของข้อมูล | ทุก response มี `dataAsOf` (เวลาที่ read model ล่าสุดคำนวณเสร็จ) และ `stale: true` เมื่อเก่ากว่า `staleAfterMinutes` ของ AN-25 |
+| สูตร | ทุกตัวเลขมี `formulaVersion` (เช่น `ana-2026.1`) — เปลี่ยนสูตร = เพิ่มเลข ไม่แก้ความหมายของเลขเดิม; รหัส metric ดูได้จาก `GET /api/v1/analytics/catalog` |
+| รายการที่นับ | ธุรกรรม `Completed` และ `PartiallyReturned` ที่ไม่ใช่ `isTest`; ยอดคืนหักที่วันของรายการขายเดิม (สูตรข้อ 1) |
+| Cache | GET ของหน้าจอส่ง `ETag` (hash ของ filter ที่ใช้จริง + `dataAsOf`) ส่ง `If-None-Match` ได้ 304; `Cache-Control: private, max-age=60` |
+| Rate limit | `analytics`: 120 คำขอ/นาที ต่อผู้ใช้; `ingest`: 20 คำขอ/วินาที ต่อ client → 429 + `Retry-After` |
+
+### 28.1 ตัวกรองร่วม (`AnalyticsFilterDTO` — query string)
+
+| พารามิเตอร์ | ชนิด | ความหมาย |
+|---|---|---|
+| `from`, `to` | date | ช่วงวันที่ (บังคับ ยกเว้นระบุไว้ในหน้านั้น ๆ; ไม่ส่ง = 30 วันล่าสุดถึงเมื่อวาน) |
+| `compare` | `None` \| `PreviousPeriod` \| `SamePeriodLastYear` | ช่วงเปรียบเทียบ (default `PreviousPeriod`) |
+| `granularity` | `Day` \| `Week` \| `Month` | ความละเอียดของกราฟแนวเวลา (default ตามความยาวช่วง: ≤ 62 วัน = Day, ≤ 366 = Week, อื่น ๆ = Month) |
+| `branch` | string[] (ส่งซ้ำได้ `branch=A&branch=B`) | รหัสสาขา |
+| `channel` | `SalesChannel[]` | `Pos`, `Online`, `App`, `Other` |
+| `brand` | string[] | แบรนด์จาก `ana_product` |
+| `category` | string[] | หมวดสินค้า |
+| `tier` | string[] | รหัส Tier ปัจจุบันของสมาชิก |
+| `registeredChannel` | `RegisteredChannel[]` | ช่องทางสมัคร |
+| `sourceCampaign` | string[] | แคมเปญที่พาสมัคร |
+| `campaign` | string[] | รหัสแคมเปญ (เฉพาะหน้าที่เกี่ยวกับโปรโมชัน) |
+| `savedFilterId` | guid | โหลดตัวกรองที่บันทึกไว้ (ค่าที่ส่งใน query ทับค่าใน saved filter) |
+
+```jsonc
+// AnalyticsResultDTO<T> — ซองของทุก response ใน §30–§33
+{ "data": { ... },                         // T ของแต่ละ endpoint
+  "appliedFilter": { "from": "2026-10-01", "to": "2026-10-31", "compare": "PreviousPeriod",
+                     "compareFrom": "2026-08-31", "compareTo": "2026-09-30", "granularity": "Day",
+                     "branch": ["BKK01"], "channel": [], "brand": [], "category": [], "tier": [],
+                     "registeredChannel": [], "sourceCampaign": [], "campaign": [] },
+  "scopeEmpty": false, "scopeClamped": true,   // true = มีค่าที่ขอถูกตัดเพราะอยู่นอกขอบเขต
+  "dataAsOf": "2026-11-26T03:05:00+07:00", "stale": false }
+
+// MetricValueDTO — ตัวเลข 1 ตัว
+{ "metric": "member.active", "value": 12840, "unit": "Count",          // unit: Count | Baht | Percent | Points | Days | Ratio
+  "kind": "Fact",                                                       // Fact (นับตรง) | Computed (คำนวณ) | Estimate (ประมาณการ เช่น ROI, uplift)
+  "compareValue": 12100, "changePct": 6.12,                             // null เมื่อ compare=None หรือฐานเป็น 0
+  "insufficientReason": null, "formulaVersion": "ana-2026.1",
+  "drilldown": "member.active" }                                        // รหัสที่ส่งให้ §34 ได้ (null = ดูต่อไม่ได้)
+
+// SeriesDTO — กราฟแนวเวลา / แยกกลุ่ม
+{ "metric": "sales.net", "unit": "Baht",
+  "points": [ { "key": "2026-10-01", "label": "1 ต.ค.", "value": 182340.50, "compareValue": 170200.00, "insufficientReason": null } ] }
+```
+
+## 29. สิทธิ์ของ Analytics (Application `customermgnt` ใน AuthServer)
+
+| permission / scope | บทบาทที่แนะนำ | ใช้กับ |
+|---|---|---|
+| `ana.dashboard.read` | ผู้บริหาร, Analyst, Promotion Manager | AN-01, AN-10, AN-11, AN-26 (ดู) |
+| `ana.member.read` | Analyst, Member Admin | AN-02, AN-04..AN-08, AN-15 (ตัวเลขรวม) |
+| `ana.member.detail` | Analyst | รายชื่อสมาชิกใน drill-down (mask PII) |
+| `ana.promotion.read` | Promotion Manager | AN-03, AN-12..AN-14 เฉพาะแคมเปญที่ตนสร้าง |
+| `ana.promotion.all` | ผู้บริหาร, Analyst, Approver | ทุกแคมเปญ |
+| `ana.report.build` | Analyst | สร้าง / แก้ / ทำสำเนารายงาน (AN-20) และตั้งเวลาส่ง (AN-21) |
+| `ana.report.share` | Analyst | แชร์รายงานให้ role / ผู้ใช้ |
+| `ana.export` | Analyst, ผู้บริหาร | ส่งออกไฟล์ (AN-22) |
+| `ana.alert.manage` | Analyst, Promotion Manager | กฎแจ้งเตือน (AN-23, AN-24) |
+| `ana.settings.manage` | System Admin | AN-25, AN-16F (funnel), AN-27/28 (ขอบเขต), สั่งคำนวณใหม่ (AN-26) |
+| `ana.scope.all` | ผู้บริหาร, System Admin | เห็นทุกสาขา / ช่องทาง / แบรนด์ โดยไม่ต้องตั้งขอบเขต |
+| `member.pii` | Member Admin | เห็น PII เต็มใน drill-down / export (บันทึก audit) — ใช้ของ §17 |
+| `segment.write` | Promotion Manager | บันทึกกลุ่ม RFM / drill-down เป็น Segment — ใช้ของ §17 |
+| `audit.read` | System Admin | ประวัติการเปลี่ยนตั้งค่า / ขอบเขต — ใช้ของ §17 |
+| `analytics.ingest` (scope) | client ของ POS / ERP / MessageHub / Portal | `api/v1/ingest/*` |
+
+## 30. Dashboard — `api/v1/analytics/dashboards` (ตัวกรอง §28.1)
+
+| Method | Route | สิทธิ์ | หน้าจอ | คืนค่า `AnalyticsResultDTO<...>` |
+|---|---|---|---|---|
+| GET | `/api/v1/analytics/dashboards/executive` | ana.dashboard.read | AN-01 | `ExecutiveDashboardDTO` |
+| GET | `/api/v1/analytics/dashboards/members` | ana.member.read | AN-02 | `MemberDashboardDTO` |
+| GET | `/api/v1/analytics/dashboards/promotions` | ana.promotion.read | AN-03 | `PromotionDashboardDTO` (เฉพาะแคมเปญที่เห็นได้) |
+
+```jsonc
+// ExecutiveDashboardDTO (ANA-DASH-001)
+{ "kpis": {                                     // MetricValueDTO ทุกตัว
+    "membersTotal": {...}, "membersNew": {...}, "membersActive": {...},
+    "memberSales": {...},                       // ยอดขายสุทธิของสมาชิก
+    "memberSalesShare": {...},                  // สัดส่วนยอดขายสมาชิก ÷ ยอดขายทั้งหมด (ต้องมี sales-summary §36.5 ไม่มี = insufficientReason missing_source)
+    "avgTicket": {...}, "purchaseFrequency": {...}, "repeatRate": {...},
+    "pointsEarned": {...}, "pointsRedeemed": {...}, "couponsRedeemed": {...},
+    "activeCampaigns": {...}, "promotionDiscount": {...} },
+  "salesTrend": SeriesDTO,                      // memberSales + compare
+  "membersTrend": SeriesDTO,                    // membersNew ตาม granularity
+  "topBranches": [ { "key": "BKK01", "label": "สยาม", "value": 1203400.00 } ],   // 10 อันดับ
+  "alerts": [ AlertEventDTO ] }                 // 5 รายการล่าสุดที่ยังไม่ resolved ในขอบเขต
+
+// MemberDashboardDTO (ANA-DASH-002)
+{ "newByRegisteredChannel": SeriesDTO[],         // 1 series ต่อช่องทาง
+  "byStatus": [ { "key": "Active", "value": 120344 } ],      // MemberStatus
+  "byTier": [ { "key": "GOLD", "label": "Gold", "value": 8200 } ],
+  "activityGroups": [ { "key": "Active", "value": {MetricValueDTO} } ],   // สรุปจาก §31 activity-groups
+  "nearTierUpgrade": {MetricValueDTO}, "tierAtRisk": {MetricValueDTO},
+  "verificationRate": {MetricValueDTO} }         // สมัครแล้วยืนยันสำเร็จ ÷ สมัครทั้งหมด
+
+// PromotionDashboardDTO (ANA-DASH-003)
+{ "campaignsByStatus": [ { "key": "Active", "value": 4 } ],  // CampaignStatus จริง ทุกค่า
+  "kpis": { "eligibleMembers": {...}, "participants": {...}, "participationRate": {...},
+            "campaignSales": {...}, "promotionDiscount": {...}, "couponsIssued": {...}, "couponsRedeemed": {...} },
+  "topCampaigns": [ { "campaignCode": "XMAS26", "name": "...", "status": "Active", "participants": 1203, "campaignSales": 820400.00 } ],
+  "budgetUsage": [ { "campaignCode": "XMAS26", "budget": 200000.00, "used": 182000.00, "usedPct": 91.0 } ] }
+```
+
+## 31. วิเคราะห์สมาชิก — `api/v1/analytics/members` (สิทธิ์ `ana.member.read`)
+
+| Method | Route | หน้าจอ | ขาเข้าเพิ่ม | คืนค่า `AnalyticsResultDTO<...>` |
+|---|---|---|---|---|
+| GET | `/api/v1/analytics/members/activity-groups` | AN-04 (ANA-MEM-001) | `to` = วันที่อ้างอิง (`from` ไม่ใช้) | `ActivityGroupsDTO` |
+| GET | `/api/v1/analytics/members/rfm` | AN-05 (ANA-MEM-002) | – | `RfmDTO` |
+| POST | `/api/v1/analytics/members/rfm/segments` | AN-05 | สิทธิ์ `segment.write` + body `{ name, description?, cells: ["5-5","5-4"] \| groups: ["Champions"], filter: AnalyticsFilterDTO }` | 201 `{ segmentId, memberCount, snapshotAt }` — Segment แบบ snapshot (ไม่คำนวณใหม่) ใน `api/v1/segments` |
+| GET | `/api/v1/analytics/members/cohorts` | AN-06 (ANA-MEM-003) | `cohortBy=Registration\|FirstPurchase\|SourceCampaign`, `measure=Retention\|CumulativeSales`, `months` (1–24, default 12) | `CohortDTO` |
+| GET | `/api/v1/analytics/members/repeat-purchase` | AN-07 (ANA-MEM-004) | `firstPurchaseDays` (default 30) | `RepeatPurchaseDTO` |
+| GET | `/api/v1/analytics/members/purchase-value` | AN-08 (ANA-MEM-005) | `breakdown=Tier\|Branch\|Channel\|Category\|Brand` | `PurchaseValueDTO` |
+| GET | `/api/v1/analytics/members/sources` | AN-15 (ANA-CHANNEL-001) | – | `MemberSourceDTO` |
+
+```jsonc
+// ActivityGroupsDTO — สมาชิก 1 คนอยู่ได้หลายกลุ่ม (สูตรข้อ 2)
+{ "groups": [ { "code": "New" | "NoPurchaseYet" | "FirstPurchase" | "Repeat" | "Regular" | "Active" | "AtRisk" | "Lapsed"
+                     | "PointsExpiringSoon" | "UnusedCoupon" | "TierReviewSoon" | "NearTierUpgrade" | "TierAtRisk",
+                "label": "ซื้อซ้ำ", "count": {MetricValueDTO}, "drilldown": "group.Repeat" } ],
+  "thresholds": { "activeDays": 90, "atRiskDays": 180, "regularMinPurchases": 4, "regularMinMonths": 3,
+                  "expiringDays": 30, "tierReviewDays": 30, "nearUpgradePct": 80 } }   // จาก AN-25
+
+// RfmDTO — quintile 1–5 (สูตรข้อ 2)
+{ "cells": [ { "r": 5, "f": 5, "members": 820, "avgMonetary": 18200.00, "group": "Champions" } ],   // 25 ช่อง (R×F)
+  "groups": [ { "code": "Champions", "label": "ลูกค้าดีที่สุด", "rule": "R≥4 และ F≥4", "members": 2100, "salesShare": 41.2 } ],
+  "boundaries": { "r": [30, 60, 120, 240], "f": [1, 2, 4, 8], "m": [500, 1500, 4000, 10000] },
+  "membersScored": 54000, "insufficientReason": null }
+
+// CohortDTO — ช่องของเดือนที่ยังไม่ครบ = null (แสดงว่าง)
+{ "cohortBy": "Registration", "measure": "Retention",
+  "rows": [ { "cohort": "2026-01", "size": 3200, "values": [100.0, 32.5, 28.1, null] } ] }   // values[k] = เดือนที่ k (0 = เดือนเริ่ม)
+
+// RepeatPurchaseDTO
+{ "repeatRate": {MetricValueDTO}, "firstPurchaseConversion": {MetricValueDTO},
+  "avgDaysBetweenPurchases": {MetricValueDTO}, "repeatWithinNDays": {MetricValueDTO},
+  "byPurchaseCount": [ { "key": "1", "value": 21000 }, { "key": "2", "value": 8000 }, { "key": "3+", "value": 5200 } ],
+  "trend": SeriesDTO }
+
+// PurchaseValueDTO
+{ "avgSalesPerMember": {MetricValueDTO}, "avgTicket": {MetricValueDTO}, "itemsPerTicket": {MetricValueDTO},
+  "distribution": [ { "key": "0-500", "members": 12000, "sales": 3200000.00 } ],   // ช่วงจาก AN-25
+  "breakdown": [ { "key": "GOLD", "label": "Gold", "members": 8200, "sales": 9800000.00, "avgTicket": 1240.50 } ] }
+
+// MemberSourceDTO
+{ "byRegisteredChannel": [ { "key": "Portal", "newMembers": 1200, "verifiedRate": 92.1, "firstPurchaseRate": 41.0, "repeatRate": 18.3 } ],
+  "bySourceCampaign": [ { "campaignCode": "SIGNUP26", "newMembers": 800, "firstPurchaseRate": 52.0,
+                          "costPerNewMember": {MetricValueDTO} } ] }   // ไม่มี campaign-costs = insufficientReason missing_source
+```
+
+## 32. คะแนนและคูปอง — `api/v1/analytics` (สิทธิ์ `ana.dashboard.read`)
+
+| Method | Route | หน้าจอ | คืนค่า `AnalyticsResultDTO<...>` |
+|---|---|---|---|
+| GET | `/api/v1/analytics/points` | AN-10 (ANA-PTS-001) | `PointsAnalyticsDTO` |
+| GET | `/api/v1/analytics/coupons?campaign=&batchId=` | AN-11 (ANA-PTS-002) | `CouponAnalyticsDTO` |
+
+```jsonc
+// PointsAnalyticsDTO (สูตรข้อ 3)
+{ "kpis": { "earned": {...}, "redeemed": {...}, "expired": {...}, "adjusted": {...},
+            "outstanding": {...},                 // Σ(lot_balance − reserved − debt) ณ วันที่ to
+            "liabilityBaht": {...},               // outstanding × มูลค่าคะแนน (Estimate)
+            "redemptionRate": {...} },
+  "flowTrend": SeriesDTO[],                       // earned / redeemed / expired / adjusted
+  "expiringNext": [ { "key": "2026-12", "value": 120400 } ],    // 3 เดือนข้างหน้า
+  "largeAdjustments": [ { "ledgerId": 99120, "memberNoMasked": "M26xxx01", "points": -5000, "at": "...", "by": "u-3" } ] }
+
+// CouponAnalyticsDTO (สูตรข้อ 3)
+{ "kpis": { "issued": {...}, "distributed": {...}, "redeemed": {...}, "expired": {...}, "cancelled": {...},
+            "usageRate": {...},                   // ใช้ ÷ คูปองที่มีสิทธิ์ใช้ใน P
+            "avgDaysToRedeem": {...}, "salesWithCoupon": {...} },
+  "trend": SeriesDTO[],
+  "byCampaign": [ { "campaignCode": "XMAS26", "issued": 10000, "redeemed": 3200, "usageRate": 32.0, "flag": null } ] }   // flag: LowUsage | Abnormal | null
+```
+
+## 33. โปรโมชัน — `api/v1/analytics/campaigns` (สิทธิ์ `ana.promotion.read` = แคมเปญของตน, `ana.promotion.all` = ทุกแคมเปญ)
+
+| Method | Route | หน้าจอ | ขาเข้า | คืนค่า |
+|---|---|---|---|---|
+| GET | `/api/v1/analytics/campaigns` | AN-12 | ตัวกรอง §28.1 + `status[]`, `rewardType[]`, `text`, `page`, `pageSize` (≤ 100) | `AnalyticsResultDTO<PagedResultDTO<CampaignAnalyticsSummaryDTO>>` |
+| GET | `/api/v1/analytics/campaigns/{code}` | AN-13 แท็บภาพรวม (ANA-PRO-001) | `attribution=InPeriod\|BenefitUsed\|Influenced` (default `BenefitUsed`) | `AnalyticsResultDTO<CampaignReportDTO>` |
+| GET | `/api/v1/analytics/campaigns/{code}/breakdown` | AN-13 แท็บแยกมิติ | `dimension=Branch\|Channel\|Tier\|Category\|Brand\|Day`, `attribution` | `AnalyticsResultDTO<BreakdownRowDTO[]>` |
+| GET | `/api/v1/analytics/campaigns/{code}/lift` | AN-13 แท็บกลุ่มควบคุม (ANA-PRO-003) | – | `AnalyticsResultDTO<CampaignLiftDTO>` |
+| GET | `/api/v1/analytics/campaigns/{code}/roi` | AN-13 แท็บต้นทุน/ROI (ANA-PRO-004) | – | `AnalyticsResultDTO<CampaignRoiDTO>` |
+| GET | `/api/v1/analytics/campaigns/compare?codes=A&codes=B` | AN-14 (ANA-PRO-002) | 2–5 แคมเปญ, `attribution` | `AnalyticsResultDTO<CampaignCompareDTO>` / 400 `compare_limit` |
+
+- แคมเปญที่มองไม่เห็นตามสิทธิ์ = 404 `not_found` (ไม่บอกว่ามีอยู่)
+- ตัวเลขของแคมเปญถูกตัดตามขอบเขตของผู้เรียกเหมือนหน้าอื่น (`scopeClamped`)
+
+```jsonc
+// CampaignAnalyticsSummaryDTO
+{ "campaignCode": "XMAS26", "name": "...", "status": "Active", "rewardType": "PercentDiscount",
+  "startAt": "...", "endAt": "...", "holdoutPct": 10, "eligibleMembers": 52000, "participants": 3100,
+  "campaignSales": 2100400.00, "discount": 210040.00, "hasCost": true }
+
+// CampaignReportDTO (ANA-PRO-001)
+{ "campaign": CampaignAnalyticsSummaryDTO, "targetSegment": { "segmentId": 4, "name": "Gold ซื้อใน 90 วัน" },
+  "kpis": { "eligibleMembers": {...}, "messaged": {...}, "participants": {...}, "participationRate": {...},
+            "transactions": {...}, "campaignSales": {...}, "avgTicket": {...}, "discount": {...},
+            "pointsGiven": {...}, "couponsIssued": {...}, "couponsRedeemed": {...}, "newMembers": {...},
+            "budgetUsedPct": {...} },
+  "trend": SeriesDTO[], "attribution": "BenefitUsed", "influenceWindowDays": 7 }
+
+// BreakdownRowDTO
+{ "key": "BKK01", "label": "สยาม", "participants": 320, "transactions": 410, "sales": 302000.00, "discount": 30200.00, "avgTicket": 736.59 }
+
+// CampaignLiftDTO (สูตรข้อ 4) — ไม่มีกลุ่มควบคุม = hasControl:false และทุกค่าเป็น null
+{ "hasControl": true, "holdoutPct": 10, "treated": 46800, "control": 5200,
+  "purchaseRateTreated": {...}, "purchaseRateControl": {...}, "salesPerMemberTreated": {...}, "salesPerMemberControl": {...},
+  "lift": { "value": 4.2, "unit": "Percent", "kind": "Estimate", "ciLow": 1.1, "ciHigh": 7.3, "significant": true, ... },   // MetricValueDTO + CI 95%
+  "upliftSales": {MetricValueDTO} }               // (s_t − s_c) × n_t
+
+// CampaignRoiDTO (สูตรข้อ 4)
+{ "discount": {...}, "pointsCost": {...}, "campaignCost": {...},        // D, V, K
+  "costIncluded": true,                                                // false = ไม่มี campaign-costs → K=0 ป้าย "ไม่รวมต้นทุนแคมเปญ"
+  "grossProfit": {...}, "grossMarginPct": {...}, "costCoveragePct": 97.4,
+  "roi": {MetricValueDTO},                                             // null + insufficientReason "no_control_group" เมื่อไม่มีกลุ่มควบคุม
+  "breakEvenSales": {MetricValueDTO} }
+
+// CampaignCompareDTO — ไม่เทียบตรงเมื่อต่างกันมาก
+{ "campaigns": [ CampaignAnalyticsSummaryDTO + { "kpis": {...} } ],
+  "warnings": [ "duration_differs" | "eligible_size_differs" | "reward_type_differs" | "control_mismatch" ] }
+```
+
+## 34. Drill-down — `api/v1/analytics/drilldown` (ANA-FILTER-002, AN-09)
+
+| Method | Route | สิทธิ์ | ขาเข้า | คืนค่า |
+|---|---|---|---|---|
+| GET | `/api/v1/analytics/drilldown` | สิทธิ์ของหน้าที่มา + `ana.member.detail` ถ้า `level=Member` | ตัวกรอง §28.1 + `metric` (ค่า `drilldown` จาก MetricValueDTO), `level=Member\|Transaction\|Coupon\|Ledger`, `sort`, `page`, `pageSize` (≤ 200) | `AnalyticsResultDTO<DrilldownPageDTO>` |
+| POST | `/api/v1/analytics/drilldown/segments` | `segment.write` + `ana.member.detail` | `{ name, metric, filter }` | 201 `{ segmentId, memberCount, snapshotAt }` (≤ 200,000 คน ไม่งั้น 400 `too_many_rows`) |
+
+- อ่าน `mbr_*` ตรง จึงตรงกับตัวเลขสรุปได้ต่างกันไม่เกินรอบ refresh ล่าสุด (`dataAsOf`) — response บอก `liveSource: true`
+- PII mask เว้นแต่มี `member.pii` (ทุกครั้งที่ดู PII เต็มบันทึก audit `ana.drilldown.pii`)
+
+```jsonc
+// DrilldownPageDTO
+{ "metric": "member.active", "level": "Member", "liveSource": true,
+  "columns": [ { "key": "memberNo", "label": "เลขสมาชิก", "type": "String" }, { "key": "lastPurchaseAt", "label": "ซื้อล่าสุด", "type": "Date" } ],
+  "rows": [ { "memberId": 101, "memberNo": "M2600001", "displayName": "สมชาย ใ.", "phone": "081-xxx-5678", "tierCode": "GOLD",
+              "lastPurchaseAt": "2026-11-20", "sales": 18200.00 } ],
+  "page": 1, "pageSize": 50, "total": 12840 }
+```
+
+## 35. ตัวกรองที่บันทึก / รายงาน / ตั้งเวลา / ส่งออก — `api/v1/analytics`
+
+| Method | Route | สิทธิ์ | ขาเข้า | คืนค่า |
+|---|---|---|---|---|
+| GET | `/api/v1/analytics/saved-filters?page=` | ผู้ใช้ที่มี `ana.*` ใด ๆ | `page` = รหัสหน้าจอ (`AN-01`) | `SavedFilterDTO[]` (ของตัวเอง) |
+| POST | `/api/v1/analytics/saved-filters` | เดียวกัน | `{ page, name, filter: AnalyticsFilterDTO, isDefault }` | 201 `SavedFilterDTO` (≤ 50 ต่อคนต่อหน้า) |
+| PUT / DELETE | `/api/v1/analytics/saved-filters/{id}` | เจ้าของ | `SavedFilterDTO` (`version`) | `SavedFilterDTO` / 204 |
+| GET | `/api/v1/analytics/catalog` | ผู้ใช้ที่มี `ana.*` ใด ๆ | – | `MetricCatalogDTO` (metric และ dimension ที่ผู้เรียกใช้ได้ตามสิทธิ์) |
+| GET | `/api/v1/analytics/reports` | ผู้ใช้ที่มี `ana.*` ใด ๆ | `?mine=&standard=&text=` | `ReportSummaryDTO[]` (มาตรฐาน + ของตน + ที่แชร์ให้) — AN-18 |
+| GET | `/api/v1/analytics/reports/{id}` | เจ้าของ / ผู้ถูกแชร์ | – | `ReportDefinitionDTO` |
+| POST | `/api/v1/analytics/reports` | ana.report.build | `ReportDefinitionDTO` | 201 / 400 `report_too_complex` (dimension > 3 หรือ metric > 10) |
+| PUT | `/api/v1/analytics/reports/{id}` | ana.report.build (เจ้าของ) | `ReportDefinitionDTO` (`version`) | `ReportDefinitionDTO` — รายงานมาตรฐานแก้ไม่ได้ (409 `standard_report`) ให้ทำสำเนา |
+| POST | `/api/v1/analytics/reports/{id}/copy` | ana.report.build | `{ name }` | 201 `ReportDefinitionDTO` |
+| DELETE | `/api/v1/analytics/reports/{id}` | เจ้าของ | – | 204 (ลบ schedule ของรายงานด้วย) |
+| PUT | `/api/v1/analytics/reports/{id}/shares` | ana.report.share (เจ้าของ) | `[{ subjectType: "Role\|User", subject }]` (แทนที่ทั้งชุด) | `ReportShareDTO[]` |
+| GET | `/api/v1/analytics/reports/{id}/run` | เจ้าของ / ผู้ถูกแชร์ | ตัวกรอง §28.1 (ทับค่าในรายงาน) + `page`, `pageSize` (≤ 1,000) | `AnalyticsResultDTO<ReportResultDTO>` — AN-19 (ตามขอบเขตของ**ผู้เปิด**) |
+| GET | `/api/v1/analytics/schedules` | ana.report.build | – | `ReportScheduleDTO[]` (ของตน) — AN-21 |
+| POST | `/api/v1/analytics/schedules` | ana.report.build | `ReportScheduleDTO` | 201 |
+| PUT / DELETE | `/api/v1/analytics/schedules/{id}` | เจ้าของ | `ReportScheduleDTO` (`version`) | `ReportScheduleDTO` / 204 |
+| POST | `/api/v1/analytics/schedules/{id}/run-now` | เจ้าของ | – | 202 `ExportJobDTO` |
+| POST | `/api/v1/analytics/exports` | ana.export (+ `ana.member.detail` ถ้ามีรายชื่อ, `member.pii` ถ้าไม่ mask) | `{ source: "Report\|Dashboard\|Drilldown", reportId?, page?, metric?, level?, filter, format: "Xlsx\|Csv\|Pdf" }` | 202 `ExportJobDTO` (ANA-REPORT-002) |
+| GET | `/api/v1/analytics/exports` | ana.export | `?mine=true` | `ExportJobDTO[]` — AN-22 (ของตน; `audit.read` เห็นทุกคน) |
+| GET | `/api/v1/analytics/exports/{id}/file` | เจ้าของงาน | – | ไฟล์ (หมดอายุ `exportRetentionHours` ค่าเริ่มต้น 24 ชม.) / 410 `export_expired` |
+
+```jsonc
+// SavedFilterDTO
+{ "id": "guid", "page": "AN-01", "name": "สาขา กทม. เดือนนี้", "filter": AnalyticsFilterDTO, "isDefault": true, "version": 3 }
+
+// MetricCatalogDTO — แหล่งรหัส metric ที่ใช้ใน report builder / alert / drill-down
+{ "metrics": [ { "code": "sales.net", "label": "ยอดขายสุทธิ", "unit": "Baht", "kind": "Fact", "requires": "ana.dashboard.read",
+                 "dimensions": ["Day","Week","Month","Branch","Channel","Brand","Category","Tier","Campaign"], "formulaVersion": "ana-2026.1",
+                 "definition": "Subtotal − DiscountTotal − ยอดคืน (สูตรข้อ 1)" } ],
+  "dimensions": [ { "code": "Branch", "label": "สาขา" } ] }
+
+// ReportDefinitionDTO (ANA-REPORT-001)
+{ "id": "guid", "name": "ยอดขายสมาชิกรายสาขา", "description": null, "standard": false, "ownerSub": "u-1",
+  "dimensions": ["Branch", "Month"],           // ≤ 3
+  "metrics": ["sales.net", "member.active"],   // ≤ 10
+  "filter": AnalyticsFilterDTO, "sort": [ { "key": "sales.net", "desc": true } ],
+  "display": "Table" | "Line" | "Bar" | "Pie", "version": 2 }
+
+// ReportResultDTO
+{ "columns": [ { "key": "Branch", "label": "สาขา", "type": "String" }, { "key": "sales.net", "label": "ยอดขายสุทธิ", "type": "Baht" } ],
+  "rows": [ { "Branch": "BKK01", "Month": "2026-10", "sales.net": 1203400.00, "member.active": 2100 } ],
+  "totals": { "sales.net": 9820400.00 }, "insufficient": { "member.active": null }, "page": 1, "pageSize": 100, "total": 24 }
+
+// ReportScheduleDTO
+{ "id": "guid", "reportId": "guid", "cron": "0 8 * * MON", "timezone": "Asia/Bangkok",
+  "range": "PreviousWeek" | "PreviousMonth" | "MonthToDate" | "Last7Days" | "Last30Days",
+  "format": "Xlsx", "recipients": ["analyst@example.co.th"],   // ส่งเป็นไฟล์แนบผ่าน MessageHub; ผู้รับต้องเป็นผู้ใช้ AuthServer หรืออยู่ใน allowRecipientDomains ของ AN-25
+  "failureRecipients": ["owner@example.co.th"], "enabled": true, "nextRunAt": "...", "lastRun": { "at": "...", "status": "Done|Failed", "error": null }, "version": 1 }
+
+// ExportJobDTO (ใช้ซ้ำของ §24 + field เพิ่ม)
+{ "id": "guid", "source": "Report", "format": "Xlsx", "filter": {...}, "status": "Queued|Running|Done|Failed|Expired",
+  "rowCount": 1200, "masked": true, "requestedBy": "u-1", "requestedAt": "...", "expiresAt": "...", "scheduleId": null }
+```
+
+## 36. รับข้อมูลจากระบบต้นทาง — `api/v1/ingest` (scope `analytics.ingest`, ANA-DATA-001..003)
+
+ทุก endpoint ในหมวดนี้:
+- **บังคับ** `Idempotency-Key` (≤ 100) เก็บใน `ana_ingest_idempotency` 7 วันต่อ (client_id, key) — กติกาเดียวกับ §16 (ส่งซ้ำ body เดิม = response เดิม + `Idempotent-Replayed: true`, body ต่าง = 422 `idempotency_key_reused`, กำลังทำ = 409 `request_in_progress`)
+- `sourceSystem` = claim `client_id` (ไม่รับจาก body)
+- batch สูงสุด 1,000 รายการ / 1 MB — ประมวลผล**ทีละรายการ** ตอบ 200 พร้อมผลรายการ (ไม่ทั้ง batch ล้มเพราะรายการเดียว) ยกเว้น body ผิดรูปแบบทั้งก้อน = 400
+- **มาซ้ำ / มาผิดลำดับ**: master data (`products`, `branches`) ใช้ `updatedAt` ของต้นทาง — เก่ากว่าที่มีอยู่ = ข้าม (`status: "Stale"`); event (`message-events`) กันซ้ำด้วย `eventId` และเก็บเวลาที่เร็วที่สุด; ข้อมูลรายวัน (`sales-summary`, `campaign-costs`) แทนที่ทั้งแถวด้วยคีย์ธรรมชาติ + `revision` (เลขน้อยกว่าที่มี = `Stale`)
+- รายการที่อ้างถึงข้อมูลที่ยังไม่มี (เช่น messageId ที่ไม่รู้จัก) บันทึกใน `ana_data_issue` และตอบ `status: "Unknown"` — ไม่ error
+- ทุกรายการที่รับแล้วทำเครื่องหมายวันที่กระทบเป็น dirty ให้ refresh ครั้งถัดไปคำนวณใหม่
+
+| Method | Route | ขาเข้า | หมายเหตุ |
+|---|---|---|---|
+| PUT | `/api/v1/ingest/products` | `ProductIngestDTO[]` | master สินค้า: แบรนด์ หมวด และต้นทุน (ต้นทุนเก็บเป็นช่วงเวลา `ana_product_cost`) |
+| PUT | `/api/v1/ingest/branches` | `BranchIngestDTO[]` | master สาขา + เวลาเปิด–ปิด (ใช้กับ alert "ไม่มีข้อมูล POS") |
+| POST | `/api/v1/ingest/campaign-costs` | `CampaignCostIngestDTO[]` | ต้นทุนแคมเปญ K (ค่าสื่อ ค่าข้อความ ฯลฯ) |
+| POST | `/api/v1/ingest/message-events` | `MessageEventIngestDTO[]` | เหตุการณ์ข้อความจาก MessageHub และการดูโปรโมชันจาก Portal (funnel / attribution "Influenced") |
+| POST | `/api/v1/ingest/sales-summary` | `SalesSummaryIngestDTO[]` | ยอดขาย**ทั้งหมด**รายวัน/สาขา/ช่องทาง (รวมคนที่ไม่ใช่สมาชิก) สำหรับ "สัดส่วนยอดขายสมาชิก" |
+
+```jsonc
+// ผลตอบกลับของทุก ingest — 200
+{ "accepted": 998, "stale": 1, "unknown": 0, "rejected": 1,
+  "results": [ { "index": 0, "key": "SKU-1", "status": "Accepted" | "Stale" | "Unknown" | "Rejected", "error": null } ],   // error: validation_failed รายการนั้น
+  "requestId": "..." }
+
+// ProductIngestDTO
+{ "itemCode": "SKU-1", "name": "...", "brand": "ACME", "category": "FOOD", "active": true,
+  "unitCost": 210.00, "costEffectiveFrom": "2026-11-01",       // optional; ไม่ส่ง = ไม่เปลี่ยนต้นทุน
+  "updatedAt": "2026-11-25T10:00:00+07:00" }
+
+// BranchIngestDTO
+{ "branchCode": "BKK01", "name": "สยาม", "region": "BKK", "active": true,
+  "openTime": "10:00", "closeTime": "22:00",                  // เวลาท้องถิ่น; ข้ามเที่ยงคืนได้ (closeTime < openTime); ไม่ส่ง = ไม่ตรวจ alert ไม่มีข้อมูล POS
+  "closedWeekdays": ["Mon"], "updatedAt": "..." }
+
+// CampaignCostIngestDTO — คีย์ (campaignCode, costDate, costType)
+{ "campaignCode": "XMAS26", "costDate": "2026-11-20", "costType": "Media" | "Messaging" | "Printing" | "Other",
+  "amount": 15000.00, "note": null, "revision": 1 }
+
+// MessageEventIngestDTO — คีย์ eventId
+{ "eventId": "guid", "type": "Sent" | "Delivered" | "Opened" | "Clicked" | "PortalView",
+  "messageId": "mh-123",           // ต้องมีเมื่อ type ≠ PortalView (ใช้หา campaign + member จาก ana_message_recipient)
+  "campaignCode": "XMAS26",        // ต้องมีเมื่อ type = PortalView
+  "memberNo": "M2600001",          // ต้องมีเมื่อ type = PortalView
+  "occurredAt": "2026-11-20T09:15:00+07:00" }
+
+// SalesSummaryIngestDTO — คีย์ (businessDate, branchCode, channel)
+{ "businessDate": "2026-11-20", "branchCode": "BKK01", "channel": "Pos",
+  "netSales": 1802400.00, "transactions": 2410, "revision": 3 }
+```
+
+ผู้รับข้อความของแคมเปญ (`ana_message_recipient`) ระบบบันทึกเองตอนส่งผ่าน `POST /api/v1/campaign-messages` (§24) — ไม่ต้อง ingest
+
+## 37. Funnel — `api/v1/analytics/funnels` (ANA-CHANNEL-002)
+
+| Method | Route | สิทธิ์ | ขาเข้า | คืนค่า |
+|---|---|---|---|---|
+| GET | `/api/v1/analytics/funnels` | ana.promotion.read | – | `FunnelDTO[]` |
+| GET | `/api/v1/analytics/funnels/{id}` | ana.promotion.read | – | `FunnelDTO` (ใช้ในหน้าแก้ไข AN-16F) |
+| GET | `/api/v1/analytics/funnels/{id}/result` | ana.promotion.read | ตัวกรอง §28.1 + `campaign` (แคมเปญที่มองไม่เห็นถูกตัด) | `AnalyticsResultDTO<FunnelResultDTO>` — AN-16 |
+| POST | `/api/v1/analytics/funnels` | ana.settings.manage | `FunnelDTO` | 201 — AN-16F |
+| PUT / DELETE | `/api/v1/analytics/funnels/{id}` | ana.settings.manage | `FunnelDTO` (`version`) | `FunnelDTO` / 204 |
+
+```jsonc
+// FunnelDTO — 2–6 ขั้น
+{ "id": "guid", "name": "ข้อความ → ซื้อ", "maxGapHours": 168,
+  "steps": [ "MessageReceived" | "MessageOpened" | "MessageClicked" | "PortalView" | "CouponReceived" | "Registered" | "Purchased" | "RepeatPurchased" ],
+  "version": 1 }
+
+// FunnelResultDTO (สูตรข้อ 5) — เหตุการณ์มาผิดลำดับถูกเติมขั้นก่อนหน้า
+{ "steps": [ { "step": "MessageReceived", "members": 52000, "conversionFromPrev": null, "dropOff": null, "medianHoursFromPrev": null,
+               "insufficientReason": null },
+             { "step": "MessageOpened", "members": 21000, "conversionFromPrev": 40.4, "dropOff": 59.6, "medianHoursFromPrev": 2.5,
+               "insufficientReason": null },
+             { "step": "PortalView", "members": null, "insufficientReason": "missing_source" } ],   // ไม่มีข้อมูลขั้นนั้น → ขั้นถัดไปก็คำนวณไม่ได้
+  "overallConversion": {MetricValueDTO} }
+```
+
+## 38. แจ้งเตือน — `api/v1/analytics/alerts` (ANA-ALERT-001, สิทธิ์ `ana.alert.manage`)
+
+| Method | Route | ขาเข้า | คืนค่า |
+|---|---|---|---|
+| GET | `/api/v1/analytics/alerts/rules` | – | `AlertRuleDTO[]` |
+| GET | `/api/v1/analytics/alerts/rules/{id}` | – | `AlertRuleDTO` |
+| POST | `/api/v1/analytics/alerts/rules` | `AlertRuleDTO` | 201 — AN-24 |
+| PUT / DELETE | `/api/v1/analytics/alerts/rules/{id}` | `AlertRuleDTO` (`version`) | `AlertRuleDTO` / 204 |
+| POST | `/api/v1/analytics/alerts/rules/{id}/test` | – | `AlertTestResultDTO { value, threshold, wouldFire }` (ประเมินทันที ไม่ส่งข้อความ) |
+| GET | `/api/v1/analytics/alerts/events` | `?ruleId=&state=&from=&to=&page=&pageSize=` | `PagedResultDTO<AlertEventDTO>` — AN-23 (เฉพาะขอบเขตของผู้เรียก) |
+
+```jsonc
+// AlertRuleDTO — ประเมินหลัง refresh ทุกรอบ (สูตรข้อ 5)
+{ "id": "guid", "name": "คูปอง XMAS ใช้น้อย",
+  "type": "CouponUsageLow" | "CouponUsageHigh" | "CampaignBudgetNear" | "PointsAdjustmentAbnormal"
+        | "NoPosData" | "NewMembersDrop" | "RedemptionSpike",
+  "params": { "campaignCode": "XMAS26", "thresholdPct": 5, "windowHours": 24 },   // ตาม type (ดูตารางด้านล่าง)
+  "scope": { "branches": [], "channels": [], "brands": [] },   // ต้องอยู่ในขอบเขตของผู้สร้าง
+  "recipients": [ { "channel": "Email" | "InApp", "to": "analyst@example.co.th" } ],
+  "cooldownMinutes": 240, "enabled": true, "version": 1 }
+
+// AlertEventDTO
+{ "id": "guid", "ruleId": "guid", "ruleName": "...", "type": "CouponUsageLow", "scopeKey": "campaign:XMAS26",
+  "value": 3.1, "threshold": 5, "state": "Fired" | "Suppressed" | "Resolved" | "Failed",   // Suppressed = อยู่ใน cooldown; Failed = ส่งข้อความไม่สำเร็จหลัง retry
+  "occurredAt": "...", "notifiedAt": "...", "drilldown": "coupon.redeemed" }
+```
+
+| type | params | เงื่อนไข |
+|---|---|---|
+| `CouponUsageLow` / `CouponUsageHigh` | `campaignCode?`, `thresholdPct`, `windowHours` | อัตราใช้ใน window < / > ค่า |
+| `CampaignBudgetNear` | `campaignCode?`, `thresholdPct` | ใช้งบ ≥ x% |
+| `PointsAdjustmentAbnormal` | `multiplier` (default 3) | ปรับคะแนนเดือนนี้ > multiplier × ค่าเฉลี่ย 3 เดือนก่อน |
+| `NoPosData` | `minutes` (default 60) | ไม่มีธุรกรรมจากสาขาเกิน N นาทีภายในเวลาทำการ (`openTime`–`closeTime`) |
+| `NewMembersDrop` | `thresholdPct` | สมาชิกใหม่สัปดาห์นี้ลดลงจากค่าเฉลี่ย 4 สัปดาห์ก่อน > x% |
+| `RedemptionSpike` | `thresholdMultiplier` (default 3) | การใช้คะแนน / คูปองในชั่วโมงนั้น > ค่า × ค่าเฉลี่ยชั่วโมงเดียวกัน 4 สัปดาห์ก่อน |
+
+## 39. ตั้งค่า / ขอบเขต / สถานะข้อมูล — `api/v1/analytics/admin`
+
+| Method | Route | สิทธิ์ | ขาเข้า | คืนค่า |
+|---|---|---|---|---|
+| GET | `/api/v1/analytics/admin/settings` | ana.settings.manage | – | `AnalyticsSettingsDTO` — AN-25 |
+| PUT | `/api/v1/analytics/admin/settings` | ana.settings.manage | `AnalyticsSettingsDTO` (`version`) | `AnalyticsSettingsDTO` (บันทึก audit; เปลี่ยนเกณฑ์ = read model ถูก mark dirty ย้อนหลัง `recomputeDays`) |
+| GET | `/api/v1/analytics/admin/data-status` | ana.dashboard.read | – | `DataStatusDTO` — AN-26 |
+| GET | `/api/v1/analytics/admin/data-issues` | ana.dashboard.read | `?kind=&page=&pageSize=` | `PagedResultDTO<DataIssueDTO>` |
+| POST | `/api/v1/analytics/admin/refresh` | ana.settings.manage | `{ tables?: string[], from, to }` (≤ 731 วัน) | 202 `RefreshRunDTO` / 409 `refresh_running` (มีงานช่วงทับกันอยู่) |
+| GET | `/api/v1/analytics/admin/refresh` | ana.dashboard.read | – | `RefreshRunDTO[]` (คำขอล่าสุด ใหม่สุดก่อน) |
+| GET | `/api/v1/analytics/admin/data-scopes` | ana.settings.manage | `?subject=` | `DataScopeRuleDTO[]` — AN-27 |
+| GET | `/api/v1/analytics/admin/data-scopes/effective?sub=&roles=` | ana.settings.manage | `roles` ซ้ำได้ (Role อยู่ใน AuthServer จึงต้องส่งมาเอง) | `EffectiveScopeDTO` (รวมของผู้ใช้ + ทุก role พร้อมที่มา) |
+| POST | `/api/v1/analytics/admin/data-scopes` | ana.settings.manage | `DataScopeRuleDTO` | 201 — AN-28 |
+| PUT / DELETE | `/api/v1/analytics/admin/data-scopes/{id}` | ana.settings.manage | `DataScopeRuleDTO` (`version`) | `DataScopeRuleDTO` / 204 |
+
+```jsonc
+// AnalyticsSettingsDTO — ค่าเริ่มต้นตามสูตรที่ยืนยันแล้ว
+{ "activeDays": 90, "atRiskDays": 180, "firstPurchaseDays": 30, "regularMinPurchases": 4, "regularWindowDays": 180, "regularMinMonths": 3,
+  "expiringDays": 30, "tierReviewDays": 30, "tierRiskDays": 90, "nearUpgradePct": 80,
+  "influenceWindowDays": 7, "minGroupSize": 100, "costCoverageMinPct": 95,
+  "purchaseValueBands": [500, 1000, 5000, 10000],
+  "largeAdjustmentPoints": 1000, "pointCostBaht": 0.25,
+  "refreshMinutes": { "coupon": 5, "campaign": 15, "sales": 60, "member": 1440 },   // ANA-DATA-003
+  "staleAfterMinutes": 120, "recomputeDays": 35,
+  "exportRetentionHours": 24, "exportMaxRows": 200000, "allowRecipientDomains": ["example.co.th"],
+  "version": 4 }
+
+// DataStatusDTO
+{ "tables": [ { "table": "ana_sales_daily", "lastRunAt": "...", "lastStatus": "Done" | "Failed" | "Running",
+                "watermark": "...", "dirtyDays": 2, "lagMinutes": 12, "nextRunAt": "..." } ],
+  "sources": [ { "source": "sales-summary", "clientId": "pos-main", "lastReceivedAt": "...", "last24h": 12000, "rejected24h": 3 } ],
+  "openIssues": 4 }
+
+// DataIssueDTO — ANA-DATA-002
+{ "id": 1, "kind": "unknown_message" | "unknown_campaign" | "unknown_branch" | "unknown_product" | "duplicate_transaction" | "late_event" | "cost_missing",
+  "key": "mh-123", "count": 12, "firstSeen": "...", "lastSeen": "...", "sample": {...} }
+
+// RefreshRunDTO
+{ "id": "guid", "tables": ["ana_sales_daily"], "from": "2026-10-01", "to": "2026-10-31", "status": "Queued", "requestedBy": "u-1", "startedAt": null, "finishedAt": null }
+
+// DataScopeRuleDTO — "*" = ทั้งหมดของมิตินั้น; ไม่มีกฎ = ไม่เห็นข้อมูล (deny by default) ยกเว้น ana.scope.all
+{ "id": "guid", "subjectType": "User" | "Role", "subject": "u-1 หรือ role-name",
+  "branches": ["BKK01", "BKK02"], "channels": ["*"], "brands": ["*"], "note": null, "updatedBy": "u-9", "updatedAt": "...", "version": 1 }
+
+// EffectiveScopeDTO
+{ "sub": "u-1", "all": false, "branches": ["BKK01","BKK02","CNX01"], "channels": ["*"], "brands": ["ACME"],
+  "sources": [ { "subjectType": "Role", "subject": "analyst-north", "ruleId": "guid" } ] }
+```
+
+## 40. การเปลี่ยนแปลง API เดิม (เพิ่มแบบไม่ breaking ใน v1)
+
+| API เดิม | field ใหม่ | ความหมาย |
+|---|---|---|
+| `RegisterMemberRequest` (`POST api/v1/members`, `POST api/v1/me/registration`) และ `MemberDTO` | `sourceCampaignCode?` (≤ 50) | แคมเปญที่พาสมัคร (ไม่บังคับ; รหัสที่ไม่มีอยู่ = 400 `validation_failed`) → `mbr_member.source_campaign_code` |
+| `CommitRequest`, `SalesTransactionRequest` (§22) และ `TransactionSummaryDTO` / `TransactionDetailDTO` | `isTest` (bool, default `false`) | รายการทดสอบ — บันทึกตามปกติแต่ไม่นับในทุกตัวเลขวิเคราะห์ → `mbr_transaction.is_test` |
+| `CampaignRequest` / `CampaignDTO` (§21) | `holdoutPct` (int 0–50, default 0) | % กลุ่มควบคุม — แก้ได้เฉพาะสถานะ `Draft` (สถานะอื่น = 409 `invalid_transition`) → `mbr_campaign.holdout_pct` |
+| `POST api/v1/pos/checkout/quote` / `reserve` | (พฤติกรรม) | สมาชิกที่อยู่กลุ่มควบคุมของแคมเปญไม่ได้รับสิทธิ์ของแคมเปญนั้น (`HoldoutAssigner`, สูตรข้อ 4) |
+| `POST api/v1/campaign-messages` | (พฤติกรรม) | ข้ามสมาชิกกลุ่มควบคุม (นับเป็น `skipped`) และบันทึกผู้รับลง `ana_message_recipient` |
+| `IMessageHubGateway` (ภายใน) | `SendEmailAsync(to, subject, body, attachments)` | ส่งรายงานตามเวลาและแจ้งเตือนผ่าน MessageHub |
+
+## 41. รหัส error เพิ่มเติมของ Analytics (`code` ใน ProblemDetails, ร่วมกับ §25)
+
+| status | code | ความหมาย |
+|---|---|---|
+| 400 | `range_too_large` | ช่วงวันที่เกิน 731 วัน |
+| 400 | `invalid_metric` · `invalid_dimension` | รหัส metric / dimension ไม่มีใน catalog หรือไม่มีสิทธิ์ใช้ |
+| 400 | `report_too_complex` | dimension > 3 หรือ metric > 10 |
+| 400 | `compare_limit` | เทียบแคมเปญน้อยกว่า 2 หรือมากกว่า 5 |
+| 400 | `too_many_rows` | ส่งออก / บันทึก Segment เกิน `exportMaxRows` |
+| 409 | `standard_report` | แก้ / ลบรายงานมาตรฐาน |
+| 409 | `refresh_running` | สั่งคำนวณใหม่ช่วงที่ทับงานที่กำลังทำ |
+| 410 | `export_expired` | ไฟล์ส่งออกหมดอายุ |
+| 403 | `access_denied` | ไม่มี permission (ไม่ใช่กรณีขอบเขตว่าง ซึ่งตอบ 200 `scopeEmpty`) |
+
+## 42. งานเบื้องหลังและความทนทานของ Analytics
+
+| งาน | รอบ | หมายเหตุ |
+|---|---|---|
+| `ReadModelRefreshWorker` | ตาม `refreshMinutes` ต่อกลุ่มตาราง (คูปอง 5 นาที, แคมเปญ 15, ยอดขาย 60, สมาชิก รายวัน 03:00) | คำนวณเฉพาะวันที่ dirty + วันนี้; watermark ต่อตาราง; เขียนแบบ upsert ทั้งวัน (รันซ้ำได้ผลเดิม) |
+| `CouponUsageProjector` | ต่อเนื่อง (อ่าน outbox event `coupon.*`, `points.*`) | อัปเดต `ana_coupon_daily` ใกล้เรียลไทม์; กันซ้ำด้วย `eventId` |
+| `AlertEvaluatorWorker` | หลัง refresh แต่ละรอบ | cooldown ต่อ (rule, scopeKey); ส่งผ่าน outbox → MessageHub |
+| `ReportScheduleWorker` | ทุก 1 นาที | ใช้ขอบเขตของ**เจ้าของ** schedule ณ เวลารัน; ล้ม 3 ครั้งติด = ปิด schedule + แจ้ง `failureRecipients` |
+| ลบ idempotency key เกิน 7 วัน, ไฟล์ export เกิน `exportRetentionHours` | ทุกชั่วโมง | |
+
+- ทุก job ใช้ lease lock ในฐานข้อมูลเหมือน §26 (หลาย instance ทำงานที่ instance เดียวต่อรอบ)
+- การเรียกออก (MessageHub) ใช้ resilience pipeline เดียวกับ §26: timeout 10 วินาที, retry 3 ครั้ง exponential + jitter เฉพาะ 408/429/5xx, circuit breaker — วงจรเปิด = งานส่งค้างใน outbox แล้วส่งใหม่ภายหลัง ไม่ทิ้ง
+- ข้อความขาเข้าซ้ำ / ผิดลำดับจัดการตาม §36; refresh อ่านข้อมูลถึง `now − 2 นาที` เพื่อไม่พลาดรายการที่ commit ช้า
+- หน้าจอไม่เรียก read model ตอนกำลังเขียน: refresh เขียนลงแถวของวันนั้นใน transaction เดียว ผู้อ่านเห็นของเก่าหรือของใหม่ทั้งวัน
+- metric ฝั่ง operation: `customermgnt.ana.refresh.lag_minutes`, `customermgnt.ana.ingest.items` (tag `client_id`, `status`), `customermgnt.ana.alert.fired`
+
+## 43. หน้าจอ Analytics (Blazor WASM)
+
+| หัวข้อ | รายละเอียด |
+|---|---|
+| โปรเจกต์ | อยู่ใน `src/CustomerMgnt.Membership.Web` เมนู "วิเคราะห์ข้อมูล" (AN-01..AN-28) — หน้าแรกของเมนู = AN-01 |
+| Library | `DevExpress.Blazor` 26.1 (เวอร์ชันเดียวกับ `src/CustomerMgnt.Web` ใน `Directory.Packages.props`) **ใช้เฉพาะกราฟ** (`DxChart`, `DxPieChart`) — ตาราง ฟอร์ม และ layout ใช้ `WebCommon.UI` ตามเดิม; build ต้องมี license DevExpress (`DevExpress_License.txt` / ตัวแปร `DevExpress_License` / BuildKit secret `devexpress_license`) ห้าม commit license |
+| ตัวกรอง | เก็บใน URL query (ตามชื่อพารามิเตอร์ §28.1) แชร์ลิงก์ได้; ผู้เปิดเห็นตามขอบเขตของตน |
+| หน้าเต็ม | สร้าง / ดู / แก้ (รายงาน, schedule, alert, funnel, ขอบเขต) เป็นหน้าเต็ม ไม่ใช้ popup |
+| ข้อมูลไม่พอ | แสดง "ข้อมูลไม่เพียงพอ" พร้อมเหตุผลจาก `insufficientReason`; `stale: true` แสดงแถบเตือนพร้อมเวลา `dataAsOf` |
+
+## 44. หมายเหตุการ implement รอบแรก (ส่วนที่ต่างจาก §28–43)
+
+| หัวข้อ | สิ่งที่ทำจริง |
+|---|---|
+| Read model | มี 4 ตาราง: `ana_member_daily` (ยอดขายรายสมาชิก/วัน/สาขา/ช่องทาง + แบรนด์), `ana_member_snapshot`, `ana_points_daily`, `ana_coupon_daily` — ตัวเลขอื่น (แคมเปญ, RFM, cohort, funnel) คำนวณสดจากตารางเหล่านี้ + ตาราง `mbr_*` |
+| เอกสาร | ตัวกรองที่บันทึก, รายงาน, schedule, funnel, alert rule/event, ขอบเขต, data issue, refresh run เก็บในตารางกลาง `ana_document` (JSON + `version` ใช้ optimistic concurrency) |
+| Ingest | ใช้ idempotency filter เดียวกับระบบสมาชิก (`Idempotency-Key` ตาม §36); body ที่ไม่ใช่ array หรือ JSON ผิดรูป = 400 ทั้งคำขอ ส่วนรายการผิดรายตัวตอบผลรายรายการใน 200 |
+| ส่งออก | ใช้ตาราง `mbr_export` เดิม (รหัสรายงานขึ้นต้น `ana:`), รูปแบบ Xlsx / Csv (ไม่มี PDF); `unmasked: true` ตอบ 400 `unmasked_not_supported` (ข้อมูลส่วนบุคคลถูกปิดบางส่วนเสมอ) |
+| ตัวเลขตามสาขา/ช่องทาง | จำนวนสมาชิก (ไม่ใช่ยอดขาย) แยกสาขา/ช่องทางใช้สาขาและช่องทางหลักของสมาชิกจาก snapshot |
+| คะแนน | รายการ Reverse ไม่แยกประเภท; คะแนนคงเหลือและภาระคะแนนเป็นค่าปัจจุบัน (ไม่ย้อนตามช่วงวันที่) |
+| คูปอง | `coupon.avgDaysToRedeem` ตอบ `missing_source` (ยังไม่มีวันรับคูปองรายใบ) |
+| RFM / รายงานมาตรฐาน | กลุ่ม RFM และรายงานมาตรฐาน 4 รายการกำหนดในโค้ด (แก้ไม่ได้ แต่คัดลอกไปปรับได้) |
+| MessageHub | สมมติว่า MessageHub ส่ง `reference` (= messageId) และรองรับไฟล์แนบสำหรับ schedule — ต้องยืนยันกับระบบ MessageHub |
+| ตั้งค่า worker | ส่วน config ชื่อ `MemberAnalytics` (`WorkerEnabled`, …) และ `Analytics:RefreshInitialDelaySeconds` |
+| Drill-down | ระดับมีเฉพาะ `Member` และ `Transaction`; เรียงลำดับ `sort=key` (น้อย → มาก) / `sort=-key` (มาก → น้อย) |
+| กราฟ | โหลดเฉพาะ CSS แกนของธีม Fluent (ไม่ใช้ธีมเต็ม เพื่อไม่ทับหน้าตา WebCommon) และกำหนดสีกราฟเองที่ `AnaText.ChartPalette` |
+| ตัวกรองเริ่มต้น | เปิดหน้าวิเคราะห์โดยไม่มี query string = ใช้ตัวกรองที่บันทึกที่ตั้งเป็นค่าเริ่มต้นของหน้านั้น (ถ้ามี) |
+| ทดสอบ | `MemberAnalyticsApiTests` (API ครบเส้นทางหลัก) และ `MemberAnalyticsDatabaseTests` (ADO กับ Postgres จริง); เส้นทาง SQL Server ยังไม่ได้ทดสอบกับฐานข้อมูลจริง |

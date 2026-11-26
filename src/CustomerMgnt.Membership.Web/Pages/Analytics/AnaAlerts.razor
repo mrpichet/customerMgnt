@@ -1,0 +1,148 @@
+@page "/analytics/alerts"
+@attribute [Authorize]
+@inherits MembershipPage
+@* AN-23 แจ้งเตือน (ANA-ALERT-001/002) — แท็บเหตุการณ์ / กฎ อยู่ใน URL; เหตุการณ์กรองตามขอบเขตข้อมูลของผู้ใช้ *@
+<PageTitle>แจ้งเตือนข้อมูลผิดปกติ</PageTitle>
+
+<RequirePermission Permission="@A.AlertManage">
+    <PageHeader Title="แจ้งเตือนข้อมูลผิดปกติ" Description="ระบบตรวจกฎทุกรอบการปรับปรุงข้อมูล แจ้งเตือนซ้ำของกฎและขอบเขตเดียวกันจะถูกระงับจนพ้นช่วง cooldown" Breadcrumbs="_crumbs">
+        <Actions><AppButton Text="สร้างกฎ" Variant="ButtonVariant.Primary" Permission="@A.AlertManage" OnClick="@(() => Nav.NavigateTo("analytics/alerts/new"))" /></Actions>
+    </PageHeader>
+    <Tabs Items="_tabs" SelectedKey="@_tab" SelectedKeyChanged="@(t => Nav.NavigateTo(t == "events" ? "analytics/alerts" : $"analytics/alerts?tab={t}"))" AriaLabel="แจ้งเตือน">
+        @if (LoadError is not null) { <ErrorView Title="โหลดข้อมูลไม่สำเร็จ" Message="@LoadError" OnRetry="LoadAsync" /> }
+        else if (_tab == "rules")
+        {
+            @if (_rules is null) { <LoadingState /> }
+            else
+            {
+                <Card>
+                    <table class="simple-table">
+                        <thead><tr><th>ชื่อ</th><th>ชนิด</th><th>เงื่อนไข</th><th class="num">ผู้รับ</th><th>Cooldown</th><th>สถานะ</th><th></th></tr></thead>
+                        <tbody>
+                            @foreach (AlertRuleDTO r in _rules)
+                            {
+                                <tr>
+                                    <td>@r.Name</td><td>@AnaText.Alert(r.Type)</td><td class="small">@AnaAlertText.Params(r)</td><td class="num">@r.Recipients.Count</td><td>@r.CooldownMinutes นาที</td>
+                                    <td><Badge Text="@(r.Enabled ? "ใช้งาน" : "ปิด")" Level="@(r.Enabled ? AlertLevel.Success : AlertLevel.Info)" /></td>
+                                    <td class="row-actions">
+                                        <AppButton Text="ทดสอบ" Size="ButtonSize.Small" Variant="ButtonVariant.Secondary" OnClick="() => TestAsync(r)" />
+                                        <AppButton Text="แก้ไข" Size="ButtonSize.Small" Variant="ButtonVariant.Secondary" OnClick="@(() => Nav.NavigateTo($"analytics/alerts/{r.Id}/edit"))" />
+                                        <AppButton Text="ประวัติ" Size="ButtonSize.Small" Variant="ButtonVariant.Secondary" OnClick="@(() => Nav.NavigateTo($"analytics/alerts?rule={r.Id}"))" />
+                                    </td>
+                                </tr>
+                            }
+                            @if (_rules.Count == 0) { <tr><td colspan="7" class="muted">ยังไม่มีกฎแจ้งเตือน</td></tr> }
+                        </tbody>
+                    </table>
+                </Card>
+                @if (_test is not null)
+                {
+                    <Card Title="@($"ผลทดสอบ: {_testRule}")">
+                        <AlertTestTable Result="_test" />
+                    </Card>
+                }
+            }
+        }
+        else
+        {
+            <Card>
+                <FieldGrid Columns="4">
+                    <Field Label="สถานะ" InputId="st">
+                        <select id="st" @bind="_state">
+                            <option value="">ทั้งหมด</option>
+                            @foreach (AlertState s in Enum.GetValues<AlertState>()) { <option value="@s">@AnaText.State(s)</option> }
+                        </select>
+                    </Field>
+                    <Field Label="จากวันที่" InputId="fd"><input id="fd" type="date" @bind="_from" /></Field>
+                    <Field Label="ถึงวันที่" InputId="td"><input id="td" type="date" @bind="_to" /></Field>
+                    <Field Label="&nbsp;" InputId="go"><AppButton Text="แสดง" Variant="ButtonVariant.Secondary" OnClick="() => Go(1)" /></Field>
+                </FieldGrid>
+                @if (_rule is not null) { <p class="small">เฉพาะกฎ: @(_rules?.FirstOrDefault(r => r.Id == _rule)?.Name ?? _rule.ToString()) — <a href="analytics/alerts">ดูทั้งหมด</a></p> }
+            </Card>
+            @if (_events is null) { <LoadingState /> }
+            else
+            {
+                <Card Title="@($"เหตุการณ์ {AnaText.Int(_events.Total)} รายการ")">
+                    <table class="simple-table">
+                        <thead><tr><th>เวลา</th><th>กฎ</th><th>ชนิด</th><th>ขอบเขต</th><th class="num">ค่า</th><th class="num">เกณฑ์</th><th>สถานะ</th><th>แจ้งเมื่อ</th></tr></thead>
+                        <tbody>
+                            @foreach (AlertEventDTO e in _events.Items)
+                            {
+                                <tr>
+                                    <td>@Text.DateTime(e.OccurredAt)</td><td>@e.RuleName</td><td>@AnaText.Alert(e.Type)</td>
+                                    <td>@if (AnaAlertText.Link(e.Drilldown) is string href) { <a href="@href">@AnaAlertText.Scope(e.ScopeKey)</a> } else { @AnaAlertText.Scope(e.ScopeKey) }</td>
+                                    <td class="num">@AnaText.Num(e.Value)</td><td class="num">@AnaText.Num(e.Threshold)</td>
+                                    <td><Badge Text="@AnaText.State(e.State)" Level="@(e.State switch { AlertState.Fired => AlertLevel.Warning, AlertState.Failed => AlertLevel.Danger, AlertState.Resolved => AlertLevel.Success, _ => AlertLevel.Info })" /></td>
+                                    <td>@Text.DateTime(e.NotifiedAt)</td>
+                                </tr>
+                            }
+                            @if (_events.Items.Count == 0) { <tr><td colspan="8" class="muted">ไม่มีเหตุการณ์</td></tr> }
+                        </tbody>
+                    </table>
+                    <div class="row-actions">
+                        <AppButton Text="ก่อนหน้า" Disabled="@(_events.Page <= 1)" OnClick="() => Go(_events.Page - 1)" />
+                        <span class="muted">หน้า @_events.Page / @Math.Max(1, (_events.Total + Math.Max(1, _events.PageSize) - 1) / Math.Max(1, _events.PageSize))</span>
+                        <AppButton Text="ถัดไป" Disabled="@((long)_events.Page * _events.PageSize >= _events.Total)" OnClick="() => Go(_events.Page + 1)" />
+                    </div>
+                </Card>
+            }
+        }
+    </Tabs>
+</RequirePermission>
+
+@code {
+    private readonly IReadOnlyList<Breadcrumb> _crumbs = [new("หน้าแรก", ""), new("วิเคราะห์ข้อมูล", "analytics"), new("แจ้งเตือน")];
+    private readonly IReadOnlyList<TabItem> _tabs = [new("events", "เหตุการณ์"), new("rules", "กฎแจ้งเตือน")];
+    private string _tab = "events";
+    private string? _lastUri, _testRule;
+    private IReadOnlyList<AlertRuleDTO>? _rules;
+    private PagedResultDTO<AlertEventDTO>? _events;
+    private AlertTestResultDTO? _test;
+    private Guid? _rule;
+    private string? _state;
+    private DateOnly? _from, _to;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_lastUri == Nav.Uri) return;
+        _lastUri = Nav.Uri;
+        await LoadAsync();
+    }
+
+    private Task LoadAsync()
+    {
+        string uri = Nav.Uri;
+        _tab = AnaQuery.Param(uri, "tab") == "rules" ? "rules" : "events";
+        _rule = Guid.TryParse(AnaQuery.Param(uri, "rule"), out Guid g) ? g : null;
+        _state = AnaQuery.Param(uri, "state");
+        _from = DateOnly.TryParse(AnaQuery.Param(uri, "from"), System.Globalization.CultureInfo.InvariantCulture, out DateOnly f) ? f : null;
+        _to = DateOnly.TryParse(AnaQuery.Param(uri, "to"), System.Globalization.CultureInfo.InvariantCulture, out DateOnly t) ? t : null;
+        int page = int.TryParse(AnaQuery.Param(uri, "page"), out int p) ? Math.Max(1, p) : 1;
+        _events = null;
+        return LoadSafeAsync(async () =>
+        {
+            _rules = await Api.GetAsync<List<AlertRuleDTO>>("api/v1/analytics/alerts/rules");
+            if (_tab == "events")
+            {
+                _events = await Api.GetAsync<PagedResultDTO<AlertEventDTO>>($"api/v1/analytics/alerts/events?{Query(page)}&pageSize=50");
+            }
+        });
+    }
+
+    private string Query(int page) => AnaQuery.Of(new AnalyticsFilterDTO { From = _from, To = _to, Compare = CompareMode.PreviousPeriod },
+        ("ruleId", _rule), ("state", string.IsNullOrEmpty(_state) ? null : _state), ("page", page)) is var q && q.Length > 0 ? q : "page=1";
+
+    private void Go(int page)
+    {
+        string q = AnaQuery.Of(new AnalyticsFilterDTO { From = _from, To = _to, Compare = CompareMode.PreviousPeriod },
+            ("rule", _rule), ("state", string.IsNullOrEmpty(_state) ? null : _state), ("page", page > 1 ? page : null));
+        Nav.NavigateTo(q.Length == 0 ? "analytics/alerts" : $"analytics/alerts?{q}");
+    }
+
+    private async Task TestAsync(AlertRuleDTO r)
+    {
+        _test = null;
+        _testRule = r.Name;
+        await SaveSafeAsync(async () => _test = await Api.PostAsync<AlertTestResultDTO>($"api/v1/analytics/alerts/rules/{r.Id}/test", new { }), "ทดสอบกฎแล้ว (ไม่ส่งแจ้งเตือนจริง)");
+    }
+}

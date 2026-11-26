@@ -205,6 +205,8 @@ public sealed class CampaignMessageRequest
     [Required, StringLength(100)] public string TemplateCode { get; set; } = string.Empty;
     public Dictionary<string, string> Variables { get; set; } = [];
     public DateTimeOffset? ScheduledAt { get; set; }
+    /// <summary>แคมเปญของข้อความ (ไม่บังคับ) — ข้ามสมาชิกกลุ่มควบคุมและบันทึกผู้รับสำหรับการวิเคราะห์</summary>
+    [StringLength(30)] public string? CampaignCode { get; set; }
 }
 
 /// <summary>งานส่งข้อความ</summary>
@@ -213,6 +215,7 @@ public sealed class MessageJobDTO
     public long Id { get; set; }
     public long? SegmentId { get; set; }
     public MarketingChannel Channel { get; set; }
+    public string? CampaignCode { get; set; }
     public string TemplateCode { get; set; } = string.Empty;
     public string VariablesJson { get; set; } = "{}";
     public string? MemberIdsJson { get; set; }

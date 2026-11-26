@@ -118,6 +118,8 @@ public sealed class CampaignDTO
     /// <summary>น้อย = สำคัญกว่า (ใช้ตัดสินเมื่อส่วนลดเท่ากัน)</summary>
     public int Priority { get; set; } = 100;
     public CampaignLimitsDTO Limits { get; set; } = new();
+    /// <summary>% กลุ่มควบคุม (0 = ไม่มี) — สมาชิกกลุ่มนี้ไม่ได้รับสิทธิ์และข้อความของแคมเปญ</summary>
+    public int HoldoutPct { get; set; }
     public CampaignStatus Status { get; set; }
     public CampaignUsageDTO Usage { get; set; } = new();
     public long? ApprovalRequestId { get; set; }
@@ -178,6 +180,8 @@ public sealed class CampaignRequest
     [Range(1, 10_000)] public int Priority { get; set; } = 100;
     /// <summary>null = ใช้ค่าเริ่มต้นจากกฎธุรกิจ (1 ครั้งต่อสมาชิกต่อวัน)</summary>
     public CampaignLimitsDTO? Limits { get; set; }
+    /// <summary>% กลุ่มควบคุม 0–50 (แก้ได้เฉพาะ Draft)</summary>
+    [Range(0, 50)] public int HoldoutPct { get; set; }
     public long? Version { get; set; }
 }
 

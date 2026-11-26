@@ -1,4 +1,5 @@
 using WebCommon.UI.Navigation;
+using A = CustomerMgnt.Core.MemberAnalytics.Services.AnaPermissions;
 using P = CustomerMgnt.Core.Membership.Services.MembershipPermissions;
 
 namespace CustomerMgnt.Membership.Web.Services;
@@ -44,6 +45,25 @@ public sealed class MembershipMenuProvider : IAppMenuProvider
             new NavItem { Title = "รายงานโปรโมชัน", Href = "reports/promotions", Icon = "bar-chart", Permission = P.ReportRead },
             new NavItem { Title = "รายงานรายการขาย", Href = "reports/transactions", Icon = "bar-chart", Permission = P.ReportRead },
             new NavItem { Title = "งานส่งออก", Href = "reports/exports", Icon = "download", Permission = P.ReportExport },
+        ]),
+        new("วิเคราะห์ข้อมูล",
+        [
+            new NavItem { Title = "ภาพรวมผู้บริหาร", Href = "analytics", Icon = "bar-chart", Permission = A.DashboardRead, MatchExact = true },
+            new NavItem { Title = "ภาพรวมสมาชิก", Href = "analytics/members", Icon = "users", Permission = A.MemberRead, MatchExact = true },
+            new NavItem { Title = "วิเคราะห์สมาชิก", Href = "analytics/members/activity", Icon = "users", Permission = A.MemberRead },
+            new NavItem { Title = "ภาพรวมโปรโมชัน", Href = "analytics/promotions", Icon = "bar-chart", Permission = A.PromotionRead },
+            new NavItem { Title = "ผลแคมเปญ", Href = "analytics/campaigns", Icon = "file", Permission = A.PromotionRead },
+            new NavItem { Title = "Funnel", Href = "analytics/funnels", Icon = "filter", Permission = A.PromotionRead },
+            new NavItem { Title = "คะแนน", Href = "analytics/points", Icon = "bar-chart", Permission = A.DashboardRead },
+            new NavItem { Title = "คูปอง", Href = "analytics/coupons", Icon = "inbox", Permission = A.DashboardRead },
+            new NavItem { Title = "รายงาน", Href = "analytics/reports", Icon = "file-spreadsheet", Permission = A.DashboardRead },
+            new NavItem { Title = "ตั้งเวลาส่งรายงาน", Href = "analytics/schedules", Icon = "clock", Permission = A.ReportBuild },
+            new NavItem { Title = "ไฟล์ส่งออก", Href = "analytics/exports", Icon = "download", Permission = A.Export },
+            new NavItem { Title = "ตัวกรองที่บันทึก", Href = "analytics/saved-filters", Icon = "filter", Permission = A.DashboardRead },
+            new NavItem { Title = "แจ้งเตือน", Href = "analytics/alerts", Icon = "alert-triangle", Permission = A.AlertManage },
+            new NavItem { Title = "สถานะข้อมูล", Href = "analytics/data-status", Icon = "clock", Permission = A.DashboardRead },
+            new NavItem { Title = "ขอบเขตข้อมูล", Href = "analytics/data-scopes", Icon = "shield", Permission = A.SettingsManage },
+            new NavItem { Title = "ตั้งค่าการวิเคราะห์", Href = "analytics/settings", Icon = "layout", Permission = A.SettingsManage },
         ]),
         new("ตั้งค่า",
         [

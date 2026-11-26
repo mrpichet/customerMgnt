@@ -1,0 +1,42 @@
+@* ปุ่มส่งออก (ทำเบื้องหลังที่ server แล้วดาวน์โหลดที่หน้าไฟล์ส่งออก AN-22) *@
+@inject MembershipApiClient Api
+@inject ToastService Toasts
+@inject NavigationManager Nav
+<PermissionView Permission="@A.Export">
+    <div class="ana-export">
+        <select aria-label="รูปแบบไฟล์" @bind="_format"><option value="Xlsx">Excel</option><option value="Csv">CSV</option></select>
+        <AppButton Text="ส่งออก" Icon="download" Busy="_busy" OnClick="ExportAsync" />
+    </div>
+</PermissionView>
+
+@code {
+    [Parameter] public ExportSource Source { get; set; }
+    [Parameter] public string? Page { get; set; }
+    [Parameter] public Guid? ReportId { get; set; }
+    [Parameter] public string? Metric { get; set; }
+    [Parameter] public DrillLevel? Level { get; set; }
+    [Parameter] public AnalyticsFilterDTO Filter { get; set; } = new();
+
+    private string _format = "Xlsx";
+    private bool _busy;
+
+    private async Task ExportAsync()
+    {
+        _busy = true;
+        try
+        {
+            await Api.PostAsync<AnaExportJobDTO>("api/v1/analytics/exports",
+                new AnaExportRequest { Source = Source, Page = Page, ReportId = ReportId, Metric = Metric, Level = Level, Filter = Filter, Format = _format });
+            Toasts.Success("ส่งคำขอส่งออกแล้ว ดาวน์โหลดได้ที่หน้าไฟล์ส่งออกเมื่อเสร็จ");
+            Nav.NavigateTo("analytics/exports");
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Toasts.Error(Text.Error(ex));
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

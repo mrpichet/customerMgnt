@@ -1,0 +1,100 @@
+@page "/analytics/campaigns/compare"
+@attribute [Authorize]
+@inherits AnaPage
+@* AN-14 เปรียบเทียบแคมเปญ 2–5 แคมเปญ (ANA-PROMO-007) *@
+<PageTitle>เปรียบเทียบแคมเปญ</PageTitle>
+
+<RequirePermission Permission="@A.PromotionRead">
+    <PageHeader Title="เปรียบเทียบแคมเปญ" Description="@($"วิธีนับ: {AnaText.Attribution(_attribution)} — แคมเปญที่ช่วงเวลา ประเภทสิทธิ์ หรือกลุ่มเป้าหมายต่างกันมากควรตีความอย่างระมัดระวัง")" Breadcrumbs="Crumbs" />
+    <AnaFilterBar PageCode="AN-14" Value="Filter" OnApply="f => Apply(f, Extra(null))" ShowCompare="false" ShowProduct="false" />
+    <Card>
+        <FieldGrid Columns="2">
+            <Field Label="แคมเปญ (คั่นด้วยจุลภาค 2–5 รหัส)" InputId="cd"><input id="cd" @bind="_codesText" maxlength="200" /></Field>
+            <Field Label="วิธีนับยอดขายของแคมเปญ" InputId="at">
+                <select id="at" @bind="_attribution">
+                    @foreach (Attribution a in Enum.GetValues<Attribution>()) { <option value="@a">@AnaText.Attribution(a)</option> }
+                </select>
+            </Field>
+        </FieldGrid>
+        <div class="row-actions"><AppButton Text="เปรียบเทียบ" Variant="ButtonVariant.Secondary" OnClick="() => Apply(Filter, Extra(Text.SplitList(_codesText)))" /></div>
+    </Card>
+    @if (_codes.Count is < 2 or > 5) { <Alert Level="AlertLevel.Info" Title="เลือกแคมเปญ 2–5 แคมเปญ">ระบุรหัสแคมเปญด้านบน หรือเลือกจากหน้าผลแคมเปญ</Alert> }
+    else if (LoadError is not null) { <ErrorView Title="โหลดข้อมูลไม่สำเร็จ" Message="@LoadError" OnRetry="LoadAsync" /> }
+    else if (_r is null) { <LoadingState /> }
+    else
+    {
+        CampaignCompareDTO d = _r.Data;
+        <AnaBanner Meta="Meta(_r)" />
+        @foreach (string w in d.Warnings) { <Alert Level="AlertLevel.Warning">@Warning(w)</Alert> }
+        <Card Title="ยอดขายแคมเปญ"><KeyValueChart Items="SalesChart" Name="ยอดขาย" /></Card>
+        <Card>
+            <div style="overflow-x:auto">
+                <table class="simple-table">
+                    <thead>
+                        <tr><th>ตัวชี้วัด</th>@foreach (CampaignAnalyticsSummaryDTO c in d.Campaigns) { <th class="num"><a href="analytics/campaigns/@Uri.EscapeDataString(c.CampaignCode)?@Q()">@c.CampaignCode</a></th> }</tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>ชื่อ</td>@foreach (CampaignAnalyticsSummaryDTO c in d.Campaigns) { <td class="num">@c.Name</td> }</tr>
+                        <tr><td>ประเภทสิทธิ์</td>@foreach (CampaignAnalyticsSummaryDTO c in d.Campaigns) { <td class="num">@Text.Reward(c.RewardType)</td> }</tr>
+                        <tr><td>ช่วงเวลา</td>@foreach (CampaignAnalyticsSummaryDTO c in d.Campaigns) { <td class="num">@Text.Date(c.StartAt) – @Text.Date(c.EndAt)</td> }</tr>
+                        <tr><td>ผู้เข้าร่วม</td>@foreach (CampaignAnalyticsSummaryDTO c in d.Campaigns) { <td class="num">@AnaText.Int(c.Participants)</td> }</tr>
+                        <tr><td>ยอดขายแคมเปญ</td>@foreach (CampaignAnalyticsSummaryDTO c in d.Campaigns) { <td class="num">@AnaText.Num(c.CampaignSales)</td> }</tr>
+                        <tr><td>ส่วนลด</td>@foreach (CampaignAnalyticsSummaryDTO c in d.Campaigns) { <td class="num">@AnaText.Num(c.Discount)</td> }</tr>
+                        @foreach (string k in KpiKeys)
+                        {
+                            <tr>
+                                <td>@AnaText.Label(k)</td>
+                                @foreach (CampaignAnalyticsSummaryDTO c in d.Campaigns)
+                                {
+                                    MetricValueDTO? m = c.Kpis?.GetValueOrDefault(k);
+                                    <td class="num">@if (m is null) { <span>-</span> } else if (m.InsufficientReason is not null) { <span class="muted" title="@AnaText.Reason(m.InsufficientReason)">ข้อมูลไม่เพียงพอ</span> } else { @AnaText.Value(m.Value, m.Unit) }</td>
+                                }
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </Card>
+    }
+</RequirePermission>
+
+@code {
+    private readonly List<string> _codes = [];
+    private AnalyticsResultDTO<CampaignCompareDTO>? _r;
+    private string? _codesText;
+    private Attribution _attribution = Attribution.BenefitUsed;
+
+    protected override string PageCode => "AN-14";
+
+    private IReadOnlyList<Breadcrumb> Crumbs => [new("หน้าแรก", ""), new("วิเคราะห์ข้อมูล", "analytics"), new("ผลแคมเปญ", $"analytics/campaigns?{Q()}"), new("เปรียบเทียบ")];
+
+    private IEnumerable<string> KpiKeys => _r?.Data.Campaigns.SelectMany(c => c.Kpis?.Keys ?? Enumerable.Empty<string>()).Distinct() ?? [];
+
+    private List<KeyValueDTO> SalesChart => [.. (_r?.Data.Campaigns ?? []).Select(c => new KeyValueDTO { Key = c.CampaignCode, Label = c.CampaignCode, Value = c.CampaignSales })];
+
+    private (string, object?)[] Extra(IReadOnlyList<string>? codes) => [("codes", (codes ?? _codes).ToList()), ("attribution", _attribution)];
+
+    protected override Task LoadAsync()
+    {
+        _codes.Clear();
+        _codes.AddRange(AnaQuery.Params(Nav.Uri, "codes").Select(c => c.Trim().ToUpperInvariant()).Distinct());
+        _codesText = string.Join(", ", _codes);
+        _attribution = Enum.TryParse(Param("attribution"), out Attribution a) ? a : Attribution.BenefitUsed;
+        _r = null;
+        if (_codes.Count is < 2 or > 5)
+        {
+            return Task.CompletedTask;
+        }
+
+        return LoadSafeAsync(async () => _r = await Api.GetAsync<AnalyticsResultDTO<CampaignCompareDTO>>($"api/v1/analytics/campaigns/compare?{Q(Extra(null))}"));
+    }
+
+    private static string Warning(string w) => w switch
+    {
+        "duration_differs" => "ระยะเวลาแคมเปญต่างกันมากกว่า 2 เท่า",
+        "eligible_size_differs" => "จำนวนสมาชิกเป้าหมายต่างกันมากกว่า 5 เท่า",
+        "reward_type_differs" => "แคมเปญมีประเภทสิทธิ์ต่างกัน",
+        "control_mismatch" => "บางแคมเปญมีกลุ่มควบคุม บางแคมเปญไม่มี",
+        _ => w,
+    };
+}

@@ -1,0 +1,51 @@
+@page "/analytics/members/activity"
+@attribute [Authorize]
+@inherits AnaPage
+@* AN-04 กลุ่มการใช้งาน (ANA-MEM-001) — "ถึง" = วันที่อ้างอิง *@
+<PageTitle>กลุ่มการใช้งาน</PageTitle>
+
+<RequirePermission Permission="@A.MemberRead">
+    <PageHeader Title="วิเคราะห์สมาชิก: กลุ่มการใช้งาน" Description="จัดกลุ่มสมาชิก ณ วันที่ &quot;ถึง&quot; ตามเกณฑ์ในหน้าตั้งค่า (ช่วง &quot;ตั้งแต่&quot; ไม่ใช้)" Breadcrumbs="_crumbs" />
+    <AnaSubNav Links="AnaSubNav.MemberPages" Label="วิเคราะห์สมาชิก" />
+    <AnaFilterBar PageCode="AN-04" Value="Filter" OnApply="f => Apply(f)" ShowMember ShowCompare="false" />
+    @if (LoadError is not null) { <ErrorView Title="โหลดข้อมูลไม่สำเร็จ" Message="@LoadError" OnRetry="LoadAsync" /> }
+    else if (_r is null) { <LoadingState /> }
+    else
+    {
+        <AnaBanner Meta="Meta(_r)" />
+        <Card Title="จำนวนสมาชิกตามกลุ่ม">
+            <KeyValueChart Items="_chart" Horizontal Name="สมาชิก" Height="380px" />
+        </Card>
+        <Card>
+            <table class="simple-table">
+                <thead><tr><th>กลุ่ม</th><th class="num">สมาชิก</th><th class="num">เปลี่ยนแปลง</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (ActivityGroupDTO g in _r.Data.Groups)
+                    {
+                        <tr>
+                            <td>@g.Label</td>
+                            <td class="num">@(g.Count.Value is null ? AnaText.Reason(g.Count.InsufficientReason) : AnaText.Value(g.Count.Value, g.Count.Unit))</td>
+                            <td class="num">@AnaText.Pct(g.Count.ChangePct)</td>
+                            <td><PermissionView Permission="@A.MemberDetail"><button type="button" class="link-button" @onclick="() => Drill(g.Drilldown)">รายชื่อ</button></PermissionView></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            <p class="muted small">เกณฑ์: @string.Join(" · ", _r.Data.Thresholds.Select(t => $"{t.Key} = {t.Value}"))</p>
+        </Card>
+    }
+</RequirePermission>
+
+@code {
+    private readonly IReadOnlyList<Breadcrumb> _crumbs = [new("หน้าแรก", ""), new("วิเคราะห์ข้อมูล", "analytics"), new("กลุ่มการใช้งาน")];
+    private AnalyticsResultDTO<ActivityGroupsDTO>? _r;
+    private List<KeyValueDTO> _chart = [];
+
+    protected override string PageCode => "AN-04";
+
+    protected override Task LoadAsync() => LoadSafeAsync(async () =>
+    {
+        _r = await Api.GetAsync<AnalyticsResultDTO<ActivityGroupsDTO>>($"api/v1/analytics/members/activity-groups?{Q()}");
+        _chart = [.. _r.Data.Groups.Where(g => g.Count.Value is not null).Select(g => new KeyValueDTO { Key = g.Code, Label = g.Label, Value = g.Count.Value!.Value })];
+    });
+}

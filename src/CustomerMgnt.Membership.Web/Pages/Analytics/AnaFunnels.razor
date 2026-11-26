@@ -1,0 +1,45 @@
+@page "/analytics/funnels"
+@attribute [Authorize]
+@inherits MembershipPage
+@* AN-16 รายการ Funnel (ANA-PROMO-008) — ดูต้องมี ana.promotion.read, สร้าง/แก้/ลบต้องมี ana.settings.manage *@
+<PageTitle>Funnel</PageTitle>
+
+<RequirePermission Permission="@A.PromotionRead">
+    <ListTemplate TItem="FunnelDTO" Title="Funnel" Description="ลำดับขั้นตอนตั้งแต่ได้รับข้อความจนถึงซื้อซ้ำ ใช้ดูว่าสมาชิกหลุดที่ขั้นไหน กดชื่อเพื่อดูผล"
+                  Breadcrumbs="_crumbs" Permissions="_perms" Items="_items" Loading="_loading" ErrorMessage="@LoadError" OnRetry="LoadAsync"
+                  NewText="สร้าง Funnel" OnNew="@(() => Nav.NavigateTo("analytics/funnels/new"))"
+                  OnView="@(f => Nav.NavigateTo($"analytics/funnels/{f.Id}"))" OnEdit="@(f => Nav.NavigateTo($"analytics/funnels/{f.Id}/edit"))" OnDelete="DeleteAsync"
+                  ItemName="@(f => f.Name)">
+        <Columns>
+            <TableColumn TItem="FunnelDTO" Title="ชื่อ" Field="f => f.Name" IsPrimary Sortable />
+            <TableColumn TItem="FunnelDTO" Title="ขั้นตอน" Field="StepsText" />
+            <TableColumn TItem="FunnelDTO" Title="ระยะห่างสูงสุด (ชม.)" Field="f => f.MaxGapHours" Format="N0" Align="ColumnAlign.End" />
+        </Columns>
+    </ListTemplate>
+</RequirePermission>
+
+@code {
+    private readonly IReadOnlyList<Breadcrumb> _crumbs = [new("หน้าแรก", ""), new("วิเคราะห์ข้อมูล", "analytics"), new("Funnel")];
+    private readonly ListPermissions _perms = new() { Create = A.SettingsManage, View = A.PromotionRead, Edit = A.SettingsManage, Delete = A.SettingsManage };
+    private IReadOnlyList<FunnelDTO>? _items;
+    private bool _loading;
+
+    private static string StepsText(FunnelDTO f) => string.Join(" → ", f.Steps.Select(AnaText.Step));
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        await LoadSafeAsync(async () => _items = await Api.GetAsync<List<FunnelDTO>>("api/v1/analytics/funnels"));
+        _loading = false;
+    }
+
+    private async Task DeleteAsync(FunnelDTO f)
+    {
+        if (await SaveSafeAsync(() => Api.DeleteAsync($"api/v1/analytics/funnels/{f.Id}"), "ลบ Funnel แล้ว"))
+        {
+            await LoadAsync();
+        }
+    }
+}

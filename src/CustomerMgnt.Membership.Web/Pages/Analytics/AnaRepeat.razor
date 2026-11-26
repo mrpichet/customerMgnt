@@ -1,0 +1,48 @@
+@page "/analytics/members/repeat"
+@attribute [Authorize]
+@inherits AnaPage
+@* AN-07 การกลับมาซื้อ (ANA-MEM-004) *@
+<PageTitle>การกลับมาซื้อ</PageTitle>
+
+<RequirePermission Permission="@A.MemberRead">
+    <PageHeader Title="วิเคราะห์สมาชิก: การกลับมาซื้อ" Description="อัตราซื้อซ้ำ การซื้อครั้งแรกหลังสมัคร และระยะห่างระหว่างการซื้อ" Breadcrumbs="_crumbs" />
+    <AnaSubNav Links="AnaSubNav.MemberPages" Label="วิเคราะห์สมาชิก" />
+    <AnaFilterBar PageCode="AN-07" Value="Filter" OnApply="f => Apply(f, Extra())" ShowMember />
+    <Card>
+        <Field Label="ซื้อครั้งแรกภายใน (วันหลังสมัคร)" InputId="fp"><input id="fp" type="number" min="1" max="365" @bind="_days" /></Field>
+        <AppButton Text="แสดง" Variant="ButtonVariant.Primary" OnClick="() => Apply(Filter, Extra())" />
+    </Card>
+    @if (LoadError is not null) { <ErrorView Title="โหลดข้อมูลไม่สำเร็จ" Message="@LoadError" OnRetry="LoadAsync" /> }
+    else if (_r is null) { <LoadingState /> }
+    else
+    {
+        RepeatPurchaseDTO d = _r.Data;
+        <AnaBanner Meta="Meta(_r)" />
+        <div class="kpi-grid">
+            <MetricCard Metric="d.RepeatRate" Label="อัตราซื้อซ้ำ" OnDrill="Drill" />
+            <MetricCard Metric="d.FirstPurchaseConversion" Label="ซื้อครั้งแรกหลังสมัคร" OnDrill="Drill" />
+            <MetricCard Metric="d.AvgDaysBetweenPurchases" Label="วันเฉลี่ยระหว่างการซื้อ" />
+            <MetricCard Metric="d.RepeatWithinNDays" Label="ซื้อซ้ำภายใน N วัน" />
+        </div>
+        <div class="ana-two">
+            <Card Title="สมาชิกตามจำนวนครั้งที่ซื้อ"><KeyValueChart Items="d.ByPurchaseCount" Name="สมาชิก" /></Card>
+            <Card Title="แนวโน้มอัตราซื้อซ้ำ"><SeriesChart One="d.Trend" /></Card>
+        </div>
+    }
+</RequirePermission>
+
+@code {
+    private readonly IReadOnlyList<Breadcrumb> _crumbs = [new("หน้าแรก", ""), new("วิเคราะห์ข้อมูล", "analytics"), new("การกลับมาซื้อ")];
+    private AnalyticsResultDTO<RepeatPurchaseDTO>? _r;
+    private int? _days;
+
+    protected override string PageCode => "AN-07";
+
+    private (string, object?)[] Extra() => [("firstPurchaseDays", _days)];
+
+    protected override Task LoadAsync()
+    {
+        _days = int.TryParse(Param("firstPurchaseDays"), out int n) ? n : null;
+        return LoadSafeAsync(async () => _r = await Api.GetAsync<AnalyticsResultDTO<RepeatPurchaseDTO>>($"api/v1/analytics/members/repeat-purchase?{Q(Extra())}"));
+    }
+}

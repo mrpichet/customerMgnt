@@ -1,0 +1,174 @@
+@inject NavigationManager Nav
+@* ตัวกรองร่วม (§28.1) — แก้แล้วกด "ใช้ตัวกรอง" (ค่าไปอยู่ใน URL); เลือก/บันทึกตัวกรองที่บันทึกไว้ของหน้านี้ได้ (AN-17) *@
+@inject MembershipApiClient Api
+@inject ToastService Toasts
+<Card Class="ana-filter">
+    <FieldGrid Columns="4">
+        <Field Label="ตั้งแต่" InputId="af-from"><input id="af-from" type="date" value="@Iso(_f.From)" @onchange="e => _f.From = ParseDate(e.Value)" /></Field>
+        <Field Label="ถึง" InputId="af-to"><input id="af-to" type="date" value="@Iso(_f.To)" @onchange="e => _f.To = ParseDate(e.Value)" /></Field>
+        @if (ShowCompare)
+        {
+            <Field Label="เปรียบเทียบกับ" InputId="af-cmp">
+                <select id="af-cmp" @bind="_f.Compare">@foreach (CompareMode m in Enum.GetValues<CompareMode>()) { <option value="@m">@AnaText.Compare(m)</option> }</select>
+            </Field>
+            <Field Label="ความละเอียดกราฟ" InputId="af-gr">
+                <select id="af-gr" value="@(_f.Granularity?.ToString() ?? "")" @onchange="e => _f.Granularity = Enum.TryParse(e.Value?.ToString(), out Granularity g) ? g : null">
+                    <option value="">อัตโนมัติ</option><option value="Day">รายวัน</option><option value="Week">รายสัปดาห์</option><option value="Month">รายเดือน</option>
+                </select>
+            </Field>
+        }
+        <Field Label="สาขา (คั่นด้วย ,)" InputId="af-br"><input id="af-br" @bind="_branch" maxlength="500" placeholder="ทั้งหมด" /></Field>
+        @if (ShowProduct)
+        {
+            <Field Label="แบรนด์" InputId="af-brand"><input id="af-brand" @bind="_brand" maxlength="500" placeholder="ทั้งหมด" /></Field>
+            <Field Label="หมวดสินค้า" InputId="af-cat"><input id="af-cat" @bind="_category" maxlength="500" placeholder="ทั้งหมด" /></Field>
+        }
+        @if (ShowMember)
+        {
+            <Field Label="Tier" InputId="af-tier"><input id="af-tier" @bind="_tier" maxlength="300" placeholder="ทั้งหมด" /></Field>
+            <Field Label="แคมเปญที่พามาสมัคร" InputId="af-src"><input id="af-src" @bind="_source" maxlength="300" placeholder="ทั้งหมด" /></Field>
+        }
+        @if (ShowCampaign)
+        {
+            <Field Label="แคมเปญ" InputId="af-cmpn"><input id="af-cmpn" @bind="_campaign" maxlength="300" placeholder="ทั้งหมด" /></Field>
+        }
+    </FieldGrid>
+    <div class="check-list" role="group" aria-label="ช่องทางขาย">
+        <span class="muted">ช่องทางขาย:</span>
+        @foreach (SalesChannel c in Enum.GetValues<SalesChannel>())
+        {
+            SalesChannel ch = c;
+            <label><input type="checkbox" checked="@_f.Channel.Contains(ch)" @onchange="e => Toggle(_f.Channel, ch, e.Value)" /> @AnaText.Channel(ch)</label>
+        }
+    </div>
+    @if (ShowMember)
+    {
+        <div class="check-list" role="group" aria-label="ช่องทางสมัคร">
+            <span class="muted">ช่องทางสมัคร:</span>
+            @foreach (RegisteredChannel c in Enum.GetValues<RegisteredChannel>())
+            {
+                RegisteredChannel ch = c;
+                <label><input type="checkbox" checked="@_f.RegisteredChannel.Contains(ch)" @onchange="e => Toggle(_f.RegisteredChannel, ch, e.Value)" /> @AnaText.Registered(ch)</label>
+            }
+        </div>
+    }
+    <div class="row-actions ana-filter__actions">
+        <AppButton Text="ใช้ตัวกรอง" Variant="ButtonVariant.Primary" OnClick="ApplyAsync" />
+        <AppButton Text="ล้าง" Variant="ButtonVariant.Secondary" OnClick="ClearAsync" />
+        @if (_saved.Count > 0)
+        {
+            <select aria-label="ตัวกรองที่บันทึกไว้" @onchange="PickAsync">
+                <option value="">— ตัวกรองที่บันทึกไว้ —</option>
+                @foreach (SavedFilterDTO s in _saved) { <option value="@s.Id" selected="@(Value?.SavedFilterId == s.Id)">@s.Name@(s.IsDefault ? " (ค่าเริ่มต้น)" : "")</option> }
+            </select>
+        }
+        <input aria-label="ชื่อตัวกรองที่จะบันทึก" @bind="_saveName" maxlength="100" placeholder="ชื่อเพื่อบันทึกตัวกรองนี้" />
+        <AppButton Text="บันทึกตัวกรอง" Variant="ButtonVariant.Secondary" Disabled="@string.IsNullOrWhiteSpace(_saveName)" OnClick="SaveAsync" />
+    </div>
+</Card>
+
+@code {
+    [Parameter, EditorRequired] public string PageCode { get; set; } = string.Empty;
+    [Parameter] public AnalyticsFilterDTO? Value { get; set; }
+    [Parameter] public EventCallback<AnalyticsFilterDTO> OnApply { get; set; }
+    [Parameter] public bool ShowCompare { get; set; } = true;
+    [Parameter] public bool ShowMember { get; set; }
+    [Parameter] public bool ShowProduct { get; set; } = true;
+    [Parameter] public bool ShowCampaign { get; set; }
+
+    private AnalyticsFilterDTO _f = new();
+    private string? _branch, _brand, _category, _tier, _source, _campaign, _saveName;
+    private List<SavedFilterDTO> _saved = [];
+    private bool _loadedSaved;
+    private AnalyticsFilterDTO? _last;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!ReferenceEquals(_last, Value))
+        {
+            _last = Value;
+            _f = Value?.Clone() ?? new AnalyticsFilterDTO();
+            _branch = Text.JoinList(_f.Branch);
+            _brand = Text.JoinList(_f.Brand);
+            _category = Text.JoinList(_f.Category);
+            _tier = Text.JoinList(_f.Tier);
+            _source = Text.JoinList(_f.SourceCampaign);
+            _campaign = Text.JoinList(_f.Campaign);
+        }
+
+        if (!_loadedSaved)
+        {
+            _loadedSaved = true;
+            await LoadSavedAsync();
+            // เปิดหน้าโดยไม่ระบุตัวกรอง = ใช้ตัวกรองเริ่มต้นที่บันทึกไว้ของหน้านี้ (ถ้ามี)
+            if (!Nav.Uri.Contains('?', StringComparison.Ordinal) && _saved.FirstOrDefault(s => s.IsDefault) is SavedFilterDTO def)
+            {
+                AnalyticsFilterDTO f = def.Filter.Clone();
+                f.SavedFilterId = def.Id;
+                await OnApply.InvokeAsync(f);
+            }
+        }
+    }
+
+    private async Task LoadSavedAsync()
+    {
+        try { _saved = await Api.GetAsync<List<SavedFilterDTO>>($"api/v1/analytics/saved-filters?page={PageCode}"); }
+        catch (ApiException) { _saved = []; }
+    }
+
+    private static string Iso(DateOnly? d) => d?.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
+
+    private static DateOnly? ParseDate(object? v) => DateOnly.TryParseExact(v?.ToString(), "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out DateOnly d) ? d : null;
+
+    private static void Toggle<T>(List<T> list, T value, object? on)
+    {
+        if (on is true) { if (!list.Contains(value)) list.Add(value); }
+        else list.Remove(value);
+    }
+
+    private AnalyticsFilterDTO Current()
+    {
+        AnalyticsFilterDTO f = _f.Clone();
+        f.Branch = Text.SplitList(_branch);
+        f.Brand = Text.SplitList(_brand);
+        f.Category = Text.SplitList(_category);
+        f.Tier = Text.SplitList(_tier);
+        f.SourceCampaign = Text.SplitList(_source);
+        f.Campaign = Text.SplitList(_campaign);
+        f.SavedFilterId = null;
+        return f;
+    }
+
+    private Task ApplyAsync() => OnApply.InvokeAsync(Current());
+
+    private Task ClearAsync()
+    {
+        _last = null;
+        return OnApply.InvokeAsync(new AnalyticsFilterDTO());
+    }
+
+    private async Task PickAsync(ChangeEventArgs e)
+    {
+        if (Guid.TryParse(e.Value?.ToString(), out Guid id) && _saved.FirstOrDefault(s => s.Id == id) is SavedFilterDTO s)
+        {
+            AnalyticsFilterDTO f = s.Filter.Clone();
+            f.SavedFilterId = s.Id;
+            await OnApply.InvokeAsync(f);
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        try
+        {
+            await Api.PostAsync<SavedFilterDTO>("api/v1/analytics/saved-filters", new SavedFilterDTO { Page = PageCode, Name = _saveName!.Trim(), Filter = Current() });
+            Toasts.Success("บันทึกตัวกรองแล้ว");
+            _saveName = null;
+            await LoadSavedAsync();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Toasts.Error(Text.Error(ex));
+        }
+    }
+}
