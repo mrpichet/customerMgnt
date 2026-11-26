@@ -60,6 +60,8 @@ public sealed class MemberEntity
     public string? MarketingChannels { get; set; }
     /// <summary>ซื้อล่าสุด</summary>
     public DateTimeOffset? LastPurchaseAt { get; set; }
+    /// <summary>แคมเปญที่พาสมัคร</summary>
+    public string? SourceCampaignCode { get; set; }
     /// <summary>สร้างเมื่อ</summary>
     public DateTimeOffset CreatedAt { get; set; }
     /// <summary>แก้ไขล่าสุด</summary>
@@ -110,6 +112,7 @@ public sealed class MemberDTO
     public string? CustomerCode { get; set; }
     public bool HasPortalAccount { get; set; }
     public bool MarketingConsent { get; set; }
+    public string? SourceCampaignCode { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
     public long Version { get; set; }
@@ -176,6 +179,8 @@ public sealed class RegisterMemberRequest
     public List<MarketingChannel>? MarketingChannels { get; set; }
     /// <summary>ผูก Customer ที่มีอยู่ (null = ให้ระบบสร้าง Customer บุคคลใหม่) — Portal ใช้ไม่ได้</summary>
     [StringLength(30)] public string? CustomerCode { get; set; }
+    /// <summary>แคมเปญที่พาสมัคร (ไม่บังคับ)</summary>
+    [StringLength(50)] public string? SourceCampaignCode { get; set; }
 }
 
 /// <summary>แก้ไขสมาชิก — null = ไม่เปลี่ยน</summary>

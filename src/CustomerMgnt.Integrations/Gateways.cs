@@ -394,6 +394,28 @@ public sealed class MessageHubGateway : GatewayBase, IMessageHubGateway
     }
 
     /// <inheritdoc />
+    public async Task<bool> SendToCustomerAsync(ChannelKind channel, string recipient, string? subject, string body, string? reference, CancellationToken ct)
+    {
+        string? type = MapChannel(channel);
+        if (type is null)
+        {
+            return false;
+        }
+
+        await SendAsync<object>(HttpMethod.Post, "api/messages", new { channel = type, recipient, subject, body, reference, queue = true }, nullOnNotFound: false, ct).ConfigureAwait(false);
+        return true;
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> SendEmailAsync(string to, string subject, string body, IReadOnlyList<EmailAttachmentDTO> attachments, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(attachments);
+        var files = attachments.Select(a => new { fileName = a.FileName, contentType = a.ContentType, contentBase64 = Convert.ToBase64String(a.Content) }).ToList();
+        await SendAsync<object>(HttpMethod.Post, "api/messages", new { channel = "Email", recipient = to, subject, body, attachments = files, queue = true }, nullOnNotFound: false, ct).ConfigureAwait(false);
+        return true;
+    }
+
+    /// <inheritdoc />
     public Task NotifyUserAsync(Guid userId, string subject, string body, CancellationToken ct) =>
         SendAsync<object>(HttpMethod.Post, "api/messages/to-user", new { userId, subject, body }, nullOnNotFound: false, ct);
 

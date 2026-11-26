@@ -1,3 +1,4 @@
+using CustomerMgnt.Core.MemberAnalytics;
 using CustomerMgnt.Core.Membership.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -45,6 +46,7 @@ public static class MembershipServiceCollectionExtensions
         services.AddSingleton<IApprovalHandler>(sp => sp.GetRequiredService<CampaignService>());
         services.AddSingleton<IApprovalHandler, AdjustmentApprovalHandler>();
         services.AddSingleton<IApprovalHandler, EarnRuleApprovalHandler>();
+        services.AddMemberAnalyticsCore(configuration, enableBackgroundWorkers);
 
         // Step 3: งานเบื้องหลัง (lease lock — รันหลาย instance ได้)
         if (enableBackgroundWorkers)

@@ -109,11 +109,11 @@ public sealed class ReportService
     }
 
     /// <summary>งานส่งออกของฉัน</summary>
-    public Task<IReadOnlyList<ExportJobDTO>> ListExportsAsync(MembershipCaller caller, CancellationToken ct)
+    public async Task<IReadOnlyList<ExportJobDTO>> ListExportsAsync(MembershipCaller caller, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(caller);
         caller.Require(MembershipPermissions.ReportExport);
-        return _jobs.ListExportsAsync(caller.Actor, null, ct);
+        return [.. (await _jobs.ListExportsAsync(caller.Actor, null, ct).ConfigureAwait(false)).Where(j => !IsAnalyticsExport(j))];
     }
 
     /// <summary>ดาวน์โหลดไฟล์ (เจ้าของงานเท่านั้น, ยังไม่หมดอายุ)</summary>
@@ -123,7 +123,7 @@ public sealed class ReportService
         ArgumentNullException.ThrowIfNull(caller);
         caller.Require(MembershipPermissions.ReportExport);
         ExportJobDTO? job = await _jobs.GetExportAsync(id, withContent: true, ct).ConfigureAwait(false);
-        if (job is null || !string.Equals(job.RequestedBy, caller.Actor, StringComparison.Ordinal))
+        if (job is null || IsAnalyticsExport(job) || !string.Equals(job.RequestedBy, caller.Actor, StringComparison.Ordinal))
         {
             throw new NotFoundException("Export not found.");
         }
@@ -139,11 +139,14 @@ public sealed class ReportService
             xlsx ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : "text/csv; charset=utf-8", job.Content);
     }
 
+    /// <summary>งานส่งออกของระบบวิเคราะห์ข้อมูล (สร้างโดย AnaReportService ไม่ใช่ที่นี่)</summary>
+    internal static bool IsAnalyticsExport(ExportJobDTO job) => job.Report.StartsWith("ana:", StringComparison.Ordinal);
+
     /// <summary>งานเบื้องหลัง: สร้างไฟล์ที่รอคิว</summary>
     public async Task<int> RunExportsAsync(CancellationToken ct)
     {
         int n = 0;
-        foreach (ExportJobDTO job in await _jobs.ListExportsAsync(null, JobStatus.Queued, ct).ConfigureAwait(false))
+        foreach (ExportJobDTO job in (await _jobs.ListExportsAsync(null, JobStatus.Queued, ct).ConfigureAwait(false)).Where(j => !IsAnalyticsExport(j)))
         {
             job.Status = JobStatus.Running;
             await _jobs.UpdateExportAsync(job, ct).ConfigureAwait(false);

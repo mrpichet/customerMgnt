@@ -1,4 +1,6 @@
+using CustomerMgnt.Core.MemberAnalytics.DataAccess;
 using CustomerMgnt.Core.Membership.DataAccess;
+using CustomerMgnt.Data.MemberAnalytics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -13,7 +15,8 @@ public static class MembershipDataRegistration
     public static IServiceCollection AddMembershipAdoData(this IServiceCollection services)
     {
         services.TryAddSingleton<MembershipADO>();
-        return services.MapAll<MembershipADO>();
+        services.TryAddSingleton<AnaADO>();
+        return services.MapAll<MembershipADO, AnaADO>();
     }
 
     /// <summary>ทุก DAO ของระบบสมาชิกชี้ไปที่ store ในหน่วยความจำตัวเดียว</summary>
@@ -22,10 +25,11 @@ public static class MembershipDataRegistration
     public static IServiceCollection AddMembershipInMemoryData(this IServiceCollection services)
     {
         services.TryAddSingleton<InMemoryMembershipStore>();
-        return services.MapAll<InMemoryMembershipStore>();
+        services.TryAddSingleton<InMemoryAnaStore>();
+        return services.MapAll<InMemoryMembershipStore, InMemoryAnaStore>();
     }
 
-    private static IServiceCollection MapAll<T>(this IServiceCollection services) where T : class
+    private static IServiceCollection MapAll<T, TAna>(this IServiceCollection services) where T : class where TAna : class
     {
         services.TryAddSingleton<IMemberDAO>(sp => (IMemberDAO)sp.GetRequiredService<T>());
         services.TryAddSingleton<ITierDAO>(sp => (ITierDAO)sp.GetRequiredService<T>());
@@ -41,7 +45,14 @@ public static class MembershipDataRegistration
         services.TryAddSingleton<IMembershipSettingsDAO>(sp => (IMembershipSettingsDAO)sp.GetRequiredService<T>());
         services.TryAddSingleton<IMemberPrivacyDAO>(sp => (IMemberPrivacyDAO)sp.GetRequiredService<T>());
         services.TryAddSingleton<IMembershipJobDAO>(sp => (IMembershipJobDAO)sp.GetRequiredService<T>());
-        services.TryAddSingleton<IMembershipUnitOfWork>(sp => (IMembershipUnitOfWork)sp.GetRequiredService<T>());
+        // ระบบวิเคราะห์: อ่านต้นทางจาก store เดียวกัน, read model/เอกสาร/ข้อความจาก store ของ ana_*
+        services.TryAddSingleton<IAnaSourceDAO>(sp => (IAnaSourceDAO)sp.GetRequiredService<T>());
+        services.TryAddSingleton<IAnaReadModelDAO>(sp => (IAnaReadModelDAO)sp.GetRequiredService<TAna>());
+        services.TryAddSingleton<IAnaDocumentDAO>(sp => (IAnaDocumentDAO)sp.GetRequiredService<TAna>());
+        services.TryAddSingleton<IAnaMessageDAO>(sp => (IAnaMessageDAO)sp.GetRequiredService<TAna>());
+
+        // บันทึกสำเร็จแล้วทำเครื่องหมายวันที่ read model ยอดขายต้องคำนวณใหม่
+        services.TryAddSingleton<IMembershipUnitOfWork>(sp => ActivatorUtilities.CreateInstance<AnaDirtyDayUnitOfWork>(sp, (IMembershipUnitOfWork)sp.GetRequiredService<T>()));
         return services;
     }
 }

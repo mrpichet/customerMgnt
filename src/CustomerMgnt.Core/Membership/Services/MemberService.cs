@@ -21,6 +21,7 @@ public sealed class MemberService : IApprovalHandler
     internal const string BirthContext = "member.birth_date";
 
     private readonly IMemberDAO _members;
+    private readonly ICampaignDAO _campaigns;
     private readonly ITierDAO _tiers;
     private readonly IPointDAO _points;
     private readonly ICouponDAO _coupons;
@@ -39,8 +40,9 @@ public sealed class MemberService : IApprovalHandler
     /// <summary>สร้าง</summary>
     public MemberService(IMemberDAO members, ITierDAO tiers, IPointDAO points, ICouponDAO coupons, ICheckoutDAO checkout, IMembershipSettingsDAO settings,
         IMembershipAuditDAO audit, IMembershipUnitOfWork uow, PointLedgerService ledger, ApprovalService approvals, OtpService otp, PrivacyService privacy,
-        CustomerService customers, MembershipRulesProvider rules, TimeProvider clock)
+        CustomerService customers, MembershipRulesProvider rules, TimeProvider clock, ICampaignDAO campaigns)
     {
+        _campaigns = campaigns;
         _members = members;
         _tiers = tiers;
         _points = points;
@@ -425,6 +427,9 @@ public sealed class MemberService : IApprovalHandler
         }
 
         string? customerCode = request.CustomerCode is null ? null : await RequireCustomerAsync(request.CustomerCode, ct).ConfigureAwait(false);
+        string? sourceCampaign = string.IsNullOrWhiteSpace(request.SourceCampaignCode) ? null : request.SourceCampaignCode.Trim().ToUpperInvariant();
+        ValidationException.ThrowIf(sourceCampaign is not null && await _campaigns.GetByCodeAsync(sourceCampaign, ct).ConfigureAwait(false) is null,
+            "sourceCampaignCode", "Unknown campaign code.");
         TierDTO? tier = TierRules.Initial(await _tiers.ListAsync(ct).ConfigureAwait(false));
         DateTimeOffset now = _clock.GetUtcNow();
         ValidationException.ThrowIf(request.BirthDate is DateOnly bd && (bd > DateOnly.FromDateTime(now.UtcDateTime) || bd.Year < 1900), "birthDate", "Invalid birth date.");
@@ -443,6 +448,7 @@ public sealed class MemberService : IApprovalHandler
             TierReviewAt = tier is null ? null : now.AddMonths(rules.TierWindowMonths),
             CustomerCode = customerCode,
             AuthSubject = authSubject,
+            SourceCampaignCode = sourceCampaign,
             MarketingConsent = request.MarketingConsent,
             MarketingChannels = request.MarketingConsent ? string.Join(',', (request.MarketingChannels is { Count: > 0 } ch ? ch : [MarketingChannel.Sms, MarketingChannel.Email, MarketingChannel.Line]).Distinct()) : null,
             CreatedAt = now,
@@ -598,6 +604,7 @@ public sealed class MemberService : IApprovalHandler
             CustomerCode = m.CustomerCode,
             HasPortalAccount = m.AuthSubject is not null,
             MarketingConsent = m.MarketingConsent,
+            SourceCampaignCode = m.SourceCampaignCode,
             CreatedAt = m.CreatedAt,
             UpdatedAt = m.UpdatedAt,
             Version = m.Version,

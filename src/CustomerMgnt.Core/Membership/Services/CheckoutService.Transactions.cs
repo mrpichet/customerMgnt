@@ -71,6 +71,7 @@ public sealed partial class CheckoutService
             PointLedgerService.Finish(posting, cs);
 
             SalesTransactionEntity txn = NewTransaction(source, request.TransactionId, request.ReceiptNo, m, request.BranchCode, request.Channel, request.PaidAt, q, request.Offline, now);
+            txn.IsTest = request.IsTest;
             cs.NewTransaction = txn;
             if (m.LastPurchaseAt is null || m.LastPurchaseAt < request.PaidAt)
             {
@@ -245,7 +246,7 @@ public sealed partial class CheckoutService
     {
         Id = t.Id, SourceSystem = t.SourceSystem, TransactionId = t.TransactionId, ReceiptNo = t.ReceiptNo, MemberId = t.MemberId, MemberNo = t.MemberNo,
         BranchCode = t.BranchCode, Channel = t.Channel, OccurredAt = t.OccurredAt, NetPaid = t.NetPaid, DiscountTotal = t.DiscountTotal,
-        PointsEarned = t.PointsEarned, PointsRedeemed = t.PointsRedeemed, Status = t.Status, Offline = t.Offline,
+        PointsEarned = t.PointsEarned, PointsRedeemed = t.PointsRedeemed, Status = t.Status, Offline = t.Offline, IsTest = t.IsTest,
     };
 
     // ------------------------------------------------------------------ internals

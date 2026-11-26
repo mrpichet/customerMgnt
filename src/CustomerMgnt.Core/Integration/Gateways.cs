@@ -121,4 +121,31 @@ public interface IMessageHubGateway
     /// <param name="ct">ยกเลิก</param>
     /// <returns>Task</returns>
     Task NotifyUserAsync(Guid userId, string subject, string body, CancellationToken ct);
+
+    /// <summary>ส่งข้อความหาลูกค้าพร้อมรหัสอ้างอิง (MessageHub ส่งรหัสนี้กลับมาในเหตุการณ์เปิด/คลิกที่ <c>POST api/v1/ingest/message-events</c>)</summary>
+    /// <param name="channel">ช่องทาง</param>
+    /// <param name="recipient">ผู้รับ</param>
+    /// <param name="subject">หัวข้อ</param>
+    /// <param name="body">ข้อความ</param>
+    /// <param name="reference">รหัสอ้างอิงของข้อความ (messageId)</param>
+    /// <param name="ct">ยกเลิก</param>
+    /// <returns>true เมื่อส่ง/เข้าคิวสำเร็จ</returns>
+    Task<bool> SendToCustomerAsync(ChannelKind channel, string recipient, string? subject, string body, string? reference, CancellationToken ct) =>
+        SendToCustomerAsync(channel, recipient, subject, body, ct);
+
+    /// <summary>ส่งอีเมลพร้อมไฟล์แนบ (รายงานตามเวลา / แจ้งเตือนของระบบวิเคราะห์)</summary>
+    /// <param name="to">อีเมลผู้รับ</param>
+    /// <param name="subject">หัวข้อ</param>
+    /// <param name="body">ข้อความ</param>
+    /// <param name="attachments">ไฟล์แนบ</param>
+    /// <param name="ct">ยกเลิก</param>
+    /// <returns>true เมื่อส่ง/เข้าคิวสำเร็จ</returns>
+    Task<bool> SendEmailAsync(string to, string subject, string body, IReadOnlyList<EmailAttachmentDTO> attachments, CancellationToken ct) =>
+        SendToCustomerAsync(ChannelKind.Email, to, subject, body, ct);
 }
+
+/// <summary>ไฟล์แนบอีเมล</summary>
+/// <param name="FileName">ชื่อไฟล์</param>
+/// <param name="ContentType">ชนิด</param>
+/// <param name="Content">ข้อมูล</param>
+public sealed record EmailAttachmentDTO(string FileName, string ContentType, byte[] Content);

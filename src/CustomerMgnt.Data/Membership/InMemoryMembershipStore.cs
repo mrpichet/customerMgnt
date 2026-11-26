@@ -11,7 +11,7 @@ namespace CustomerMgnt.Data.Membership;
 /// ฐานข้อมูลระบบสมาชิกในหน่วยความจำ (Development / test) — implement ทุก DAO ของระบบสมาชิกด้วย lock เดียว
 /// พฤติกรรมเหมือน ADO: ตรวจ version, unique key, ตัวนับสิทธิ์ และคืนสำเนาเสมอ
 /// </summary>
-public sealed class InMemoryMembershipStore : IMemberDAO, ITierDAO, IPointDAO, ICampaignDAO, ICouponDAO, ISegmentDAO, ICheckoutDAO, IApprovalDAO,
+public sealed partial class InMemoryMembershipStore : IMemberDAO, ITierDAO, IPointDAO, ICampaignDAO, ICouponDAO, ISegmentDAO, ICheckoutDAO, IApprovalDAO,
     IMembershipAuditDAO, IOutboxDAO, IIdempotencyDAO, IMembershipSettingsDAO, IMemberPrivacyDAO, IMembershipJobDAO, IMembershipUnitOfWork
 {
     private readonly Lock _sync = new();
